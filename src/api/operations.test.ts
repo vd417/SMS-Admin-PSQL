@@ -4,7 +4,7 @@ import {
   listHostelBlocks, createHostelBlock, createHostelRoom, createHostelResident,
   createSportsTeam, createSportsEvent, createSportsMedal,
   listBusStudents, assignStudentToBus, unassignStudentFromBus,
-  listRouteStops, updateBusLocation,
+  listRouteStops,
   sendBusNotification,
 } from './operations'
 
@@ -153,23 +153,6 @@ describe('route stops', () => {
     vi.stubGlobal('fetch', fetchMock)
     await listRouteStops('R42')
     expect(String(fetchMock.mock.calls[0][0])).toMatch(/\/transport\/routes\/R42\/stops$/)
-  })
-})
-
-describe('bus location update', () => {
-  it('PUTs to /transport/buses/:id/location with snake_case body', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(noContent())
-    vi.stubGlobal('fetch', fetchMock)
-    await updateBusLocation('B1', { lat: 28.7041, lng: 77.1025, speedKmh: 42, status: 'on_route' })
-    const [url, opts] = fetchMock.mock.calls[0]
-    expect(String(url)).toMatch(/\/transport\/buses\/B1\/location$/)
-    expect(opts.method).toBe('PUT')
-    const body = JSON.parse(opts.body as string)
-    expect(body).toMatchObject({ lat: 28.7041, lng: 77.1025, speed_kmh: 42, status: 'on_route' })
-  })
-
-  it('throws when busId is empty', async () => {
-    await expect(updateBusLocation('', { lat: 0, lng: 0 })).rejects.toThrow('Bus ID required')
   })
 })
 

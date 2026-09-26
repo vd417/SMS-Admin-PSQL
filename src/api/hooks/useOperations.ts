@@ -13,7 +13,7 @@ import { tokenStore } from '../auth/tokenStore'
 import {
   getLibrarySummary, getTransportSummary, getTransportFleet, listTransportBuses,
   listBusStudents, assignStudentToBus, unassignStudentFromBus,
-  updateBusLocation, sendBusNotification, startBusTrip, pingBusTrip, endBusTrip,
+  sendBusNotification, startBusTrip, pingBusTrip, endBusTrip,
   createRouteStop, updateRouteStop, deleteRouteStop, reorderRouteStops,
   createBus, updateBus, assignBusTeacher, unassignBusTeacher,
   listTravelingTeachers, addTravelingTeacher, removeTravelingTeacher,
@@ -26,7 +26,7 @@ import {
   type LibrarySummary, type TransportSummary, type FleetBus, type TransportBus, type StudentBusAssignment,
   type BusTeacherAssignment, type TravelingTeacher,
   type TransportRoute, type CreateBusInput, type UpdateBusInput, type CreateRouteInput, type RouteStop,
-  type BusLocationInput, type SendBusNotificationInput, type TripPingInput, type TripSummary,
+  type SendBusNotificationInput, type TripPingInput, type TripSummary,
   type CreateRouteStopInput,
   type StudentTransportStatus, type SetStudentTransportInput, type TransportMappedStudent, type TransportStudentsFilter,
   type HostelSummary, type SportsSummary,
@@ -97,16 +97,6 @@ export function useUnassignStudentFromBus(): UseMutationResult<void, Error, { bu
     onSuccess: (_r, { busId }) => {
       void qc.invalidateQueries({ queryKey: queryKeys.operations.busStudents(busId) })
       void qc.invalidateQueries({ queryKey: queryKeys.operations.transportSummary })
-    },
-  })
-}
-
-export function useUpdateBusLocation(): UseMutationResult<void, Error, { busId: string } & BusLocationInput> {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: ({ busId, ...input }) => updateBusLocation(busId, input),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: queryKeys.operations.transportFleet })
     },
   })
 }

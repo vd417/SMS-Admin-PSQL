@@ -136,13 +136,6 @@ export interface TransportStudentsFilter {
   status?: 'mapped' | 'pending'
 }
 
-export interface BusLocationInput {
-  lat?: number
-  lng?: number
-  speedKmh?: number
-  status?: BusStatus
-}
-
 export interface SendBusNotificationInput {
   eventType: 'departed' | 'approaching' | 'arrived'
   stopId?: string | null
@@ -299,15 +292,6 @@ export async function assignStudentToBus(busId: string, studentId: string, stopI
 export async function unassignStudentFromBus(busId: string, studentId: string): Promise<void> {
   if (!busId || !studentId) throw new Error('Missing bus or student')
   await request<void>(`/transport/buses/${busId}/students/${studentId}`, { method: 'DELETE' })
-}
-
-/** Legacy admin shortcut — prefer trip pings via startBusTrip + pingBusTrip. */
-export async function updateBusLocation(busId: string, input: BusLocationInput): Promise<void> {
-  if (!busId) throw new Error('Bus ID required')
-  await request<void>(`/transport/buses/${busId}/location`, {
-    method: 'PUT',
-    body: camelToSnake(input),
-  })
 }
 
 export async function sendBusNotification(busId: string, input: SendBusNotificationInput): Promise<{ reach: number }> {
