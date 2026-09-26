@@ -72,30 +72,53 @@ html[dir=rtl] .sm-sidebar { border-right: none; border-left: 1px solid rgba(255,
 .sm-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 .sm-bento { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; }
 .sm-kpi {
+  --kpi-c: var(--kpi-accent, var(--brand-500));
+  --kpi-deep: color-mix(in srgb, var(--kpi-c) 70%, #000);
   position: relative; border-radius: var(--r-xl); padding: 20px; overflow: hidden;
-  /* Lighter/softer per request (80% accent on the near corner) — text-shadow below compensates
-     perceived legibility, though on brighter accent colors the near corner runs under WCAG's
-     4.5:1 minimum for normal text; the far corner still anchors to Deep Navy Purple for depth. */
+  /* Pastel: 60% accent + white on the near corner, fading to a 35% tint. Dark navy text on top
+     measures >= 6.4:1 on every accent in use (incl. all data-accent brand overrides). */
   background: linear-gradient(135deg,
-    color-mix(in srgb, var(--kpi-accent, var(--brand-500)) 80%, #000),
-    color-mix(in srgb, var(--kpi-accent, var(--brand-500)) 42%, var(--brand-900)));
-  border: 1px solid color-mix(in srgb, var(--kpi-accent, var(--brand-500)) 90%, var(--border));
-  box-shadow: 0 10px 24px -8px color-mix(in srgb, var(--kpi-accent, var(--brand-500)) 50%, transparent), var(--sh-sm);
+    color-mix(in srgb, var(--kpi-c) 60%, #fff),
+    color-mix(in srgb, var(--kpi-c) 35%, #fff));
+  border: 1px solid color-mix(in srgb, var(--kpi-c) 45%, #fff);
+  box-shadow: 0 10px 24px -10px color-mix(in srgb, var(--kpi-c) 45%, transparent), var(--sh-sm);
   transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
 }
-.sm-kpi::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: #fff; opacity: .55; }
+.sm-kpi::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--kpi-deep); opacity: .7; }
 .sm-kpi:hover {
   transform: translateY(-3px);
-  box-shadow: 0 16px 32px -8px color-mix(in srgb, var(--kpi-accent, var(--brand-500)) 60%, transparent), var(--sh-lg);
+  box-shadow: 0 16px 32px -10px color-mix(in srgb, var(--kpi-c) 55%, transparent), var(--sh-lg);
 }
-/* Solid, saturated fill needs light text/icon chip throughout, not the default dark-on-white styling. */
-.sm-kpi .sm-kpi-ic { background: rgba(255,255,255,.22) !important; color: #fff !important; box-shadow: none; }
-/* Full-opacity white, not a translucent tint — opacity is what silently failed contrast before. */
-.sm-kpi .sm-kpi-val, .sm-kpi .sm-kpi-label, .sm-kpi .sm-kpi-foot, .sm-kpi .t-xs.muted3 {
-  color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.4);
+/* Fixed navy (not var(--text), which flips to white in dark mode) so it always sits on the pastel. */
+.sm-kpi .sm-kpi-ic { background: rgba(255,255,255,.45) !important; color: var(--kpi-deep) !important; box-shadow: none; }
+.sm-kpi .sm-kpi-val, .sm-kpi .sm-kpi-label, .sm-kpi .sm-kpi-foot, .sm-kpi .t-xs.muted3 { color: #0f172a; }
+.sm-kpi .sm-kpi-foot, .sm-kpi .t-xs.muted3 { font-weight: 500; }
+.sm-kpi .sm-stat-delta, .sm-kpi .sm-stat-delta.up, .sm-kpi .sm-stat-delta.down {
+  background: rgba(255,255,255,.55); color: #0f172a; padding: 2px 8px; border-radius: var(--r-pill);
 }
-/* Dark (not white-tint) pill so the delta reads on every accent, including light ones like success green. */
-.sm-kpi .sm-stat-delta { background: rgba(0,0,0,.2); color: #fff; }
+/* Dark theme: a white pastel would glare, so mix toward the dark surface and keep white text
+   (worst case 5.0:1, on bright green). */
+html[data-theme="dark"] .sm-kpi {
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--kpi-c) 60%, #111827),
+    color-mix(in srgb, var(--kpi-c) 45%, #111827));
+  border-color: color-mix(in srgb, var(--kpi-c) 50%, #111827);
+}
+html[data-theme="dark"] .sm-kpi::before { background: #fff; opacity: .55; }
+html[data-theme="dark"] .sm-kpi .sm-kpi-ic { background: rgba(255,255,255,.18) !important; color: #fff !important; }
+html[data-theme="dark"] .sm-kpi .sm-kpi-val, html[data-theme="dark"] .sm-kpi .sm-kpi-label,
+html[data-theme="dark"] .sm-kpi .sm-kpi-foot, html[data-theme="dark"] .sm-kpi .t-xs.muted3 { color: #fff; }
+html[data-theme="dark"] .sm-kpi .sm-stat-delta, html[data-theme="dark"] .sm-kpi .sm-stat-delta.up,
+html[data-theme="dark"] .sm-kpi .sm-stat-delta.down { background: rgba(0,0,0,.25); color: #fff; }
+/* Dashboard "People at a glance" cards reuse the KPI pastel; these are their extra parts. */
+.sm-people-card .sm-people-sub { color: #0f172a; }
+.sm-people-card .sm-people-chev { color: var(--kpi-deep); }
+.sm-people-card .sm-people-meter { background: rgba(255,255,255,.55); }
+.sm-people-card .sm-people-meter > span { background: var(--kpi-deep); }
+html[data-theme="dark"] .sm-people-card .sm-people-sub { color: rgba(255,255,255,.88); }
+html[data-theme="dark"] .sm-people-card .sm-people-chev { color: rgba(255,255,255,.7); }
+html[data-theme="dark"] .sm-people-card .sm-people-meter { background: rgba(255,255,255,.28); }
+html[data-theme="dark"] .sm-people-card .sm-people-meter > span { background: #fff; }
 .sm-kpi-ic { width: 44px; height: 44px; border-radius: var(--r-md); display: flex; align-items: center; justify-content: center; background: var(--brand-50); color: var(--brand-600); margin-bottom: 14px; box-shadow: var(--sh-xs); }
 .sm-kpi-val { font-size: 34px; font-weight: 800; font-family: var(--font-display); letter-spacing: -.025em; line-height: 1.05; }
 .sm-kpi-label { font-size: 14px; font-weight: 600; color: var(--text-2); margin-top: 4px; }

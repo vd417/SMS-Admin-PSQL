@@ -1,7 +1,7 @@
 /* ============================================================
    SchoolMate — School console: live Dashboard + Approvals inbox
    ============================================================ */
-import { useEffect, useMemo, useState, type ComponentType } from 'react'
+import { useEffect, useMemo, useState, type ComponentType, type CSSProperties } from 'react'
 import { useApp, useToast } from '@/lib/hooks'
 import {
   Card, CardHead, Kpi, PageHead, Badge, Btn, Icon, Avatar,
@@ -277,7 +277,7 @@ function SchoolDashboard() {
           label="Today's attendance" value={attendancePct == null ? '—' : `${attendancePct}%`}
           delta={attLiveLabel} deltaDir="up"
           foot={studentAtt.footnote}
-          spark={attSpark.length >= 2 ? attSpark : undefined} sparkColor="#22C55E"
+          spark={attSpark.length >= 2 ? attSpark : undefined} sparkColor="#166534"
         />
         <Kpi
           icon="rupee" iconBg="color-mix(in srgb, #0EA5E9 12%, white)" iconColor="#0EA5E9"
@@ -557,30 +557,25 @@ function PeopleCard({ icon, tone, label, count, sub, rate, present, total, foot,
   rate: number; present: number; total: number; foot?: string; loading?: boolean; onClick: () => void
 }) {
   return (
-    <Card hover onClick={onClick} style={{
-      border: `1px solid color-mix(in srgb, ${tone} 90%, var(--border))`,
-      borderLeft: '3px solid rgba(255,255,255,.55)',
-      background: `color-mix(in srgb, ${tone} 90%, var(--surface))`,
-      color: '#fff',
-    }}>
+    <Card hover onClick={onClick} className="sm-kpi sm-people-card" style={{ '--kpi-accent': tone } as CSSProperties}>
       <div className="row ai-center jc-between">
         <div className="row ai-center gap12">
-          <span className="sm-kpi-ic" style={{ background: 'rgba(255,255,255,.22)', color: '#fff', marginBottom: 0, boxShadow: 'none' }}>
+          <span className="sm-kpi-ic" style={{ marginBottom: 0 }}>
             <Icon name={icon} size={18} />
           </span>
           <div>
-            <div className="sm-kpi-val" style={{ fontSize: 24, color: '#fff' }}>{fmtNum(count)}</div>
-            <div className="sm-kpi-label" style={{ color: '#fff' }}>{label}</div>
+            <div className="sm-kpi-val" style={{ fontSize: 24 }}>{fmtNum(count)}</div>
+            <div className="sm-kpi-label">{label}</div>
           </div>
         </div>
-        <Icon name="chevRight" size={18} style={{ color: 'rgba(255,255,255,.7)' }} />
+        <Icon name="chevRight" size={18} className="sm-people-chev" />
       </div>
-      <div className="t-sm" style={{ marginTop: 10, color: 'rgba(255,255,255,.85)' }}>{sub}</div>
+      <div className="t-sm sm-people-sub" style={{ marginTop: 10 }}>{sub}</div>
       <div className="row ai-center gap8" style={{ marginTop: 10 }}>
-        <div className="sm-meter" style={{ flex: 1, width: 'auto', background: 'rgba(255,255,255,.28)' }}>
-          <span style={{ width: `${loading ? 0 : rate}%`, background: '#fff' }} />
+        <div className="sm-meter sm-people-meter" style={{ flex: 1, width: 'auto' }}>
+          <span style={{ width: `${loading ? 0 : rate}%` }} />
         </div>
-        <span className="t-xs" style={{ whiteSpace: 'nowrap', color: 'rgba(255,255,255,.78)' }}>
+        <span className="t-xs sm-kpi-foot" style={{ whiteSpace: 'nowrap', marginTop: 0 }}>
           {loading ? 'Loading…' : (foot ?? `${fmtNum(present)} of ${fmtNum(total)} present`)}
         </span>
       </div>
