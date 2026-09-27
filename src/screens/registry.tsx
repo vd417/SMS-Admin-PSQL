@@ -10,6 +10,7 @@ import { studentAddScreens } from './school/studentAdd'
 import { examsScreens } from './school/exams'
 import { academicsScreens } from './school/academics'
 import { calendarScreens } from './school/calendar'
+import { ptmScreens } from './school/ptm'
 import { peopleScreens } from './school/people'
 import { teacherAddScreens } from './school/teacherAdd'
 import { staffAddScreens } from './school/staffAdd'
@@ -31,6 +32,7 @@ export const screenRegistry: Record<string, ComponentType> = {
   ...examsScreens,
   ...academicsScreens,
   ...calendarScreens,
+  ...ptmScreens,
   ...peopleScreens,
   ...teacherAddScreens,
   ...staffAddScreens,
