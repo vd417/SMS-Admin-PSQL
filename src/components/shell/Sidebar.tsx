@@ -43,6 +43,7 @@ function schoolNav(role: Role, approvalCount: number): NavGroup[] {
     { label: 'Academic', items: [
       { label: 'Academics', view: 'school.academics', icon: 'book' },
       { label: 'Calendar', view: 'school.calendar', icon: 'calendar' },
+      { label: 'PTM', view: 'school.ptm', icon: 'users' },
       { label: 'Attendance', view: 'school.attendance', icon: 'checkCircle' },
       { label: 'Exams & grading', view: 'school.exams', icon: 'clipboard' },
     ] },

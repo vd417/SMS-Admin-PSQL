@@ -93,6 +93,10 @@ export const queryKeys = {
   complaints: {
     all: ['complaints'] as const,
   },
+  ptm: {
+    all: ['ptm'] as const,
+    list: (filters: import('./ptm').PtmFilters = {}) => ['ptm', 'list', tenantScope(), filters] as const,
+  },
   issues: {
     all: ['issues'] as const,
     list: (status?: string) => ['issues', 'list', status ?? 'all'] as const,
