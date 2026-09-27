@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { ptmScreens } from './ptm'
 
@@ -19,9 +19,10 @@ const ROWS = [
 
 const createMutate = vi.fn()
 const deleteMutate = vi.fn()
+const usePtmMock = vi.fn()
 
 vi.mock('@/api/hooks/usePtm', () => ({
-  usePtm: () => ({ data: ROWS, isLoading: false }),
+  usePtm: (...args: unknown[]) => usePtmMock(...args),
   useCreatePtm: () => ({ mutate: createMutate, isPending: false }),
   useDeletePtm: () => ({ mutate: deleteMutate, isPending: false }),
 }))
@@ -56,10 +57,15 @@ const setTime = (label: string, value: string) =>
 const setText = (label: string, value: string) =>
   fireEvent.change(within(fieldOf(label)).getByRole('textbox'), { target: { value } })
 
+beforeEach(() => {
+  usePtmMock.mockReturnValue({ data: ROWS, isLoading: false, isError: false, error: null })
+})
+
 afterEach(() => {
   cleanup()
   createMutate.mockClear()
   deleteMutate.mockClear()
+  usePtmMock.mockReset()
 })
 
 describe('PtmScreen', () => {
@@ -105,5 +111,18 @@ describe('PtmScreen', () => {
     expect(screen.getByText('Cancel this meeting?')).toBeInTheDocument()
     fireEvent.click(within(dialog()).getByRole('button', { name: /^cancel meeting$/i }))
     expect(deleteMutate).toHaveBeenCalledWith('ptm-1', expect.anything())
+  })
+
+  it('shows an error state with the failure message instead of "No meetings"', () => {
+    usePtmMock.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error('Could not reach the server'),
+    })
+    render(<PtmScreen />)
+    expect(screen.getByText('Could not load meetings')).toBeInTheDocument()
+    expect(screen.getByText('Could not reach the server')).toBeInTheDocument()
+    expect(screen.queryByText('No meetings')).not.toBeInTheDocument()
   })
 })

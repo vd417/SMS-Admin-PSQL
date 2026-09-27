@@ -52,7 +52,7 @@ function PtmScreen() {
     to: to || undefined,
   }), [status, teacherId, from, to])
 
-  const { data: rows, isLoading } = usePtm(filters)
+  const { data: rows, isLoading, isError, error } = usePtm(filters)
   const { data: teachers } = useTeachers()
   const { data: students } = useStudents({ q: studentQuery })
   const createPtm = useCreatePtm()
@@ -78,7 +78,7 @@ function PtmScreen() {
         mode: form.mode,
       },
       {
-        onSuccess: () => { toast.success('Meeting scheduled', 'The parent will be notified to confirm.'); setAddOpen(false) },
+        onSuccess: () => { toast.success('Meeting scheduled', 'Parents can confirm it in the app.'); setAddOpen(false) },
         onError: (err) => toast.danger('Could not schedule', err instanceof Error ? err.message : 'Please try again.'),
       },
     )
@@ -147,7 +147,9 @@ function PtmScreen() {
           rowKey={(r) => r.id}
           empty={isLoading
             ? <Empty icon="users" title="Loading…" body="Fetching meetings." />
-            : <Empty icon="users" title="No meetings" body="Nothing scheduled for these filters." />}
+            : isError
+              ? <Empty icon="alert" title="Could not load meetings" body={error instanceof Error ? error.message : 'Please try again.'} />
+              : <Empty icon="users" title="No meetings" body="Nothing scheduled for these filters." />}
         />
       </Card>
 
