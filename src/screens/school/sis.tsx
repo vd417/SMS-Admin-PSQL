@@ -40,7 +40,8 @@ import { isDuplicateValue, normalizePhoneDigits, normalizeEmailKey } from '@/lib
 import { errorRowsToCsv, type ErrorReportRow } from '@/lib/importErrorReport'
 import { downloadTextFile, downloadArrayBuffer } from '@/lib/feeExport'
 import ExcelJS from 'exceljs'
-import { toDateInputValue } from '@/lib/dateInput'
+import { parseImportDate } from '@/lib/importDate'
+import { classCellMatches } from '@/lib/importClassMatch'
 import { buildStudentFromRow, toBulkImportRowPayload, parseBulkGender, type BulkStudentRow, type BulkImportRowPayload } from '@/lib/studentMapping'
 import { useBulkImportStudents, isTransportFailedRow, BATCH_SIZE } from '@/api/hooks/useBulkImportStudents'
 import type { BulkImportRowResult } from '@/api/bulkImportStudents'
@@ -50,7 +51,7 @@ import { useSchoolHouses } from '@/api/hooks/useSchoolHouses'
 import type { Student, FeeStatus, Role, Exam, FeeHead } from '@/types'
 import type { TransportRoute, RouteStop } from '@/api/transport'
 import type { SchoolClass } from '@/api/classes'
-import { DEFAULT_GRADES } from '@/lib/defaultClasses'
+import { DEFAULT_GRADES, compareClassesAscending } from '@/lib/defaultClasses'
 
 /* ---------- shared helpers ---------- */
 const feeTone: Record<FeeStatus, BadgeTone> = { paid: 'success', partial: 'warning', due: 'danger' }
@@ -124,7 +125,11 @@ function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
  *  same way a single Add/Edit save does. */
 function resolveImportClass(classes: SchoolClass[], classKey: string): { grade: string; section: string; cls: string } {
   const key = classKey.trim()
-  const match = classes.find((c) => (c.name || `${c.grade}-${c.section}`).trim() === key)
+  // classCellMatches, not string equality: this app's default grades are Roman (X-A) while a
+  // school's exported spreadsheet writes them in Arabic ("10-A", "Class 10 A", "10a"). Both
+  // spellings name the same class, and the resolved record always wins, so the student is
+  // filed under the class's OWN name whichever way the admin typed it.
+  const match = classes.find((c) => classCellMatches(c, key))
   if (match) {
     return { grade: match.grade || key, section: match.section || '', cls: match.name || `${match.grade}-${match.section}` }
   }
@@ -141,7 +146,7 @@ function resolveImportClass(classes: SchoolClass[], classKey: string): { grade: 
 function importClassExists(classes: SchoolClass[], classKey: string): boolean {
   const key = classKey.trim()
   if (!key) return false
-  return classes.some((c) => (c.name || `${c.grade}-${c.section}`).trim() === key)
+  return classes.some((c) => classCellMatches(c, key))
 }
 
 /* ---------- reference-data resolution (spec §6: Class / House / Route / Stop) ----------
@@ -323,8 +328,15 @@ export function buildBulkPreview(
     // which the server then rejects — Preview would have said "Valid" and the final counts
     // would not add up. Validate with the SAME parser the payload uses, so the two agree.
     const dobValue = (record.dob ?? '').trim()
-    if (dobValue && !errors.dob && !toDateInputValue(dobValue)) {
-      errors.dob = 'Invalid date of birth — use a real date such as 2015-04-23'
+    if (dobValue && !errors.dob && !parseImportDate(dobValue)) {
+      errors.dob = 'Invalid date of birth — use a real date such as 23/04/2015 or 2015-04-23'
+    }
+
+    // Admission Date runs through the same parser on the payload side, so a cell that cannot
+    // parse would be dropped to null silently. Flag it here instead.
+    const admissionDateValue = (record.admissionDate ?? '').trim()
+    if (admissionDateValue && !errors.admissionDate && !parseImportDate(admissionDateValue)) {
+      errors.admissionDate = 'Invalid admission date — use a real date such as 01/04/2025 or 2025-04-01'
     }
 
     // gender: an uninterpretable cell must never be silently guessed (a "Female" that lands
@@ -343,6 +355,13 @@ export function buildBulkPreview(
     // in, and only on the Platinum/operations tier where routes/stops exist at all.
     if (opsEnabled && form.transportOptedIn === 'yes') {
       const routeValue = (record.transportRouteId ?? '').trim()
+      // validateStudentForm is shared with the single Add form, so a blank route arrives
+      // worded for a form ("Select a route before saving") — there is nothing to select in a
+      // spreadsheet row, and the message names neither the column at fault nor the way out.
+      if (errors.transportRouteId === 'Select a route before saving') {
+        errors.transportRouteId = 'Uses School Transport is "Yes" but Transport Route is empty'
+          + ' — fill the Transport Route column, or set Uses School Transport to "No"'
+      }
       const stopValue = (record.transportStopId ?? '').trim()
       const feeHeadValue = (record.transportFeeHeadId ?? '').trim()
       const route = resolveImportRoute(refs.routes, routeValue)
@@ -472,7 +491,7 @@ const BULK_IMPORT_EXAMPLE_ROW: Record<(typeof BULK_IMPORT_FIELDS)[number]['key']
  *  the header row spells out that the example must be replaced, and that Class + Section /
  *  House / Route / Stop / Fee Head must match records that already exist for the school — this
  *  template never invents a real database value. */
-export async function bulkImportTemplateXlsx(): Promise<ArrayBuffer> {
+export async function bulkImportTemplateXlsx(refs: BulkImportRefs = EMPTY_BULK_IMPORT_REFS): Promise<ArrayBuffer> {
   const fields = BULK_IMPORT_FIELDS.filter((f) => f.key !== 'admissionNo')
   const wb = new ExcelJS.Workbook()
   const ws = wb.addWorksheet('Students')
@@ -497,9 +516,61 @@ export async function bulkImportTemplateXlsx(): Promise<ArrayBuffer> {
 
   ws.getCell(1, 1).note = 'Row 2 is ONE example student, for format only — replace it with your '
     + 'own data. Class + Section, House, Transport Route, Pickup Stop and Transport Fee Head '
-    + "must match records that already exist in this school's Academics / Transport / Finance."
+    + "must match records that already exist in this school's Academics / Transport / Finance. "
+    + 'See the "Valid values" sheet for the exact list this school accepts.'
+
+  ws.getCell(1, fields.findIndex((f) => f.key === 'section') + 1).note =
+    'Grades are Roman here (I, II, III … X, XI, XII) to match how the classes in this school '
+    + 'are named. Arabic is accepted too: '
+    + '"10-A", "Class 10 A" and "10a" all resolve to X-A.'
+
+  ws.getCell(1, fields.findIndex((f) => f.key === 'dob') + 1).note =
+    'Any of these is accepted: 2015-04-23, 23/04/2015, 23-04-2015, 23 April 2015, or an Excel '
+    + 'date cell. An all-numeric cell like 04/05/2015 is read DAY first (4 May).'
+
+  addValidValuesSheet(wb, refs)
 
   return wb.xlsx.writeBuffer()
+}
+
+/** Second sheet listing the reference values THIS school actually has, so the admin can copy
+ *  a Class + Section / House / Route / Stop / Fee Head straight across instead of guessing at
+ *  a spelling and finding out only at Preview. Every "was not found" error the wizard can
+ *  raise is a value that is either on this sheet or does not exist yet. */
+function addValidValuesSheet(wb: ExcelJS.Workbook, refs: BulkImportRefs): void {
+  const ws = wb.addWorksheet('Valid values')
+  const columns: { header: string; values: string[] }[] = [
+    {
+      header: 'Class + Section',
+      values: [...refs.classes]
+        .sort(compareClassesAscending)
+        .map((c) => (c.name || `${c.grade}-${c.section}`).trim())
+        .filter(Boolean),
+    },
+    { header: 'House', values: refs.houses.filter(Boolean) },
+    { header: 'Transport Route', values: refs.routes.map((r) => r.name).filter(Boolean) },
+    {
+      header: 'Pickup Stop',
+      values: refs.routes.flatMap((r) => (refs.stopsByRoute[r.id] ?? [])
+        .map((st) => `${st.name} (${r.name})`)),
+    },
+    { header: 'Transport Fee Head', values: refs.feeHeads.map((f) => f.name).filter(Boolean) },
+  ]
+
+  ws.views = [{ state: 'frozen', ySplit: 1 }]
+  const headerRow = ws.getRow(1)
+  columns.forEach((col, i) => {
+    const cell = headerRow.getCell(i + 1)
+    cell.value = col.header
+    cell.font = { bold: true }
+    // An empty column means the school has none of that record type yet — say so, rather than
+    // leaving a blank the admin reads as "the template forgot this".
+    const values = col.values.length ? col.values : ['(none set up for this school yet)']
+    values.forEach((v, r) => { ws.getRow(r + 2).getCell(i + 1).value = v })
+    const widest = values.reduce((w, v) => Math.max(w, v.length), col.header.length)
+    ws.getColumn(i + 1).width = Math.min(36, widest + 2)
+  })
+  headerRow.commit()
 }
 
 function ImportDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -700,7 +771,7 @@ function ImportDrawer({ open, onClose }: { open: boolean; onClose: () => void })
               variant="secondary"
               icon="download"
               onClick={() => {
-                void bulkImportTemplateXlsx().then((buf) => downloadArrayBuffer(
+                void bulkImportTemplateXlsx(refs).then((buf) => downloadArrayBuffer(
                   'student-import-template.xlsx',
                   buf,
                   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

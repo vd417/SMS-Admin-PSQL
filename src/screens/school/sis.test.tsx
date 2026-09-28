@@ -835,6 +835,69 @@ function validRowCells(overrides: Partial<{
   ]
 }
 
+/** Regression: a whole uploaded file failing Preview on data that was perfectly correct.
+ *  Reported as rows of "Class + Section \"10-A\" was not found", "Invalid date of birth" and
+ *  "Select a route before saving". */
+describe('buildBulkPreview — spreadsheet spellings a real school actually uploads', () => {
+  // This app names its default grades in ROMAN (defaultClasses.ts). A school's export writes
+  // them in Arabic. Both name the same class, so neither may be rejected.
+  const ROMAN_CLASSES = [schoolClass('X-A', 'X', 'A'), schoolClass('IX-B', 'IX', 'B')]
+  const ROMAN_REFS = { ...TEST_REFS, classes: ROMAN_CLASSES }
+
+  it('accepts the Arabic spelling of a Roman-named class', () => {
+    const rows = [
+      validRowCells({ section: '10-A' }),
+      validRowCells({ section: '9-B', phone: '9000000002', email: 'b@x.com' }),
+      validRowCells({ section: 'Class 10 A', phone: '9000000003', email: 'c@x.com' }),
+    ]
+    const preview = buildBulkPreview(parsedRows(rows), VALID_ROW_MAPPING, ROMAN_REFS, [], false)
+    expect(preview.errorRows).toHaveLength(0)
+  })
+
+  it('still rejects a class this school does not have', () => {
+    const preview = buildBulkPreview(
+      parsedRows([validRowCells({ section: '99-Z' })]), VALID_ROW_MAPPING, ROMAN_REFS, [], false,
+    )
+    expect(preview.errorRows[0].errors.cls).toMatch(/was not found/i)
+  })
+
+  it('files an Arabic-spelled row under the Roman name the class itself carries', () => {
+    const preview = buildBulkPreview(
+      parsedRows([validRowCells({ section: '10-A' })]), VALID_ROW_MAPPING, ROMAN_REFS, [], false,
+    )
+    const [payload] = buildBulkImportPayloads(preview.validRows, ROMAN_REFS)
+    expect(payload.createStudentRequest.grade).toBe('X')
+    expect(payload.createStudentRequest.section).toBe('A')
+  })
+
+  it('accepts a day-first date of birth and sends it as ISO', () => {
+    const preview = buildBulkPreview(
+      parsedRows([validRowCells({ dob: '23/04/2015' })]), VALID_ROW_MAPPING, TEST_REFS, [], false,
+    )
+    expect(preview.errorRows).toHaveLength(0)
+    const [payload] = buildBulkImportPayloads(preview.validRows, TEST_REFS)
+    // The whole point: Preview calling it valid is worthless unless the payload carries a
+    // date the server can store.
+    expect(payload.createStudentRequest.dob).toBe('2015-04-23')
+  })
+
+  it('still rejects a date of birth that is not a real date', () => {
+    const preview = buildBulkPreview(
+      parsedRows([validRowCells({ dob: '31/02/2015' })]), VALID_ROW_MAPPING, TEST_REFS, [], false,
+    )
+    expect(preview.errorRows[0].errors.dob).toMatch(/invalid date of birth/i)
+  })
+
+  it('names the column at fault when transport is opted into with no route', () => {
+    const preview = buildBulkPreview(
+      parsedRows([validRowCells({ transportOptedIn: 'Yes' })]), VALID_ROW_MAPPING, TEST_REFS, [], true,
+    )
+    const msg = preview.errorRows[0].errors.transportRouteId
+    expect(msg).toMatch(/Transport Route/)
+    expect(msg).not.toMatch(/before saving/)
+  })
+})
+
 describe('buildBulkPreview — bulk-only checks (pure)', () => {
   it('names the earlier row a phone+email duplicate collides with', () => {
     const rows = [

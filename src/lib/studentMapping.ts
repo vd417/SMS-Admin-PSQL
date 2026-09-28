@@ -1,4 +1,5 @@
 import { properName, properPlace } from './properCase'
+import { parseImportDate } from './importDate'
 import { fromStudent } from '@/api/students'
 import { extrasFromStudent } from '@/api/studentExtras'
 import type { Student } from '@/types'
@@ -101,8 +102,12 @@ export function buildStudentFromRow(
     house: row.house.trim(),
     avatarHue: (name.length * 47) % 360,
     academicYear: row.academicYear,
-    admissionDate: row.admissionDate || undefined,
-    dob: row.dob,
+    // Normalized HERE, not left raw: fromStudent() runs the value through toDateInputValue(),
+    // which only understands ISO and US month-first — so a "23/04/2015" cell that Preview
+    // just validated with parseImportDate would have been sent as null. Both sides parse the
+    // cell the same way, so a row Preview calls valid is a row the server can actually store.
+    admissionDate: parseImportDate(row.admissionDate) || undefined,
+    dob: parseImportDate(row.dob) || row.dob,
     bloodGroup: row.bloodGroup || undefined,
     religion: row.religion || undefined,
     category: row.category || undefined,
