@@ -263,6 +263,27 @@ html[dir=rtl] .sm-ai-panel { right: auto; left: 80px; }
   html[dir=rtl] .sm-sidebar { left: auto; right: 0; transform: translateX(100%); }
   .sm-app.nav-open .sm-sidebar { transform: translateX(0); }
   .only-mobile { display: block; }
+  .only-desktop { display: none; }
   .sm-grid-2 { grid-template-columns: 1fr; }
 }
 @media (max-width: 600px) { .sm-grid-3 { grid-template-columns: 1fr; } }
+
+/* Topbar collapses gracefully on phones: the row wraps instead of overflowing
+   the viewport, and the search field drops to its own full-width line. Every
+   control stays reachable — nothing is removed. */
+@media (max-width: 640px) {
+  .sm-topbar { flex-wrap: wrap; row-gap: 8px; padding-left: 14px; padding-right: 14px; }
+  .sm-topbar-spacer { display: none; }
+  .sm-topbar .sm-search { order: 20; flex: 1 1 100%; max-width: none; }
+}
+@media (max-width: 460px) {
+  /* Keep the school switcher tappable (logo + chevron) but drop its name label
+     so the control cluster fits without pushing the row wider than the screen. */
+  .sm-topbar .sm-school-switch > .fw6 { display: none; }
+}
+
+/* Tighten page gutters on phones so content uses the available width. */
+@media (max-width: 600px) {
+  .sm-content { padding: 16px 14px; }
+  .sm-pagehead-title { font-size: 24px; }
+}

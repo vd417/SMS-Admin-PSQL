@@ -233,6 +233,14 @@ html[data-theme=dark] .sm-tab.on{ color:var(--brand-300); }
 .sm-tab.on::after{ content:''; position:absolute; left:8px; right:8px; bottom:-1px; height:2.5px; background:var(--brand-600); border-radius:3px; }
 .sm-tab-count{ font-size:11px; background:var(--surface-3); color:var(--text-2); padding:1px 7px; border-radius:99px; font-weight:700; }
 .sm-tab.on .sm-tab-count{ background:var(--brand-50); color:var(--brand-700); }
+/* On phones a long tab row scrolls horizontally inside its own container rather
+   than being clipped by the content area or forcing the whole page to scroll. */
+@media (max-width:640px){
+  .sm-tabs{ overflow-x:auto; overflow-y:hidden; flex-wrap:nowrap; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+  .sm-tabs::-webkit-scrollbar{ display:none; }
+  .sm-tab{ flex:0 0 auto; white-space:nowrap; }
+  .sm-tab.on::after{ bottom:0; }
+}
 
 /* ---------- Avatar ---------- */
 .sm-avatar{ display:inline-flex; align-items:center; justify-content:center; color:#fff; font-weight:700;
