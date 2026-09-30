@@ -96,14 +96,22 @@ ORDER BY user_rows DESC;
 - Consumes: `Users.PersonId` (A1), normalize fns (B1).
 - Produces: every eligible `Users` row has a `PersonId`; the same real person shares one across tenants.
 
-- [ ] **Step 1 (failing test):** In `PersonIdBackfillTests.cs`, seed two tenants with the same email for one name, and two different names sharing a phone; assert post-backfill: same-email rows share a `PersonId`; the two different-name phone-sharers get **distinct** `PersonId`s (never merged); a phone-less/email-less row gets its own `PersonId`.
+- [ ] **Step 1 (failing tests) — the A2-reviewer-mandated set (`PersonIdBackfillTests.cs`):**
+  1. **student login → student's own PersonId:** a `Users` row role `student`, email = the student's own `Email`, `StudentId=AdmissionNo` → gets a PersonId; not merged with anyone else.
+  2. **student.parent login → separate parent PersonId:** a `Users` row role `student.parent` whose `StudentId` points at the SAME child's AdmissionNo, email/phone = the student's `Guardian*` fields → gets a **different** PersonId from the student.
+  3. **same AdmissionNo referenced by both student and parent** (the Rahul/Vaibhav case) → **two** distinct PersonIds, never merged.
+  4. **parent with multiple children:** one parent `Users` row linked to several children → one PersonId (children don't split it).
+  5. **parent/child sharing no contact info:** a child with no email/phone and a parent with distinct contact → distinct PersonIds; no accidental grouping.
+  6. **cross-tenant same person:** same normalized email AND same name in two tenants → one shared PersonId.
+  7. **ambiguous → NULL:** same normalized email, two different non-blank names → both rows keep `PersonId` NULL and are reported.
 - [ ] **Step 2:** Run; expect FAIL (backfill not written).
-- [ ] **Step 3:** Write `0008_users_personid_backfill.sql` using the **linkage-first strategy (correction #1) — never merge by email/phone alone:**
-  1. **Authoritative within-tenant linkage first.** A profile and its own login are the same person: assign a shared `PersonId` where an existing FK proves it — `Teachers.UserId → Users.Id`, `Staff.UserId → Users.Id`, and `Users.StudentId = Students.AdmissionNo`. This linkage is evidence, not email/phone.
-  2. **Cross-tenant grouping is candidate-only and conservative.** The same person across schools is inferred from normalized email/phone **plus** a corroborating signal (identical `Name`, or an existing owner-portfolio relationship). Group across tenants **only when unambiguous** (e.g. same normalized email AND same name). 
-  3. **Different-person → separate.** Records that don't meet the authoritative or unambiguous-candidate bar get **their own** `PersonId`.
-  4. **Ambiguous → leave `PersonId` NULL and report** (differing names on one email/phone, phone-only groups with >1 name, etc.). Never auto-assign a shared id to ambiguous rows.
-  Idempotent (`WHERE "PersonId" IS NULL`). Records the rule applied per row for the report.
+- [ ] **Step 3:** Write `0008_users_personid_backfill.sql` using the **corrected grouping rule (approved after the A2 review) — never merge by email/phone alone, and `StudentId` is NOT a merge key:**
+  1. **`Users.StudentId = AdmissionNo` MUST NOT by itself establish same-person identity.** One AdmissionNo can carry BOTH the student's own login AND a `student.parent` login (parent→child pointer). Treat a `Users` row as the student's own identity only when it is the student login — role `student` and/or its email = the student's own `Email`. A row with role `student.parent`, or whose email/phone matches the student's `GuardianEmail/GuardianPhone`, is the PARENT → its **own** PersonId. **Do not use `StudentId` to merge two `Users` rows.**
+  2. **Profile↔login FKs** (`Teachers.UserId`, `Staff.UserId`) link a profile to its one login; they never merge two `Users` rows.
+  3. **PersonId grouping key = normalized email, else normalized phone**, and only when corroborated by an identical (non-blank) `Name`. Group across tenants only when unambiguous. A blank name is compatible (not a conflicting name).
+  4. **Different-person / unique-contact → own PersonId.** **Ambiguous** (same email/phone, differing non-blank names) → leave `PersonId` NULL and report. Never auto-assign a shared id to ambiguous rows.
+  5. `GuardianEmail/GuardianPhone` are never used for identity and never become ContactClaims.
+  Idempotent (`WHERE "PersonId" IS NULL`). Verified read-only against `sms_dev` before writing: Rahul(student)≠Vaibhav(parent) two PersonIds, Maya one shared PersonId across 2 tenants, 0 ambiguous — see `a3_simulation.txt`.
 - [ ] **Step 4:** Run test; expect PASS. Verify no `Users` row lost/edited beyond `PersonId`.
 - [ ] **Step 5:** Commit `feat(identity): safe PersonId backfill (email/phone grouping, no merge of distinct people)`.
 
