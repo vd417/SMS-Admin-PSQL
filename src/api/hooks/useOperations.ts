@@ -289,10 +289,10 @@ export function useTravelingTeachers(busId: string): UseQueryResult<TravelingTea
   })
 }
 
-export function useAddTravelingTeacher(): UseMutationResult<TravelingTeacher[], Error, { busId: string; teacherUserId: string }> {
+export function useAddTravelingTeacher(): UseMutationResult<TravelingTeacher[], Error, { busId: string; teacherUserId: string; stopId?: string | null }> {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ busId, teacherUserId }) => addTravelingTeacher(busId, teacherUserId),
+    mutationFn: ({ busId, teacherUserId, stopId }) => addTravelingTeacher(busId, teacherUserId, stopId),
     onSuccess: (_data, { busId }) => {
       void qc.invalidateQueries({ queryKey: queryKeys.operations.travelingTeachers(busId) })
     },
