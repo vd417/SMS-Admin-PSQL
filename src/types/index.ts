@@ -294,6 +294,9 @@ export interface Teacher {
   prevSchoolPhone?: string
   dateOfJoining?: string
   dateOfLeaving?: string
+  /** CRM access role shown on the Add Teacher form (Admin/Principal/Vice-Principal/Teacher/Staff).
+   *  Stored for display only — it does not grant access; CRM access is still managed via Send invite. */
+  role?: string
   employeeType?: string
   contractType?: string
   workShift?: string

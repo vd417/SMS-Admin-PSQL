@@ -36,6 +36,7 @@ export interface TeacherExtras {
   prevSchoolPhone?: string
   dateOfJoining?: string
   dateOfLeaving?: string
+  role?: string
   employeeType?: string
   contractType?: string
   workShift?: string
@@ -120,6 +121,7 @@ export function mergeTeacherExtras(t: Teacher): Teacher {
     prevSchoolPhone: ex.prevSchoolPhone ?? t.prevSchoolPhone,
     dateOfJoining: ex.dateOfJoining ?? t.dateOfJoining,
     dateOfLeaving: ex.dateOfLeaving ?? t.dateOfLeaving,
+    role: ex.role ?? t.role,
     employeeType: ex.employeeType ?? t.employeeType,
     contractType: ex.contractType ?? t.contractType,
     workShift: ex.workShift ?? t.workShift,
@@ -168,6 +170,7 @@ export function extrasFromTeacher(t: Teacher, files: StoredDoc[] = []): TeacherE
     prevSchoolPhone: t.prevSchoolPhone,
     dateOfJoining: t.dateOfJoining,
     dateOfLeaving: t.dateOfLeaving,
+    role: t.role,
     employeeType: t.employeeType,
     contractType: t.contractType,
     workShift: t.workShift,

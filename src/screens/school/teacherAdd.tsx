@@ -37,6 +37,9 @@ const DESIGNATIONS = SEL(...TEACHER_DESIGNATIONS)
 const EMP_TYPES = SEL('Full-time', 'Part-time', 'Contract', 'Visiting', 'Intern')
 const CONTRACT_TYPES = SEL('Permanent', 'Temporary', 'Probation', 'Fixed-term')
 const SHIFTS = SEL('Morning', 'Day', 'Evening', 'Rotational')
+// CRM access role, stored for display only (see Teacher.role). Distinct from Designation (job
+// title) and Department (org unit). Access itself is still granted via the Send-invite screen.
+const ROLES = SEL('Admin', 'Principal', 'Vice-Principal', 'Teacher', 'Staff')
 const STATUS_OPTS = [{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }]
 
 const REQUIRED_FIELDS = ['firstName', 'lastName', 'phone', 'email', 'department', 'designation'] as const
@@ -53,7 +56,7 @@ const INITIAL_FORM: Form = {
   class: '', subject: '', qualification: '', specialization: '', experience: '',
   prevSchool: '', prevSchoolAddress: '', prevSchoolPhone: '', dateOfJoining: '', dateOfLeaving: '', status: 'active',
   // employment
-  employeeType: '', department: '', designation: '', contractType: '', workShift: '', workLocation: '',
+  role: 'Teacher', employeeType: '', department: '', designation: '', contractType: '', workShift: '', workLocation: '',
   basicSalary: '', hra: '', allowances: '', epf: '', profTax: '', otherDeductions: '', uan: '',
   // leave
   medical: '', casual: '', sick: '', maternity: '',
@@ -130,6 +133,7 @@ export function teacherToForm(t: Teacher): Form {
     dateOfJoining: toDateInputValue(t.dateOfJoining),
     dateOfLeaving: toDateInputValue(t.dateOfLeaving),
     status: t.status === 'inactive' ? 'inactive' : 'active',
+    role: t.role ?? INITIAL_FORM.role,
     employeeType: t.employeeType ?? '',
     department: t.dept ?? '',
     designation: t.desig ?? '',
@@ -385,6 +389,7 @@ function TeacherFormScreen({ mode }: { mode: 'add' | 'edit' }) {
       gender: f.gender === 'F' ? 'F' : 'M',
       dept: f.department,
       desig: f.designation,
+      role: orU(f.role),
       subjects: f.subject.split(',').map((s) => s.trim()).filter(Boolean),
       classTeacher: f.class || null,
       phone: f.phone.trim(),
@@ -707,6 +712,7 @@ function TeacherFormScreen({ mode }: { mode: 'add' | 'edit' }) {
           <Card>
             <CardHead title="Employment information" icon="briefcase" />
             <div style={{ marginTop: 12 }}>{fieldGrid(<>
+              {sel('role', 'Role', ROLES)}
               {sel('employeeType', 'Employee type', EMP_TYPES)}
               {sel('department', 'Department', deptOptions, true)}
               {sel('designation', 'Designation', DESIGNATIONS, true)}

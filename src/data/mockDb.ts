@@ -107,9 +107,6 @@ for (let i = 0; i < 240; i++) {
 
 /* ---------- Teachers ---------- */
 export const depts = [
-  'Admin',
-  'Principal',
-  'Vice Principal',
   'Mathematics',
   'Science',
   'English',

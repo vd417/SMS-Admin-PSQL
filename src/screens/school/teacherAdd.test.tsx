@@ -66,6 +66,24 @@ describe('Add Teacher form', () => {
     expect(fieldOf('Teacher ID').querySelector('input')).toHaveAttribute('readonly')
   })
 
+  it('offers a Role field defaulting to Teacher, separate from Department/Designation', () => {
+    renderForm()
+    const combo = within(fieldOf('Role')).getByRole('combobox') as HTMLSelectElement
+    expect(combo.value).toBe('Teacher')
+    const values = Array.from(combo.options).map((o) => o.value)
+    expect(values).toEqual(expect.arrayContaining(['Admin', 'Principal', 'Vice-Principal', 'Teacher', 'Staff']))
+  })
+
+  it('keeps role values out of the Department options', () => {
+    renderForm()
+    const combo = within(fieldOf('Department')).getByRole('combobox') as HTMLSelectElement
+    const values = Array.from(combo.options).map((o) => o.value)
+    expect(values).toContain('Mathematics')
+    expect(values).not.toContain('Principal')
+    expect(values).not.toContain('Admin')
+    expect(values).not.toContain('Vice Principal')
+  })
+
   it('auto-increments the teacher ID past the highest existing code for this school', async () => {
     vi.stubGlobal('fetch', vi.fn().mockImplementation((url: unknown) => {
       if (String(url).includes('/teachers')) {
@@ -128,5 +146,15 @@ describe('teacherToForm extras', () => {
     expect(f.fatherName).toBe('Ramesh Yadav')
     expect(f.pan).toBe('ABCDE1234F')
     expect(f.aadhaar).toBe('123412341234')
+  })
+
+  it('hydrates the access role from the teacher', () => {
+    const f = teacherToForm({
+      id: 't1', name: 'Amit Yadav', gender: 'M', dept: 'Music', desig: 'Teacher',
+      subjects: ['Music'], classTeacher: null, phone: '900', email: 'a@s.edu',
+      exp: 3, rating: 0, attendance: 0, result: 0, load: 0, status: 'active',
+      avatarHue: 1, top: false, role: 'Principal',
+    })
+    expect(f.role).toBe('Principal')
   })
 })
