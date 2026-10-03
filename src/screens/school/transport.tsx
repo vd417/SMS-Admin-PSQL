@@ -18,7 +18,7 @@ import {
 import { useStaff } from '@/api/hooks/useStaff'
 import { useTeachers } from '@/api/hooks/useTeachers'
 import { useLeadershipRoleByEmail } from '@/api/hooks/useUsers'
-import type { TransportRoute, RouteStop, TransportBus } from '@/api/operations'
+import type { TransportRoute, RouteStop, TransportBus, TravelingTeacher } from '@/api/operations'
 import type { Teacher } from '@/types'
 import { RouteBuilderMap } from '@/components/maps/RouteBuilderMap'
 import { staffCategoryLabel } from '@/lib/staffCategory'
@@ -512,7 +512,18 @@ function BusEditModal({
   const [conductorStaffId, setConductorStaffId] = useState('')
   const [dutyTeacherId, setDutyTeacherId] = useState('')
   const [travelingTeacherIds, setTravelingTeacherIds] = useState<string[]>([])
+  const [travelingTeacherStops, setTravelingTeacherStops] = useState<Record<string, string>>({})
   const [capacity, setCapacity] = useState('')
+  const travelingStopsQ = useRouteStops(routeId)
+  const travelingStopOptions = useMemo(
+    () => [
+      { value: '', label: '— No stop (started/ended only) —' },
+      ...[...(travelingStopsQ.data ?? [])]
+        .sort((a, b) => a.sequence - b.sequence)
+        .map((s) => ({ value: s.id, label: s.name })),
+    ],
+    [travelingStopsQ.data],
+  )
 
   useEffect(() => {
     if (!open) return
@@ -547,6 +558,11 @@ function BusEditModal({
     if (seededTravelingTeachersFor.current === key) return
     seededTravelingTeachersFor.current = key
     setTravelingTeacherIds((travelingTeachersQ.data ?? []).map((t) => t.teacherUserId))
+    setTravelingTeacherStops(
+      Object.fromEntries(
+        (travelingTeachersQ.data ?? []).filter((t) => t.stopId).map((t) => [t.teacherUserId, t.stopId as string]),
+      ),
+    )
   }, [open, bus?.busId, travelingTeachersQ.isSuccess, travelingTeachersQ.data])
 
   /** Bus Duty is its own PUT/DELETE endpoint, separate from the bus record itself —
@@ -558,16 +574,21 @@ function BusEditModal({
     else await unassignTeacher.mutateAsync({ busId })
   }
 
-  /** Traveling teachers are a many-to-many list — diff against what the bus already
-   *  has and apply only the additions/removals, mirroring saveDutyTeacher's pattern. */
-  async function saveTravelingTeachers(busId: string, before: string[]) {
-    const beforeSet = new Set(before)
+  /** Traveling teachers are a many-to-many list with an optional per-teacher stop — diff against
+   *  what the bus already has and PUT only the ones newly added or whose stop changed (the PUT is
+   *  an idempotent upsert), then DELETE the ones removed. */
+  async function saveTravelingTeachers(busId: string, before: TravelingTeacher[]) {
+    const beforeStopById = new Map(before.map((t) => [t.teacherUserId, t.stopId ?? '']))
     const afterSet = new Set(travelingTeacherIds)
     for (const id of travelingTeacherIds) {
-      if (!beforeSet.has(id)) await addTravelingTeacher.mutateAsync({ busId, teacherUserId: id })
+      const stopId = travelingTeacherStops[id] || null
+      const prevStop = beforeStopById.get(id)
+      if (prevStop === undefined || (prevStop || '') !== (stopId ?? '')) {
+        await addTravelingTeacher.mutateAsync({ busId, teacherUserId: id, stopId })
+      }
     }
-    for (const id of before) {
-      if (!afterSet.has(id)) await removeTravelingTeacher.mutateAsync({ busId, teacherUserId: id })
+    for (const t of before) {
+      if (!afterSet.has(t.teacherUserId)) await removeTravelingTeacher.mutateAsync({ busId, teacherUserId: t.teacherUserId })
     }
   }
 
@@ -598,7 +619,7 @@ function BusEditModal({
           clearCapacity: capNum == null,
         })
         await saveDutyTeacher(bus!.busId)
-        await saveTravelingTeachers(bus!.busId, (travelingTeachersQ.data ?? []).map((t) => t.teacherUserId))
+        await saveTravelingTeachers(bus!.busId, travelingTeachersQ.data ?? [])
         toast.success('Bus updated')
       } else {
         const created = await create.mutateAsync({
@@ -699,17 +720,31 @@ function BusEditModal({
           ) : teacherOpts.length === 0 ? (
             <div className="t-sm muted">No teachers with an active app login yet — they must accept their invite first</div>
           ) : (
-            <div className="col gap6" style={{ maxHeight: 160, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
-              {teacherOpts.map((t) => (
-                <label key={t.userId} className="row gap8" style={{ alignItems: 'center' }}>
-                  <input
-                    type="checkbox"
-                    checked={travelingTeacherIds.includes(t.userId)}
-                    onChange={() => toggleTravelingTeacher(t.userId)}
-                  />
-                  <span className="t-sm">{t.name} · {teacherRoleLabel(t)}</span>
-                </label>
-              ))}
+            <div className="col gap6" style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
+              {teacherOpts.map((t) => {
+                const checked = travelingTeacherIds.includes(t.userId)
+                return (
+                  <div key={t.userId} className="row gap8" style={{ alignItems: 'center' }}>
+                    <label className="row gap8" style={{ alignItems: 'center', flex: 1, minWidth: 0 }}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleTravelingTeacher(t.userId)}
+                      />
+                      <span className="t-sm">{t.name} · {teacherRoleLabel(t)}</span>
+                    </label>
+                    {checked && travelingStopOptions.length > 1 ? (
+                      <Select
+                        value={travelingTeacherStops[t.userId] ?? ''}
+                        onChange={(e) => setTravelingTeacherStops((m) => ({ ...m, [t.userId]: e.target.value }))}
+                        options={travelingStopOptions}
+                        style={{ maxWidth: 170 }}
+                        title="Stop for the ~1 km bus-approaching alert"
+                      />
+                    ) : null}
+                  </div>
+                )
+              })}
             </div>
           )}
         </Field>

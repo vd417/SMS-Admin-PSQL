@@ -167,7 +167,20 @@ describe('transport buses API', () => {
     const rows = await addTravelingTeacher('B1', 'T1')
     expect(String(fetchMock.mock.calls[0][0])).toMatch(/\/transport\/buses\/B1\/traveling-teachers\/T1$/)
     expect(fetchMock.mock.calls[0][1]?.method).toBe('PUT')
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ stop_id: null })
     expect(rows).toEqual([{ teacherUserId: 'T1', teacherName: 'Asha Rao' }])
+  })
+
+  it('PUTs a traveling teacher with a chosen stop and maps stop fields back', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      data: [{ teacher_user_id: 'T1', teacher_name: 'Asha Rao', stop_id: 'S9', stop_name: 'Gate A' }],
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const rows = await addTravelingTeacher('B1', 'T1', 'S9')
+    expect(fetchMock.mock.calls[0][1]?.method).toBe('PUT')
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ stop_id: 'S9' })
+    expect(rows[0].stopId).toBe('S9')
+    expect(rows[0].stopName).toBe('Gate A')
   })
 
   it('DELETEs to remove a traveling teacher', async () => {

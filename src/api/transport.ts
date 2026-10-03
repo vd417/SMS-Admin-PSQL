@@ -230,6 +230,9 @@ export async function unassignBusTeacher(busId: string): Promise<void> {
 export interface TravelingTeacher {
   teacherUserId: string
   teacherName: string | null
+  /** Optional boarding stop — when set, this teacher gets the "~1 km away" bus alert. */
+  stopId: string | null
+  stopName: string | null
 }
 
 /** Teachers granted live-tracking view access on this bus — a many-to-many list distinct
@@ -239,11 +242,18 @@ export async function listTravelingTeachers(busId: string): Promise<TravelingTea
   return asList<TravelingTeacher>(await request<Record<string, unknown>[]>(`/transport/buses/${busId}/traveling-teachers`))
 }
 
-export async function addTravelingTeacher(busId: string, teacherUserId: string): Promise<TravelingTeacher[]> {
+export async function addTravelingTeacher(
+  busId: string,
+  teacherUserId: string,
+  stopId?: string | null,
+): Promise<TravelingTeacher[]> {
   if (!busId) throw new Error('Bus ID required')
   if (!teacherUserId) throw new Error('Teacher is required')
   return asList<TravelingTeacher>(
-    await request<Record<string, unknown>[]>(`/transport/buses/${busId}/traveling-teachers/${teacherUserId}`, { method: 'PUT' }),
+    await request<Record<string, unknown>[]>(`/transport/buses/${busId}/traveling-teachers/${teacherUserId}`, {
+      method: 'PUT',
+      body: camelToSnake({ stopId: stopId ?? null }),
+    }),
   )
 }
 
