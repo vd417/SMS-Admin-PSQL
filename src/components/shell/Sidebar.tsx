@@ -2,6 +2,7 @@
    SchoolMate — Sidebar (console + role aware navigation)
    ============================================================ */
 import { useApp } from '@/lib/hooks'
+import catreLogo from '@/assets/catre-logo.jpeg'
 import { Icon, Btn, Tip, TierPill } from '@/components/ui'
 import { SchoolMark } from '@/components/SchoolMark'
 import { tierIncludes, gateRole, requiredTier } from '@/lib/gating'
@@ -73,7 +74,7 @@ export function Sidebar() {
   return (
     <aside className="sm-sidebar">
       <div className="sm-sidebar-head">
-        <span className="sm-sidebar-logo">S</span>
+        <img className="sm-sidebar-logo" src={catreLogo} alt="SchoolMate by Catre Technologies" />
         <div className="sm-sidebar-brand">SchoolMate<small>{isOwner ? 'Owner console' : 'School console'}</small></div>
       </div>
 

@@ -2,6 +2,7 @@
    SchoolMate — Login screen
    ============================================================ */
 import { useEffect, useState } from 'react'
+import catreLogo from '@/assets/catre-logo.jpeg'
 import { useApp, useToast } from '@/lib/hooks'
 import { DEMO_ACCOUNTS, type DemoAccount } from '@/context/AppProvider'
 import { Icon, Field, Input, Btn, Checkbox, Spinner } from '@/components/ui'
@@ -220,10 +221,10 @@ export function LoginScreen() {
     <div className="sm-login">
       <div className="sm-login-brand is-saas">
         <div className="sm-login-brand-logo">
-          <span className="sm-login-brand-initial">S</span>
+          <img className="sm-login-brand-mark" src={catreLogo} alt="SchoolMate by Catre Technologies" />
           <div className="sm-login-brand-text">
             <strong>SchoolMate</strong>
-            <small>Owner SaaS</small>
+            <small>by Catre Technologies</small>
           </div>
         </div>
         <div>
@@ -240,7 +241,7 @@ export function LoginScreen() {
           </div>
         </div>
         <div className="sm-login-foot">
-          © 2026 SchoolMate · Multi-tenant school SaaS for owners
+          © 2026 Catre Technologies · SchoolMate — Multi-tenant school SaaS for owners
         </div>
       </div>
 

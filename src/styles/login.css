@@ -22,8 +22,8 @@
   width: 64px; height: 64px; border-radius: 18px;
 }
 .sm-login-brand-mark {
-  width: 48px; height: 48px; border-radius: 14px; object-fit: cover; display: block;
-  flex: 0 0 auto; background: rgba(255,255,255,.12); box-shadow: 0 0 0 2px rgba(255,255,255,.22);
+  width: 64px; height: 64px; border-radius: 16px; object-fit: cover; object-position: center top; display: block;
+  flex: 0 0 auto; background: #fff; box-shadow: 0 0 0 2px rgba(255,255,255,.22);
 }
 .sm-login-brand-text { display: flex; flex-direction: column; gap: 2px; line-height: 1.15; }
 .sm-login-brand-text strong { font-weight: 800; font-size: 18px; }
