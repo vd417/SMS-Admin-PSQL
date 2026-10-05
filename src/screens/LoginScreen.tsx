@@ -240,7 +240,7 @@ export function LoginScreen() {
           </div>
         </div>
         <div className="sm-login-foot">
-          © 2026 SchoolMate · Multi-tenant school SaaS for owners
+          © 2026 SchoolMate by Catre Technology · Multi-tenant school SaaS for owners
         </div>
       </div>
 
