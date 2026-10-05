@@ -386,6 +386,15 @@ export function LoginScreen() {
               </div>
             </>
           )}
+          <footer className="sm-login-copyright">
+            <strong>© 2026 Catre Technology. All Rights Reserved.</strong>
+            <span>
+              This software, source code, design, graphics, logos, documentation, and related materials are the
+              exclusive property of Catre Technology. Unauthorized copying, reproduction, modification, distribution,
+              or use of any part of this project without prior written permission from Catre Technology is strictly
+              prohibited.
+            </span>
+          </footer>
         </div>
       </div>
     </div>
