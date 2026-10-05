@@ -78,14 +78,14 @@ export function Sidebar() {
       </div>
 
       {!isOwner && (
-        <div className="sm-school-brand-wrap">
-          <div className="sm-school-brand">
-            <SchoolMark school={app.school} size={54} />
-            <div className="sm-school-brand-name" title={app.school.name}>{app.school.name}</div>
-            <div className="sm-school-brand-sub">
-              {app.school.city && <span>{app.school.city}</span>}
-              <TierPill plan={app.plan} />
+        <div style={{ padding: '12px 12px 0' }}>
+          <div className="sm-school-switch" style={{ width: '100%' }}>
+            <SchoolMark school={app.school} size={34} />
+            <div className="flex1" style={{ minWidth: 0 }}>
+              <div className="fw6 t-sm" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{app.school.name}</div>
+              <div className="t-xs muted3">{app.school.city}</div>
             </div>
+            <TierPill plan={app.plan} />
           </div>
         </div>
       )}
