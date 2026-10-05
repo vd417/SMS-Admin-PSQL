@@ -73,7 +73,7 @@ export function Sidebar() {
   return (
     <aside className="sm-sidebar">
       <div className="sm-sidebar-head">
-        <span className="sm-sidebar-logo">S</span>
+        <img className="sm-sidebar-logo-img" src="/catre-emblem.png" alt="SchoolMate" />
         <div className="sm-sidebar-brand">SchoolMate<small>{isOwner ? 'Owner console' : 'School console'}</small></div>
       </div>
 

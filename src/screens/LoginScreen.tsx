@@ -220,7 +220,7 @@ export function LoginScreen() {
     <div className="sm-login">
       <div className="sm-login-brand is-saas">
         <div className="sm-login-brand-logo">
-          <span className="sm-login-brand-initial">S</span>
+          <img className="sm-login-brand-initial sm-login-brand-img" src="/catre-emblem.png" alt="SchoolMate" />
           <div className="sm-login-brand-text">
             <strong>SchoolMate</strong>
             <small>Owner SaaS</small>
@@ -240,7 +240,7 @@ export function LoginScreen() {
           </div>
         </div>
         <div className="sm-login-foot">
-          © 2026 SchoolMate · Multi-tenant school SaaS for owners
+          © 2026 SchoolMate by Catre Technology · Multi-tenant school SaaS for owners
         </div>
       </div>
 
@@ -386,6 +386,15 @@ export function LoginScreen() {
               </div>
             </>
           )}
+          <footer className="sm-login-copyright">
+            <strong>© 2026 Catre Technology. All Rights Reserved.</strong>
+            <span>
+              This software, source code, design, graphics, logos, documentation, and related materials are the
+              exclusive property of Catre Technology. Unauthorized copying, reproduction, modification, distribution,
+              or use of any part of this project without prior written permission from Catre Technology is strictly
+              prohibited.
+            </span>
+          </footer>
         </div>
       </div>
     </div>
