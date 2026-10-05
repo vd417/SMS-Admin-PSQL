@@ -220,7 +220,7 @@ export function LoginScreen() {
     <div className="sm-login">
       <div className="sm-login-brand is-saas">
         <div className="sm-login-brand-logo">
-          <span className="sm-login-brand-initial">S</span>
+          <img className="sm-login-brand-initial sm-login-brand-img" src="/catre-emblem.png" alt="SchoolMate" />
           <div className="sm-login-brand-text">
             <strong>SchoolMate</strong>
             <small>Owner SaaS</small>
