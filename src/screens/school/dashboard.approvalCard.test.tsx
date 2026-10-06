@@ -43,5 +43,17 @@ describe('ApprovalCard student row', () => {
     render(<ApprovalCard a={staff} currency="INR" showActions={false}
       onApprove={noop} onReject={noop} canOpenStudent onOpenStudent={noop} />)
     expect(screen.queryByText(/Roll/)).toBeNull()
+    expect(screen.queryByText(/For student/)).toBeNull()
+  })
+
+  it('renders a clickable fallback label for a partial student', async () => {
+    const onOpenStudent = vi.fn()
+    const partial: Approval = { ...base, student: { id: 'stu-9' } }
+    render(<ApprovalCard a={partial} currency="INR" showActions={false}
+      onApprove={noop} onReject={noop} canOpenStudent onOpenStudent={onOpenStudent} />)
+    const btn = screen.getByRole('button', { name: /Student/ })
+    expect(btn).toBeInTheDocument()
+    await userEvent.click(btn)
+    expect(onOpenStudent).toHaveBeenCalledWith('stu-9')
   })
 })

@@ -135,6 +135,7 @@ export function mapWireToApproval(raw: Record<string, unknown>): Approval {
   const range = from && to ? `${from} – ${to}` : from || to
   const detailParts = [reason, range, substitute ? `Substitute: ${substitute}` : ''].filter(Boolean)
 
+  const student = buildStudent(a)
   return {
     id: String(a.id),
     type: 'Leave Request',
@@ -148,7 +149,7 @@ export function mapWireToApproval(raw: Record<string, unknown>): Approval {
     priority,
     forRoles: forRoles.length > 0 ? forRoles : LEAVE_FOR_ROLES,
     ...extras,
-    ...(buildStudent(a) ? { student: buildStudent(a) } : {}),
+    ...(student ? { student } : {}),
   }
 }
 
