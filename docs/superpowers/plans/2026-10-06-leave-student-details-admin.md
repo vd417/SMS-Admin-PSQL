@@ -180,15 +180,17 @@ git commit -m "feat(approvals): map student details onto student leave rows"
 
 ---
 
-### Task 3: Widen leave visibility — admin sees all leave, teacher sees student leave
+### Task 3: Widen leave visibility — admin sees all leave
+
+> **Scope note (Phase 2 deferred):** the teacher-sees-student-leave rule is **not** implemented here — the backend keeps `GET /v1/approvals` principal/admin/owner-only until `sms-api` Phase 2 ships, and teachers use the teacher app, not this admin console, so a teacher rule would be inert. When Phase 2 lands, re-add it (the parked diff is recorded at the end of this task).
 
 **Files:**
-- Modify: `src/api/approvals.ts:9` (`LEAVE_FOR_ROLES`), `src/api/approvals.ts:131` (leave branch), `src/api/approvals.ts:137-140` (`approvalsForRole`)
+- Modify: `src/api/approvals.ts:9` (`LEAVE_FOR_ROLES`)
 - Test: `src/api/approvals.test.ts`
 
 **Interfaces:**
-- Consumes: `Approval.student` (Task 1), `approvalsForRole(list, role)` (existing).
-- Produces: `approvalsForRole` behavior — `admin` sees every leave; `teacher` sees leave rows where `student` is set; `owner` still sees all; `principal`/`vice_principal` unchanged.
+- Consumes: `approvalsForRole(list, role)` (existing).
+- Produces: `approvalsForRole` behavior — `admin` sees every leave; `owner` still sees all; `principal`/`vice_principal` unchanged.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -212,9 +214,6 @@ describe('leave visibility', () => {
   it('owner still sees everything', () => {
     expect(approvalsForRole(all, 'owner')).toHaveLength(2)
   })
-  it('teacher sees student leave only, not staff leave', () => {
-    expect(approvalsForRole(all, 'teacher').map((a) => a.id)).toEqual(['SL'])
-  })
   it('principal still sees both (manager tier)', () => {
     expect(approvalsForRole(all, 'principal').map((a) => a.id)).toEqual(['SL', 'TL'])
   })
@@ -224,9 +223,9 @@ describe('leave visibility', () => {
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `npm run test -- src/api/approvals.test.ts`
-Expected: FAIL (admin/teacher get `[]` because `LEAVE_FOR_ROLES` excludes them).
+Expected: FAIL (admin gets `[]` because `LEAVE_FOR_ROLES` excludes admin).
 
-- [ ] **Step 3: Implement — add admin to the default, teacher to student leaves, and the teacher rule**
+- [ ] **Step 3: Implement — add admin to the leave default**
 
 In `src/api/approvals.ts`, change line 9:
 
@@ -234,20 +233,12 @@ In `src/api/approvals.ts`, change line 9:
 const LEAVE_FOR_ROLES: Role[] = ['admin', 'principal', 'vice_principal']
 ```
 
-In the leave-request return object, replace the `forRoles` line so a **student** leave also admits `teacher`:
-
-```ts
-    forRoles: forRoles.length > 0
-      ? forRoles
-      : (buildStudent(a) ? [...LEAVE_FOR_ROLES, 'teacher'] : LEAVE_FOR_ROLES),
-```
-
-> `approvalsForRole` already filters by membership in `forRoles`, so no change is needed there — `teacher` is admitted only on rows where `buildStudent(a)` is truthy (student leaves). Keep `approvalsForRole` as-is; the owner super-role branch (`:138`) stays.
+> No change to the leave branch's `forRoles` line or to `approvalsForRole` — owner super-role branch (`:138`) stays.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `npm run test -- src/api/approvals.test.ts`
-Expected: PASS. Also re-run the pre-existing `mapWireToApproval` test that asserts `forRoles: ['principal','vice_principal']` for a **staff** leave — it must still pass (that row has no student, so the default is unchanged except for the added `admin`).
+Expected: PASS.
 
 > NOTE: the pre-existing test at `approvals.test.ts:48` asserts `forRoles: ['principal', 'vice_principal']` via `toMatchObject` on a **staff** leave. Because `LEAVE_FOR_ROLES` now starts with `admin`, update that expectation to `['admin', 'principal', 'vice_principal']` in the same step.
 
@@ -255,8 +246,10 @@ Expected: PASS. Also re-run the pre-existing `mapWireToApproval` test that asser
 
 ```bash
 git add src/api/approvals.ts src/api/approvals.test.ts
-git commit -m "feat(approvals): admin sees all leave; teacher sees student leave"
+git commit -m "feat(approvals): admin sees all leave in the inbox"
 ```
+
+**Parked for Phase 2 (do not implement now):** when `sms-api` opens approvals to class-teachers, re-add teacher visibility for student leaves by changing the leave branch `forRoles` to `buildStudent(a) ? [...LEAVE_FOR_ROLES, 'teacher'] : LEAVE_FOR_ROLES` and restoring the `teacher sees student leave only` test.
 
 ---
 
