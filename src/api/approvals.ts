@@ -147,7 +147,7 @@ export function mapWireToApproval(raw: Record<string, unknown>): Approval {
     role: String(a.requesterRole ?? ''),
     amount: null,
     priority,
-    forRoles: forRoles.length > 0 ? forRoles : LEAVE_FOR_ROLES,
+    forRoles: forRoles.length > 0 ? forRoles : student ? [...LEAVE_FOR_ROLES, 'teacher'] : LEAVE_FOR_ROLES,
     ...extras,
     ...(student ? { student } : {}),
   }

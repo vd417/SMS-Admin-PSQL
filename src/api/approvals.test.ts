@@ -134,6 +134,9 @@ describe('leave visibility', () => {
   it('principal still sees both (manager tier)', () => {
     expect(approvalsForRole(all, 'principal').map((a) => a.id)).toEqual(['SL', 'TL'])
   })
+  it('teacher sees student leave but not staff leave', () => {
+    expect(approvalsForRole(all, 'teacher').map((a) => a.id)).toEqual(['SL'])
+  })
 })
 
 describe('inboxApprovals', () => {
