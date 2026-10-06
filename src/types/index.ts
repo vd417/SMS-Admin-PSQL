@@ -455,6 +455,16 @@ export interface Approval {
   decidedBy?: string | null
   appliedOn?: string | null
   attachmentUrls?: string[]
+  /** Present only on a student leave (parent/student submitted). Resolved from the
+   *  leave's ChildId → Student on the backend. Absent for teacher/staff self-leave. */
+  student?: {
+    id?: string
+    name?: string
+    cls?: string
+    section?: string
+    roll?: number
+    adm?: string
+  }
 }
 
 export interface AppNotification {
