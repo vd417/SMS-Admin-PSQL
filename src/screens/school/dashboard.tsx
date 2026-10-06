@@ -3,6 +3,8 @@
    ============================================================ */
 import { useEffect, useMemo, useState, type ComponentType, type CSSProperties } from 'react'
 import { useApp, useToast } from '@/lib/hooks'
+import { can } from '@/lib/gating'
+import { formatStudentRoll } from '@/lib/studentRoll'
 import {
   Card, CardHead, Kpi, PageHead, Badge, Btn, Icon, Avatar,
   Donut, Bars, LineChart, Legend, Empty, Modal, Field, Textarea, Segmented,
@@ -627,18 +629,22 @@ const TAB_META: Record<ApprovalFilter, { sub: string; emptyTitle: string; emptyB
   },
 }
 
-function ApprovalCard({
+export function ApprovalCard({
   a,
   currency,
   showActions,
   onApprove,
   onReject,
+  canOpenStudent = false,
+  onOpenStudent,
 }: {
   a: Approval
   currency: string
   showActions: boolean
   onApprove: (a: Approval) => void
   onReject: (a: Approval) => void
+  canOpenStudent?: boolean
+  onOpenStudent?: (studentId: string) => void
 }) {
   return (
     <Card>
@@ -658,6 +664,29 @@ function ApprovalCard({
 
       <div className="sm-card-title" style={{ marginTop: 12 }}>{a.title}</div>
       <div className="t-sm muted" style={{ marginTop: 4 }}>{a.detail}</div>
+
+      {a.student && (() => {
+        const s = a.student
+        const parts = [
+          s.cls ? `Class ${s.cls}${s.section ? `-${s.section}` : ''}` : (s.section ? `Section ${s.section}` : ''),
+          s.roll != null ? `Roll ${formatStudentRoll(s.roll)}` : '',
+          s.adm ? `Adm ${s.adm}` : '',
+        ].filter(Boolean)
+        const label = `${s.name ?? 'Student'}${parts.length ? ' · ' + parts.join(' · ') : ''}`
+        const clickable = canOpenStudent && !!s.id && !!onOpenStudent
+        return (
+          <div className="t-sm" style={{ marginTop: 8 }}>
+            <span className="muted3">For student: </span>
+            {clickable ? (
+              <button type="button" className="sm-gate-link" onClick={() => onOpenStudent!(s.id!)}>
+                {label}
+              </button>
+            ) : (
+              <span className="fw6">{label}</span>
+            )}
+          </div>
+        )
+      })()}
 
       {a.attachmentUrls && a.attachmentUrls.length > 0 && (
         <div className="row gap8 wrap" style={{ marginTop: 10 }}>
@@ -839,6 +868,8 @@ function ApprovalsInbox() {
               showActions={showActions}
               onApprove={approve}
               onReject={openReject}
+              canOpenStudent={can(app.role, 'sis', 'V')}
+              onOpenStudent={(id) => app.go('school.student', { focus: id })}
             />
           ))}
         </div>
