@@ -45,7 +45,7 @@ describe('mapWireToApproval', () => {
       requester: 'Rajesh Kumar',
       priority: 'high',
       status: 'pending',
-      forRoles: ['principal', 'vice_principal'],
+      forRoles: ['admin', 'principal', 'vice_principal'],
     })
     expect(row.detail).toContain('Personal work')
     expect(approvalsForRole([row], 'principal')).toHaveLength(1)
@@ -79,6 +79,60 @@ describe('mapWireToApproval', () => {
       applied_on: '2026-05-18T10:00:00Z',
     })
     expect(row.decidedBy).toBe('Priya Principal')
+  })
+
+  it('populates student details on a parent/student leave row', () => {
+    const row = mapWireToApproval({
+      id: 'L1', type: 'sick', status: 'pending',
+      requester_name: 'Asha (parent)', requester_role: 'parent',
+      applied_on: '2026-10-01T10:00:00Z',
+      child_id: 'stu-123', student_name: 'Rahul Sharma',
+      student_class: 'Grade 5', student_section: 'A', student_roll: 12,
+      admission_no: 'ADM-2024-012',
+    })
+    expect(row.student).toEqual({
+      id: 'stu-123', name: 'Rahul Sharma', cls: 'Grade 5',
+      section: 'A', roll: 12, adm: 'ADM-2024-012',
+    })
+  })
+
+  it('leaves student undefined for a staff self-leave row', () => {
+    const row = mapWireToApproval({
+      id: 'L2', type: 'casual', status: 'pending',
+      requester_name: 'Rajesh Kumar', applied_on: '2026-10-01T10:00:00Z',
+    })
+    expect(row.student).toBeUndefined()
+  })
+
+  it('includes only the student fields that are present (deleted/partial student)', () => {
+    const row = mapWireToApproval({
+      id: 'L3', type: 'sick', status: 'pending',
+      requester_name: 'Asha (parent)', applied_on: '2026-10-01T10:00:00Z',
+      child_id: 'stu-999',
+    })
+    expect(row.student).toEqual({ id: 'stu-999' })
+  })
+})
+
+describe('leave visibility', () => {
+  const studentLeave = mapWireToApproval({
+    id: 'SL', type: 'sick', status: 'pending', requester_name: 'Asha (parent)',
+    applied_on: '2026-10-01T10:00:00Z', child_id: 'stu-1', student_name: 'Rahul',
+  })
+  const staffLeave = mapWireToApproval({
+    id: 'TL', type: 'casual', status: 'pending', requester_name: 'Rajesh',
+    applied_on: '2026-10-01T10:00:00Z',
+  })
+  const all = [studentLeave, staffLeave]
+
+  it('admin sees both student and staff leave', () => {
+    expect(approvalsForRole(all, 'admin').map((a) => a.id)).toEqual(['SL', 'TL'])
+  })
+  it('owner still sees everything', () => {
+    expect(approvalsForRole(all, 'owner')).toHaveLength(2)
+  })
+  it('principal still sees both (manager tier)', () => {
+    expect(approvalsForRole(all, 'principal').map((a) => a.id)).toEqual(['SL', 'TL'])
   })
 })
 

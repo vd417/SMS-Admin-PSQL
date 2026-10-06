@@ -6,7 +6,7 @@ export type ApprovalFilter = ApprovalStatus | 'all'
 
 interface ListEnvelope { data: Record<string, unknown>[]; next_cursor: string | null }
 
-const LEAVE_FOR_ROLES: Role[] = ['principal', 'vice_principal']
+const LEAVE_FOR_ROLES: Role[] = ['admin', 'principal', 'vice_principal']
 const PRIORITIES = new Set<Approval['priority']>(['high', 'medium', 'low'])
 
 function relAge(iso: unknown): string {
@@ -82,6 +82,24 @@ function approvalExtras(a: Record<string, unknown>) {
   }
 }
 
+function buildStudent(a: Record<string, unknown>): Approval['student'] | undefined {
+  const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined)
+  const id = str(a.childId)
+  const name = str(a.studentName)
+  const cls = str(a.studentClass)
+  const section = str(a.studentSection)
+  const adm = str(a.admissionNo)
+  const roll = typeof a.studentRoll === 'number' ? a.studentRoll : undefined
+  const s: NonNullable<Approval['student']> = {}
+  if (id) s.id = id
+  if (name) s.name = name
+  if (cls) s.cls = cls
+  if (section) s.section = section
+  if (roll != null) s.roll = roll
+  if (adm) s.adm = adm
+  return Object.keys(s).length > 0 ? s : undefined
+}
+
 /** Map a wire row from GET /v1/approvals to the inbox Approval model. */
 export function mapWireToApproval(raw: Record<string, unknown>): Approval {
   const a = snakeToCamel<Record<string, unknown>>(raw)
@@ -117,6 +135,7 @@ export function mapWireToApproval(raw: Record<string, unknown>): Approval {
   const range = from && to ? `${from} – ${to}` : from || to
   const detailParts = [reason, range, substitute ? `Substitute: ${substitute}` : ''].filter(Boolean)
 
+  const student = buildStudent(a)
   return {
     id: String(a.id),
     type: 'Leave Request',
@@ -130,6 +149,7 @@ export function mapWireToApproval(raw: Record<string, unknown>): Approval {
     priority,
     forRoles: forRoles.length > 0 ? forRoles : LEAVE_FOR_ROLES,
     ...extras,
+    ...(student ? { student } : {}),
   }
 }
 
