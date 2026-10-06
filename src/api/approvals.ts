@@ -6,7 +6,7 @@ export type ApprovalFilter = ApprovalStatus | 'all'
 
 interface ListEnvelope { data: Record<string, unknown>[]; next_cursor: string | null }
 
-const LEAVE_FOR_ROLES: Role[] = ['principal', 'vice_principal']
+const LEAVE_FOR_ROLES: Role[] = ['admin', 'principal', 'vice_principal']
 const PRIORITIES = new Set<Approval['priority']>(['high', 'medium', 'low'])
 
 function relAge(iso: unknown): string {

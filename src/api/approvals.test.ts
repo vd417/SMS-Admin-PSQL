@@ -45,7 +45,7 @@ describe('mapWireToApproval', () => {
       requester: 'Rajesh Kumar',
       priority: 'high',
       status: 'pending',
-      forRoles: ['principal', 'vice_principal'],
+      forRoles: ['admin', 'principal', 'vice_principal'],
     })
     expect(row.detail).toContain('Personal work')
     expect(approvalsForRole([row], 'principal')).toHaveLength(1)
@@ -111,6 +111,28 @@ describe('mapWireToApproval', () => {
       child_id: 'stu-999',
     })
     expect(row.student).toEqual({ id: 'stu-999' })
+  })
+})
+
+describe('leave visibility', () => {
+  const studentLeave = mapWireToApproval({
+    id: 'SL', type: 'sick', status: 'pending', requester_name: 'Asha (parent)',
+    applied_on: '2026-10-01T10:00:00Z', child_id: 'stu-1', student_name: 'Rahul',
+  })
+  const staffLeave = mapWireToApproval({
+    id: 'TL', type: 'casual', status: 'pending', requester_name: 'Rajesh',
+    applied_on: '2026-10-01T10:00:00Z',
+  })
+  const all = [studentLeave, staffLeave]
+
+  it('admin sees both student and staff leave', () => {
+    expect(approvalsForRole(all, 'admin').map((a) => a.id)).toEqual(['SL', 'TL'])
+  })
+  it('owner still sees everything', () => {
+    expect(approvalsForRole(all, 'owner')).toHaveLength(2)
+  })
+  it('principal still sees both (manager tier)', () => {
+    expect(approvalsForRole(all, 'principal').map((a) => a.id)).toEqual(['SL', 'TL'])
   })
 })
 
