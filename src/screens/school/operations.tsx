@@ -26,6 +26,7 @@ import type { Issue, IssueCategory, IssuePriority, IssueStatus } from '@/api/iss
 import { useTasks } from '@/api/hooks/useTasks'
 import { TaskManagementTab } from './taskManagement'
 import { useThreads, useThreadMessages, useCreateThread, useSendMessage } from '@/api/hooks/useThreads'
+import { ApiError } from '@/api/ApiError'
 import { useMergedClassNames } from '@/api/hooks/useClasses'
 import { useAnnouncements, useCreateAnnouncement } from '@/api/hooks/useAnnouncements'
 import { useStudents } from '@/api/hooks/useStudents'
@@ -345,6 +346,16 @@ function MessengerTab() {
     )
   }
 
+  // A blocked (banned-word) message comes back as ApiError code "inappropriate_content" with the
+  // school-chat notice as its message — surface that verbatim instead of a generic "not sent".
+  const notifyChatError = (err: unknown, fallbackTitle: string) => {
+    if (err instanceof ApiError && err.code === 'inappropriate_content') {
+      toast.danger('Message blocked', err.message)
+      return
+    }
+    toast.danger(fallbackTitle, err instanceof Error ? err.message : 'Please try again.')
+  }
+
   const send = async () => {
     if (!thread) return
     const t = text.trim()
@@ -368,7 +379,7 @@ function MessengerTab() {
           await sendMessageMut.mutateAsync({ threadId: target.id, text: caption, imageUrl: dataUrl })
           caption = '' // the typed message is a caption for the first image only
         } catch (err) {
-          toast.danger('Image not sent', err instanceof Error ? err.message : `Could not send ${a.name}.`)
+          notifyChatError(err, 'Image not sent')
         }
       }
       return
@@ -381,7 +392,7 @@ function MessengerTab() {
       {
         onError: (err) => {
           setText(t)
-          toast.danger('Message not sent', err instanceof Error ? err.message : 'Please try again.')
+          notifyChatError(err, 'Message not sent')
         },
       },
     )
