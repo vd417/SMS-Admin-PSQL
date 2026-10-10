@@ -89,6 +89,8 @@ export function CampusGeofenceSettings({
 
   const [editing, setEditing] = useState(false)
   const [confirmReset, setConfirmReset] = useState(false)
+  const [confirmSave, setConfirmSave] = useState(false)
+  const [pendingCoords, setPendingCoords] = useState<{ lat: number; lng: number } | null>(null)
   const [lat, setLat] = useState('')
   const [lng, setLng] = useState('')
   const [radius, setRadius] = useState('250')
@@ -144,6 +146,33 @@ export function CampusGeofenceSettings({
     return pos
   }
 
+  // Changing an existing fence moves the zone every staff/teacher check-in verifies
+  // against, so a save over a configured fence is confirmed first. First-time setup
+  // (no fence yet) saves in one step — there's nothing to overwrite.
+  const requestSave = (coords?: { lat: number; lng: number }) => {
+    const latN = coords?.lat ?? Number(lat)
+    const lngN = coords?.lng ?? Number(lng)
+    const radiusN = Number(radius)
+    const err = validateGeofenceInput(latN, lngN, radiusN)
+    if (err) {
+      toast.danger('Invalid fence', err)
+      return
+    }
+    if (configured) {
+      setPendingCoords({ lat: latN, lng: lngN })
+      setConfirmSave(true)
+      return
+    }
+    void save(coords)
+  }
+
+  const confirmSaveNow = async () => {
+    const coords = pendingCoords
+    setConfirmSave(false)
+    setPendingCoords(null)
+    await save(coords ?? undefined)
+  }
+
   const save = async (coords?: { lat: number; lng: number }) => {
     const latN = coords?.lat ?? Number(lat)
     const lngN = coords?.lng ?? Number(lng)
@@ -173,7 +202,7 @@ export function CampusGeofenceSettings({
     if (!pos) return
     setLat(String(pos.lat.toFixed(6)))
     setLng(String(pos.lng.toFixed(6)))
-    await save({ lat: pos.lat, lng: pos.lng })
+    requestSave({ lat: pos.lat, lng: pos.lng })
   }
 
   const runTest = async () => {
@@ -249,20 +278,30 @@ export function CampusGeofenceSettings({
               <Input value={lng} onChange={(e) => setLng(e.target.value)} placeholder="77.594600" />
             </Field>
           </div>
-          <div className="row ai-center gap8 wrap">
-            <Btn variant="primary" icon="pin" disabled={locating || saveMut.isPending} onClick={() => { void setFenceFromDevice() }}>
-              {locating ? 'Getting GPS…' : saveMut.isPending ? 'Saving…' : 'Set school location (GPS)'}
-            </Btn>
-            <Btn variant="secondary" icon="pin" disabled={locating} onClick={() => { void useDeviceLocation() }}>
-              Capture GPS only
-            </Btn>
-            <Btn variant="secondary" icon="check" disabled={saveMut.isPending} onClick={() => { void save() }}>
-              Save coordinates
-            </Btn>
-            {configured && (
-              <Btn variant="ghost" onClick={() => setEditing(false)}>Cancel</Btn>
-            )}
-          </div>
+          {confirmSave ? (
+            <div className="row ai-center gap8 wrap">
+              <span className="t-sm muted">Update campus fence? Teacher &amp; staff app check-ins will verify against the new zone.</span>
+              <Btn variant="primary" size="sm" icon="check" disabled={saveMut.isPending} onClick={() => { void confirmSaveNow() }}>
+                {saveMut.isPending ? 'Saving…' : 'Confirm change'}
+              </Btn>
+              <Btn variant="ghost" size="sm" disabled={saveMut.isPending} onClick={() => { setConfirmSave(false); setPendingCoords(null) }}>Cancel</Btn>
+            </div>
+          ) : (
+            <div className="row ai-center gap8 wrap">
+              <Btn variant="primary" icon="pin" disabled={locating || saveMut.isPending} onClick={() => { void setFenceFromDevice() }}>
+                {locating ? 'Getting GPS…' : saveMut.isPending ? 'Saving…' : 'Set school location (GPS)'}
+              </Btn>
+              <Btn variant="secondary" icon="pin" disabled={locating} onClick={() => { void useDeviceLocation() }}>
+                Capture GPS only
+              </Btn>
+              <Btn variant="secondary" icon="check" disabled={saveMut.isPending} onClick={() => requestSave()}>
+                Save coordinates
+              </Btn>
+              {configured && (
+                <Btn variant="ghost" onClick={() => setEditing(false)}>Cancel</Btn>
+              )}
+            </div>
+          )}
         </div>
       )}
 
