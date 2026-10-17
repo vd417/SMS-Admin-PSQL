@@ -24,12 +24,13 @@ export interface DataTableProps<T> {
   onBulk?: (selected: T[]) => void
   bulkActions?: (selected: T[], clear: () => void) => ReactNode
   onRowClick?: (row: T) => void
+  onRowDoubleClick?: (row: T) => void
   empty?: ReactNode
 }
 
 export function DataTable<T>({
   columns, rows, pageSize = 10, initialSort, rowKey = (_r, i) => i,
-  bulk, bulkActions, onRowClick, empty,
+  bulk, bulkActions, onRowClick, onRowDoubleClick, empty,
 }: DataTableProps<T>) {
   const [sort, setSort] = useState(initialSort)
   const [page, setPage] = useState(0)
@@ -108,7 +109,12 @@ export function DataTable<T>({
           ) : pageRows.map((row, i) => {
             const k = keyOf(row, i)
             return (
-              <tr key={k} onClick={onRowClick ? () => onRowClick(row) : undefined} style={onRowClick ? { cursor: 'pointer' } : undefined}>
+              <tr
+                key={k}
+                onClick={onRowClick ? () => onRowClick(row) : undefined}
+                onDoubleClick={onRowDoubleClick ? () => onRowDoubleClick(row) : undefined}
+                style={(onRowClick || onRowDoubleClick) ? { cursor: 'pointer' } : undefined}
+              >
                 {bulk && (
                   <td onClick={(e) => e.stopPropagation()}>
                     <Checkbox checked={sel.has(k)} onChange={(c) => { const next = new Set(sel); if (c) next.add(k); else next.delete(k); setSel(next) }} />

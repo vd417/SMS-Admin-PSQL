@@ -154,6 +154,8 @@ export interface School {
   /** Human-readable school id (tenant slug), set when the school is created. */
   slug?: string
   city: string
+  /** Street address from the client/profile record; undefined/null when unknown. */
+  address?: string | null
   plan: Tier
   /** Billed student count (the committed/seat count invoices charge on). */
   students: number

@@ -24,6 +24,7 @@ export function clientToSchool(c: Client, i = 0): School {
     /** Human school id (tenant slug) set at create. */
     slug: c.slug,
     city: c.country ?? c.address ?? '—',
+    address: c.address ?? null,
     plan: asTier(c.tier),
     students: c.students_count ?? 0,
     enrolled: c.enrolled_students ?? undefined,

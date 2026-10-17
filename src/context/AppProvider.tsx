@@ -381,29 +381,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const enterSchool = async (id: string, profile?: School): Promise<boolean> => {
     let mapped: Record<string, School> = { ...liveSchools }
 
-    if (profile && isTenantGuid(id) && profile.id === id) {
-      rememberSchools([profile])
-      mapped[id] = profile
+    const haveProfile = !!(profile && isTenantGuid(id) && profile.id === id)
+    if (haveProfile) {
+      rememberSchools([profile!])
+      mapped[id] = profile!
     }
 
-    /* Always refresh portfolio so logo/cover photos land on the school dashboard. */
+    /* Refresh portfolio so logo/cover photos land on the school dashboard. When the caller
+       already handed us this school's profile we have everything needed to enter, so we do
+       this refresh in the background (don't block opening on it) and let logos/covers update
+       a moment later. Only block when we have no profile and must fetch to validate access. */
     if (isTenantGuid(id) && !isPlatform) {
-      try {
-        const res = await listMySchools()
-        const list = (res.data ?? []).map(clientToSchool)
-        rememberSchools(list)
-        mapped = { ...mapped, ...Object.fromEntries(list.map((s) => [s.id, s])) }
-        if (profile?.id === id) {
-          mapped[id] = {
-            ...mapped[id],
-            ...profile,
-            logoUrl: mapped[id]?.logoUrl || profile.logoUrl || null,
-            imageUrl: mapped[id]?.imageUrl || profile.imageUrl || null,
-          }
-          rememberSchools([mapped[id]])
+      if (haveProfile) {
+        void listMySchools()
+          .then((res) => { rememberSchools((res.data ?? []).map(clientToSchool)) })
+          .catch(() => {})
+      } else {
+        try {
+          const res = await listMySchools()
+          const list = (res.data ?? []).map(clientToSchool)
+          rememberSchools(list)
+          mapped = { ...mapped, ...Object.fromEntries(list.map((s) => [s.id, s])) }
+        } catch {
+          if (!mapped[id]) return false
         }
-      } catch {
-        if (!mapped[id]) return false
       }
     }
 

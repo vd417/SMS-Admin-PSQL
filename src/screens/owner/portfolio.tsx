@@ -5,8 +5,9 @@
 import { useMemo, useState, useEffect, type ComponentType } from 'react'
 import { useApp, useToast } from '@/lib/hooks'
 import {
-  PageHead, Card, CardHead, Kpi, Btn, Badge, TierPill, Search, Select, Segmented,
+  PageHead, Card, CardHead, Kpi, Btn, IconBtn, Badge, TierPill, Search, Select, Segmented,
   Field, Input, FileUpload, Modal, Icon, Empty, Donut, HBars, Legend, DataTable, Spinner,
+  Popover, MenuItem, MenuSep,
   type Column, type BadgeTone,
 } from '@/components/ui'
 import { SchoolCover, SchoolMark } from '@/components/SchoolMark'
@@ -312,6 +313,27 @@ function OwnerSchools() {
     setDeleteConfirmText('')
   }
 
+  /** Open (enter) a school — shared by the Open button and the clickable row. */
+  const openSchool = (s: School) => {
+    if (opening) return
+    setOpening(s.id)
+    void app.enterSchool(s.id, s).then((ok) => {
+      if (!ok) toast.info('School not active', `${s.name} opens only after Catre approves payment and activates the school.`)
+    }).finally(() => setOpening(null))
+  }
+
+  /** Begin the 2-step delete flow — only empty schools can be deleted. */
+  const startDelete = (s: School) => {
+    const empty = (s.students ?? 0) === 0 && (s.staff ?? 0) === 0
+    if (!empty) {
+      toast.info('School not empty', `${s.name} has ${fmtNum(s.students)} student(s) and ${fmtNum(s.staff)} staff.`)
+      return
+    }
+    setDeleteStep(1)
+    setDeleteConfirmText('')
+    setPendingDelete(s)
+  }
+
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase()
     return schoolsList.filter((s) => {
@@ -332,17 +354,33 @@ function OwnerSchools() {
       render: (s) => (
         <div className="row ai-center gap12">
           <SchoolMark school={s} size={36} />
-          <div>
-            <div className="t-md fw6">{s.name}</div>
-            <div className="t-xs muted3">
-              {s.slug ? `${s.slug} · ` : ''}{s.city} · {s.tz}
-            </div>
-          </div>
+          <div className="t-md fw6">{s.name}</div>
         </div>
       ),
     },
+    {
+      key: 'address', label: 'Address',
+      sortValue: (s) => (s.address?.trim() || (s.city !== '—' ? s.city : '') || ''),
+      render: (s) => {
+        const loc = s.address?.trim() || (s.city !== '—' ? s.city : '')
+        return loc
+          ? (
+            <div className="row ai-center gap6 t-sm" style={{ maxWidth: 240 }} title={loc}>
+              <Icon name="pin" size={13} />
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{loc}</span>
+            </div>
+          )
+          : <span className="t-sm muted3">—</span>
+      },
+    },
     { key: 'plan', label: 'Plan', sortValue: (s) => s.plan, render: (s) => <TierPill plan={s.plan} /> },
-    { key: 'students', label: 'Students', align: 'right', sortValue: (s) => s.students, render: (s) => fmtNum(s.students) },
+    {
+      // Live SIS enrolment, not the purchased/billed seat count — matches the "Total students"
+      // KPI (falls back to the billed count when live enrolment is unknown).
+      key: 'students', label: 'Students', align: 'right',
+      sortValue: (s) => s.enrolled ?? s.students,
+      render: (s) => fmtNum(s.enrolled ?? s.students),
+    },
     { key: 'staff', label: 'Staff', align: 'right', sortValue: (s) => s.staff, render: (s) => fmtNum(s.staff) },
     {
       key: 'collected', label: 'Collected', align: 'right',
@@ -368,46 +406,27 @@ function OwnerSchools() {
     { key: 'status', label: 'Status', sortValue: (s) => s.status, render: (s) => <Badge tone={STATUS_TONE[s.status]}>{STATUS_LABEL[s.status]}</Badge> },
     {
       key: 'actions', label: 'Actions', align: 'center',
-      render: (s) => {
-        const empty = (s.students ?? 0) === 0 && (s.staff ?? 0) === 0
-        return (
-          <div className="row gap6 jc-center" style={{ flexWrap: 'nowrap' }}>
-            <Btn size="sm" variant="primary" icon={opening === s.id ? undefined : 'arrowRight'}
-              disabled={opening === s.id}
-              onClick={(e) => {
-                e.stopPropagation()
-                setOpening(s.id)
-                void app.enterSchool(s.id, s).then((ok) => {
-                  if (!ok) toast.info('School not active', `${s.name} opens only after Catre approves payment and activates the school.`)
-                }).finally(() => setOpening(null))
-              }}>{opening === s.id ? <Spinner size={14} /> : 'Open'}</Btn>
-            <Btn size="sm" icon="edit" onClick={(e) => { e.stopPropagation(); setEditSchool(s) }}>Edit</Btn>
-            <Btn size="sm" icon="doc" onClick={(e) => { e.stopPropagation(); setReport(s) }}>Report</Btn>
-            {app.isPlatform && s.plan !== 'platinum' && (
-              <Btn size="sm" variant="secondary" icon="sparkle" onClick={(e) => { e.stopPropagation(); setUpgrade(s) }}>Upgrade</Btn>
+      render: (s) => (
+        <div className="row gap6 jc-center ai-center" style={{ flexWrap: 'nowrap' }}
+          onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
+          <Popover
+            align="right"
+            role="menu"
+            trigger={(open, toggle) => (
+              <IconBtn icon="settings" size={18} active={open} aria-label="Actions" aria-expanded={open}
+                onClick={(e) => { e.stopPropagation(); toggle() }} />
             )}
-            <Btn
-              size="sm"
-              variant="ghost"
-              icon="trash"
-              className="sm-btn-delete-icon"
-              disabled={deleteMut.isPending}
-              title={empty ? 'Delete empty school' : 'Only empty schools can be deleted'}
-              aria-label="Delete school"
-              onClick={(e) => {
-                e.stopPropagation()
-                if (!empty) {
-                  toast.info('School not empty', `${s.name} has ${fmtNum(s.students)} student(s) and ${fmtNum(s.staff)} staff.`)
-                  return
-                }
-                setDeleteStep(1)
-                setDeleteConfirmText('')
-                setPendingDelete(s)
-              }}
-            />
-          </div>
-        )
-      },
+          >
+            <MenuItem icon="edit" onClick={() => setEditSchool(s)}>Edit</MenuItem>
+            <MenuItem icon="doc" onClick={() => setReport(s)}>Report</MenuItem>
+            {app.isPlatform && s.plan !== 'platinum' && (
+              <MenuItem icon="sparkle" onClick={() => setUpgrade(s)}>Upgrade plan</MenuItem>
+            )}
+            <MenuSep />
+            <MenuItem icon="trash" danger onClick={() => startDelete(s)}>Delete school</MenuItem>
+          </Popover>
+        </div>
+      ),
     },
   ]
 
@@ -422,7 +441,7 @@ function OwnerSchools() {
     <div className="col gap20">
       <PageHead
         title="Schools"
-        sub={`${schoolsList.length} ${schoolsList.length === 1 ? 'school' : 'schools'} in your portfolio · Fee collection from each school · Delete only when empty (0 students & 0 staff)`}
+        sub={`${schoolsList.length} ${schoolsList.length === 1 ? 'school' : 'schools'} in your portfolio · Click a school row to open it · Delete only when empty (0 students & 0 staff)`}
         actions={
           <div className="row gap8">
             <Btn icon="rupee" onClick={() => app.go('owner.revenue')}>Fee collection</Btn>
@@ -455,6 +474,7 @@ function OwnerSchools() {
           rowKey={(s) => s.id}
           pageSize={10}
           initialSort={{ key: 'collected', dir: 'desc' }}
+          onRowClick={openSchool}
           bulk
           bulkActions={(selected, clear) => (
             <>
@@ -465,6 +485,17 @@ function OwnerSchools() {
           empty={<Empty icon="building" title="No schools match" body="Try adjusting your search or create a school." />}
         />
       </Card>
+
+      {opening && (
+        <div className="sm-overlay" style={{ display: 'grid', placeItems: 'center' }}>
+          <div className="col ai-center gap14"
+            style={{ background: 'var(--bg-elev)', padding: '30px 40px', borderRadius: 'var(--r-xl)', boxShadow: 'var(--sh-lg)' }}>
+            <Spinner size={38} />
+            <div className="t-md fw7">Opening {schoolsList.find((x) => x.id === opening)?.name ?? 'school'}…</div>
+            <div className="t-xs muted3">Loading the school workspace</div>
+          </div>
+        </div>
+      )}
 
       <AccountReportModal
         school={report}

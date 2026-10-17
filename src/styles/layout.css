@@ -91,7 +91,7 @@ html[dir=rtl] .sm-sidebar { border-right: none; border-left: 1px solid rgba(255,
   box-shadow: 0 16px 32px -10px color-mix(in srgb, var(--kpi-c) 55%, transparent), var(--sh-lg);
 }
 /* Fixed navy (not var(--text), which flips to white in dark mode) so it always sits on the pastel. */
-.sm-kpi .sm-kpi-ic { background: rgba(255,255,255,.45) !important; color: var(--kpi-deep) !important; box-shadow: none; }
+.sm-kpi .sm-kpi-ic { background: rgba(255,255,255,.45) !important; color: var(--kpi-deep) !important; box-shadow: none; margin-bottom: 0; }
 .sm-kpi .sm-kpi-val, .sm-kpi .sm-kpi-label, .sm-kpi .sm-kpi-foot, .sm-kpi .t-xs.muted3 { color: #0f172a; }
 .sm-kpi .sm-kpi-foot, .sm-kpi .t-xs.muted3 { font-weight: 500; }
 .sm-kpi .sm-stat-delta, .sm-kpi .sm-stat-delta.up, .sm-kpi .sm-stat-delta.down {
@@ -121,8 +121,8 @@ html[data-theme="dark"] .sm-people-card .sm-people-chev { color: rgba(255,255,25
 html[data-theme="dark"] .sm-people-card .sm-people-meter { background: rgba(255,255,255,.28); }
 html[data-theme="dark"] .sm-people-card .sm-people-meter > span { background: #fff; }
 .sm-kpi-ic { width: 44px; height: 44px; border-radius: var(--r-md); display: flex; align-items: center; justify-content: center; background: var(--brand-50); color: var(--brand-600); margin-bottom: 14px; box-shadow: var(--sh-xs); }
-.sm-kpi-val { font-size: 34px; font-weight: 800; font-family: var(--font-display); letter-spacing: -.025em; line-height: 1.05; }
-.sm-kpi-label { font-size: 14px; font-weight: 600; color: var(--text-2); margin-top: 4px; }
+.sm-kpi-val { font-size: 26px; font-weight: 700; font-family: var(--font-display); letter-spacing: -.02em; line-height: 1.1; }
+.sm-kpi-label { font-size: 16px; font-weight: 800; color: var(--text-2); font-family: var(--font-display); letter-spacing: -.01em; }
 .sm-kpi-foot { font-size: 11.5px; color: var(--text-3); margin-top: 9px; }
 .sm-stat-delta { display: inline-flex; align-items: center; gap: 3px; font-size: 11.5px; font-weight: 700; }
 .sm-stat-delta.up { color: var(--success); }
