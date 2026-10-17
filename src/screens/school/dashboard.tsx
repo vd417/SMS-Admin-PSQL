@@ -566,8 +566,8 @@ function PeopleCard({ icon, tone, label, count, sub, rate, present, total, foot,
             <Icon name={icon} size={18} />
           </span>
           <div>
-            <div className="sm-kpi-val" style={{ fontSize: 24 }}>{fmtNum(count)}</div>
             <div className="sm-kpi-label">{label}</div>
+            <div className="sm-kpi-val" style={{ fontSize: 22, marginTop: 2 }}>{fmtNum(count)}</div>
           </div>
         </div>
         <Icon name="chevRight" size={18} className="sm-people-chev" />
