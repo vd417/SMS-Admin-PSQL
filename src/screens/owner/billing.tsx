@@ -602,6 +602,14 @@ function LivePlansTab({ plans, loading, error }: { plans: Plan[]; loading: boole
                 </div>
               </div>
             </div>
+            <div className="col gap2" style={{ marginTop: 10 }}>
+              {p.pricing !== 'per_student' && p.included_students != null && (
+                <div className="t-xs muted">Includes {fmtNum(p.included_students)} students</div>
+              )}
+              {p.allowed_cycles && (
+                <div className="t-xs muted">Cycles: {p.allowed_cycles.split(',').map((c) => c.trim()).join(' · ')}</div>
+              )}
+            </div>
             <Badge tone="info" style={{ marginTop: 12 }}>Published by Catre</Badge>
           </Card>
         )

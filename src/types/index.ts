@@ -163,6 +163,10 @@ export interface School {
   seatLimit?: number | null
   /** Billing cycle: 'month' | 'quarter' | 'year'. */
   billingCycle?: string
+  /** Seat-increase mode: 'auto' | 'manual'. */
+  seatIncreaseMode?: string
+  /** Per-school near-limit warning gap. */
+  seatAlertThreshold?: number | null
   staff: number
   status: SchoolStatus
   mrr: number

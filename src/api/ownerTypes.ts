@@ -32,6 +32,16 @@ export interface Client {
   billing_cycle?: ApiBillingCycle
   /** Billed seat cap + other plan limits. */
   limits?: { students: number | null; staff: number | null; storage_gb: number | null }
+  /** Seat-increase mode: 'auto' grows per-student seats on enrolment; 'manual' blocks until raised. */
+  seat_increase_mode?: 'auto' | 'manual'
+  /** Per-school near-limit warning gap (null = use plan/default). */
+  seat_alert_threshold?: number | null
+}
+
+/** CATRE updates a school's seat policy. */
+export interface SeatSettingsBody {
+  seat_increase_mode?: 'auto' | 'manual'
+  seat_alert_threshold?: number
 }
 
 export interface CreateClientBody {
@@ -109,6 +119,12 @@ export interface Plan {
   audience: string
   description: string | null
   color: string | null
+  /** Flat-plan bundled seat count. */
+  included_students?: number | null
+  /** CSV of billing cycles this plan offers, e.g. "month,quarter,year". */
+  allowed_cycles?: string | null
+  /** Default near-limit warning gap for schools on this plan. */
+  seat_alert_threshold?: number | null
 }
 
 export interface DashboardOverview {

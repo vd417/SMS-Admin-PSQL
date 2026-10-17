@@ -1,5 +1,5 @@
 import { request, listRequest } from './client'
-import type { Client, CreateClientBody, IncreaseSeatsBody, ListEnvelope, SeatRequest } from './ownerTypes'
+import type { Client, CreateClientBody, IncreaseSeatsBody, ListEnvelope, SeatRequest, SeatSettingsBody } from './ownerTypes'
 
 export function listClients(params: { status?: string; tier?: string; q?: string } = {}): Promise<ListEnvelope<Client>> {
   return listRequest<ListEnvelope<Client>>('/clients', { query: params })
@@ -25,6 +25,11 @@ export function deleteClient(id: string): Promise<void> {
 /** Platform: raise a school's billed seat limit directly (recomputes MRR, prorates per-student). */
 export function increaseClientSeats(id: string, body: IncreaseSeatsBody): Promise<Client> {
   return request<Client>(`/clients/${id}/seats`, { method: 'POST', body })
+}
+
+/** Platform: update a school's seat policy (auto/manual mode + alert threshold). */
+export function updateClientSeatSettings(id: string, body: SeatSettingsBody): Promise<Client> {
+  return request<Client>(`/clients/${id}/seat-settings`, { method: 'POST', body })
 }
 
 /** Platform: seat-increase requests raised by schools (CATRE review queue). */

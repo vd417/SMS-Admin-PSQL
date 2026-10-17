@@ -29,6 +29,8 @@ export function clientToSchool(c: Client, i = 0): School {
     enrolled: c.enrolled_students ?? undefined,
     seatLimit: c.limits?.students ?? null,
     billingCycle: c.billing_cycle,
+    seatIncreaseMode: c.seat_increase_mode,
+    seatAlertThreshold: c.seat_alert_threshold ?? null,
     staff: c.staff_count ?? 0,
     status: asStatus(c.status),
     mrr: Number(c.mrr) || 0,

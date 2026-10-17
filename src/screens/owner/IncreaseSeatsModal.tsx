@@ -5,7 +5,7 @@ import { Modal, Btn } from '@/components/ui'
 import { SchoolMark } from '@/components/SchoolMark'
 import { fmtNum } from '@/lib/format'
 import type { School } from '@/types'
-import { increaseClientSeats } from '@/api/clients'
+import { increaseClientSeats, updateClientSeatSettings } from '@/api/clients'
 import { requestMySchoolSeats } from '@/api/mySchools'
 import { ApiError } from '@/api/ApiError'
 
@@ -27,19 +27,42 @@ export function IncreaseSeatsModal({
   const currentLimit = school?.seatLimit ?? school?.students ?? 0
   const [limit, setLimit] = useState<number>(currentLimit + 10)
   const [busy, setBusy] = useState(false)
+  // Platform-only seat policy.
+  const [mode, setMode] = useState<'auto' | 'manual'>(school?.seatIncreaseMode === 'auto' ? 'auto' : 'manual')
+  const [threshold, setThreshold] = useState<number>(school?.seatAlertThreshold ?? 5)
 
   if (!school) return null
 
+  const limitChanged = limit > currentLimit
+  const policyChanged = isPlatform
+    && (mode !== (school.seatIncreaseMode === 'auto' ? 'auto' : 'manual')
+      || threshold !== (school.seatAlertThreshold ?? 5))
+
   const submit = async () => {
-    if (limit <= currentLimit) {
+    if (isPlatform) {
+      if (!limitChanged && !policyChanged) {
+        toast.info('Nothing to change', 'Raise the seat count or change the seat policy first.')
+        return
+      }
+      if (limit < currentLimit) {
+        toast.info('Not an increase', `New seats cannot be below the current ${fmtNum(currentLimit)}.`)
+        return
+      }
+    } else if (limit <= currentLimit) {
       toast.info('Not an increase', `Enter a seat count above the current ${fmtNum(currentLimit)}.`)
       return
     }
+
     setBusy(true)
     try {
       if (isPlatform) {
-        await increaseClientSeats(school.id, { seat_limit: limit })
-        toast.success('Seats increased', `${school.name} now has ${fmtNum(limit)} billed seats.`)
+        if (policyChanged)
+          await updateClientSeatSettings(school.id, { seat_increase_mode: mode, seat_alert_threshold: threshold })
+        if (limitChanged)
+          await increaseClientSeats(school.id, { seat_limit: limit })
+        toast.success('Saved', limitChanged
+          ? `${school.name} now has ${fmtNum(limit)} billed seats.`
+          : 'Seat policy updated.')
       } else {
         await requestMySchoolSeats(school.id, { requested_seats: limit })
         toast.success('Request sent', `Asked the SchoolMate team to raise ${school.name} to ${fmtNum(limit)} seats.`)
@@ -48,7 +71,7 @@ export function IncreaseSeatsModal({
       onClose()
     } catch (e) {
       toast.danger(
-        isPlatform ? 'Could not increase seats' : 'Could not send request',
+        isPlatform ? 'Could not save' : 'Could not send request',
         e instanceof ApiError ? e.message : 'Please try again.',
       )
     } finally {
@@ -56,7 +79,7 @@ export function IncreaseSeatsModal({
     }
   }
 
-  const title = isPlatform ? `Increase seats · ${school.name}` : `Request more seats · ${school.name}`
+  const title = isPlatform ? `Seats & policy · ${school.name}` : `Request more seats · ${school.name}`
 
   return (
     <Modal
@@ -72,7 +95,7 @@ export function IncreaseSeatsModal({
         <div className="row gap8 jc-end">
           <Btn variant="ghost" onClick={onClose} disabled={busy}>Cancel</Btn>
           <Btn variant="primary" icon="check" disabled={busy} onClick={() => { void submit() }}>
-            {busy ? 'Working…' : isPlatform ? 'Increase seats' : 'Send request'}
+            {busy ? 'Working…' : isPlatform ? 'Save' : 'Send request'}
           </Btn>
         </div>
       }
@@ -101,14 +124,41 @@ export function IncreaseSeatsModal({
           <input
             type="number"
             className="sm-input"
-            min={currentLimit + 1}
+            min={isPlatform ? currentLimit : currentLimit + 1}
             value={limit}
             onChange={(e) => setLimit(Math.max(0, Math.round(Number(e.target.value) || 0)))}
           />
         </label>
+
+        {isPlatform && (
+          <>
+            <div className="col gap4">
+              <span className="t-sm fw6">Seat increase mode</span>
+              <div className="row gap8">
+                <Btn size="sm" variant={mode === 'manual' ? 'primary' : 'secondary'} onClick={() => setMode('manual')}>Manual</Btn>
+                <Btn size="sm" variant={mode === 'auto' ? 'primary' : 'secondary'} onClick={() => setMode('auto')}>Auto (per-student)</Btn>
+              </div>
+              <span className="t-xs muted">
+                {mode === 'auto'
+                  ? 'Per-student schools grow seats automatically as students enrol (billing follows).'
+                  : 'Enrolment is blocked at the cap until seats are raised or a request is approved.'}
+              </span>
+            </div>
+            <label className="col gap4">
+              <span className="t-sm fw6">Near-limit warning gap</span>
+              <input
+                type="number" className="sm-input" min={0}
+                value={threshold}
+                onChange={(e) => setThreshold(Math.max(0, Math.round(Number(e.target.value) || 0)))}
+              />
+              <span className="t-xs muted">Warn the school when this many seats remain (default 5).</span>
+            </label>
+          </>
+        )}
+
         <div className="t-xs muted">
           {isPlatform
-            ? 'MRR is recomputed on the new count. Per-student plans are billed a prorated top-up for the rest of the current cycle.'
+            ? 'MRR is recomputed on a new count. Per-student plans are billed a prorated top-up for the rest of the current cycle.'
             : 'The SchoolMate team reviews your request. Once approved, the top-up is billed and the new seats apply.'}
         </div>
       </div>
