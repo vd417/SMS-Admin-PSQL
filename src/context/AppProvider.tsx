@@ -349,8 +349,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setIntent(opts?.intent ?? null)
     setMobileNav(false)
     persistUi({ view: v })
+    // Push a history entry so the URL reflects the view and back/forward works.
+    try { window.history.pushState(null, '', '#/' + v.replace(/\./g, '/')) } catch { /* ignore */ }
   }
   const clearIntent = () => setIntent(null)
+
+  // Keep the URL hash's PATH matching the current view (covers programmatic nav like login/restore).
+  // The query (e.g. ?tab=…) is a screen's own concern, so a view change resets it.
+  useEffect(() => {
+    const want = '#/' + view.replace(/\./g, '/')
+    const curPath = window.location.hash.split('?')[0]
+    if (curPath !== want) {
+      try { window.history.replaceState(null, '', want) } catch { /* ignore */ }
+    }
+  }, [view])
+
+  // Back/forward or a manual hash edit navigates the CRM (path only; query ignored).
+  useEffect(() => {
+    const onHash = () => {
+      const h = window.location.hash.split('?')[0].replace(/^#\/?/, '').replace(/\//g, '.').trim()
+      if (h) setView((prev) => (h !== prev ? h : prev))
+    }
+    window.addEventListener('popstate', onHash)
+    window.addEventListener('hashchange', onHash)
+    return () => {
+      window.removeEventListener('popstate', onHash)
+      window.removeEventListener('hashchange', onHash)
+    }
+  }, [])
 
   const enterSchool = async (id: string, profile?: School): Promise<boolean> => {
     let mapped: Record<string, School> = { ...liveSchools }

@@ -1,13 +1,15 @@
 import { useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useToast } from '@/lib/hooks'
-import { Modal, Btn } from '@/components/ui'
+import { Modal, Btn, Badge } from '@/components/ui'
 import { SchoolMark } from '@/components/SchoolMark'
 import { fmtNum } from '@/lib/format'
 import type { School } from '@/types'
 import { increaseClientSeats, updateClientSeatSettings } from '@/api/clients'
-import { requestMySchoolSeats } from '@/api/mySchools'
+import { requestMySchoolSeats, listMySchoolSeatRequests } from '@/api/mySchools'
 import { ApiError } from '@/api/ApiError'
+
+const reqTone = { pending: 'warning', approved: 'success', rejected: 'danger' } as const
 
 /**
  * Seat change. Platform (CATRE) raises the billed seats directly (applies + bills). A school owner
@@ -30,6 +32,13 @@ export function IncreaseSeatsModal({
   // Platform-only seat policy.
   const [mode, setMode] = useState<'auto' | 'manual'>(school?.seatIncreaseMode === 'auto' ? 'auto' : 'manual')
   const [threshold, setThreshold] = useState<number>(school?.seatAlertThreshold ?? 5)
+
+  // Owner-side request history.
+  const historyQ = useQuery({
+    queryKey: ['owner', 'my-seat-requests', school?.id],
+    queryFn: () => listMySchoolSeatRequests(school!.id),
+    enabled: !!school && !isPlatform,
+  })
 
   if (!school) return null
 
@@ -125,8 +134,11 @@ export function IncreaseSeatsModal({
             type="number"
             className="sm-input"
             min={isPlatform ? currentLimit : currentLimit + 1}
-            value={limit}
-            onChange={(e) => setLimit(Math.max(0, Math.round(Number(e.target.value) || 0)))}
+            value={limit === 0 ? '' : limit}
+            onChange={(e) => {
+              const v = e.target.value
+              setLimit(v === '' ? 0 : Math.max(0, Math.round(Number(v) || 0)))
+            }}
           />
         </label>
 
@@ -148,8 +160,11 @@ export function IncreaseSeatsModal({
               <span className="t-sm fw6">Near-limit warning gap</span>
               <input
                 type="number" className="sm-input" min={0}
-                value={threshold}
-                onChange={(e) => setThreshold(Math.max(0, Math.round(Number(e.target.value) || 0)))}
+                value={threshold === 0 ? '' : threshold}
+                onChange={(e) => {
+                  const v = e.target.value
+                  setThreshold(v === '' ? 0 : Math.max(0, Math.round(Number(v) || 0)))
+                }}
               />
               <span className="t-xs muted">Warn the school when this many seats remain (default 5).</span>
             </label>
@@ -161,6 +176,19 @@ export function IncreaseSeatsModal({
             ? 'MRR is recomputed on a new count. Per-student plans are billed a prorated top-up for the rest of the current cycle.'
             : 'The SchoolMate team reviews your request. Once approved, the top-up is billed and the new seats apply.'}
         </div>
+
+        {!isPlatform && (historyQ.data?.length ?? 0) > 0 && (
+          <div className="col gap6" style={{ marginTop: 6, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+            <span className="t-sm fw6">Your requests</span>
+            {historyQ.data!.slice(0, 5).map((r) => (
+              <div key={r.id} className="row ai-center jc-between gap8 t-xs">
+                <span className="muted">{new Date(r.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</span>
+                <span>{fmtNum(r.current_seats)} → {fmtNum(r.requested_seats)}</span>
+                <Badge tone={reqTone[r.status] ?? 'neutral'} dot>{r.status}</Badge>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </Modal>
   )

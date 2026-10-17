@@ -125,6 +125,10 @@ export interface Plan {
   allowed_cycles?: string | null
   /** Default near-limit warning gap for schools on this plan. */
   seat_alert_threshold?: number | null
+  /** Feature slugs included in the plan. */
+  features?: string[]
+  /** Capacity limits. */
+  limits?: { students: number; staff: number; storage_gb: number }
 }
 
 export interface DashboardOverview {

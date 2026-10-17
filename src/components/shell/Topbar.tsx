@@ -11,8 +11,6 @@ import { useNotifications } from '@/api/hooks/useNotifications'
 import { useApprovals } from '@/api/hooks/useApprovals'
 import { approvalsForRole } from '@/api/approvals'
 
-const LANGS = [{ v: 'en', l: 'English' }, { v: 'hi', l: 'हिन्दी Hindi' }, { v: 'ar', l: 'العربية (RTL)' }, { v: 'ta', l: 'தமிழ் Tamil' }]
-
 export function Topbar() {
   const app = useApp()
   const theme = useTheme()
@@ -63,10 +61,7 @@ export function Topbar() {
 
       <div className="sm-topbar-spacer" />
 
-      <Popover role="menu" trigger={(open, toggle) => <IconBtn icon="globe" active={open} onClick={toggle} aria-label="Language" />}>
-        <MenuLabel>Language</MenuLabel>
-        {LANGS.map((l) => <MenuItem key={l.v} icon={app.lang === l.v ? 'check' : undefined} onClick={() => app.setLang(l.v)}>{l.l}</MenuItem>)}
-      </Popover>
+      <IconBtn icon="bot" onClick={() => window.dispatchEvent(new CustomEvent('sm:open-ai'))} aria-label="AI assistant" title="AI assistant" />
 
       <IconBtn icon={theme.theme === 'dark' ? 'sun' : 'moon'} onClick={theme.toggleTheme} aria-label="Toggle theme" />
 

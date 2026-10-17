@@ -3,10 +3,10 @@
    Subscriptions & billing.
    Both screens use live portfolio schools (/me/schools or /clients).
    ============================================================ */
-import { useMemo, useState, type ComponentType } from 'react'
+import { useMemo, useState, type ComponentType, type ReactNode } from 'react'
 import { useApp } from '@/lib/hooks'
 import {
-  PageHead, Tabs, Card, CardHead, Kpi, Badge, TierPill, Segmented, Btn,
+  PageHead, Tabs, Card, CardHead, Kpi, Badge, TierPill, Segmented, Btn, Icon, Modal,
   HBars, Legend, Donut, DataTable, Empty, Spinner,
   type Column, type BadgeTone,
 } from '@/components/ui'
@@ -15,10 +15,11 @@ import { fmtMoney, fmtNum } from '@/lib/format'
 import type { School, Tier } from '@/types'
 import { usePortfolioSchools, useOwnerPlans, useMyUpgradeRequests, useOwnerFeeSummary } from '@/api/hooks/useOwner'
 import { clientToSchool } from '@/api/ownerMap'
-import { listInvoices, type ApiInvoice } from '@/api/billing'
+import { listInvoices, listMySchoolInvoices, downloadInvoicePdf, myInvoicePdfPath, platformInvoicePdfPath, type ApiInvoice } from '@/api/billing'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/api/queryKeys'
 import { listSeatRequests, approveSeatRequest, rejectSeatRequest } from '@/api/clients'
+import { listMySchoolSeatRequests } from '@/api/mySchools'
 import { useToast } from '@/lib/hooks'
 import { ApiError } from '@/api/ApiError'
 import type { Plan, FeeSchoolSummary } from '@/api/ownerTypes'
@@ -281,15 +282,24 @@ function SubscriptionsTab({
     },
     { key: 'plan', label: 'Plan', sortValue: (s) => s.plan, render: (s) => <TierPill plan={s.plan} /> },
     {
-      key: 'students', label: 'Seats (purchased / enrolled)', align: 'right', sortValue: (s) => s.students,
+      key: 'students', label: 'Seat usage', align: 'right', sortValue: (s) => s.students,
       render: (s) => {
-        const limit = s.seatLimit ?? s.students
-        const enrolled = s.enrolled
-        const near = limit > 0 && enrolled != null && limit - enrolled <= 5
+        const purchased = s.seatLimit ?? s.students
+        const enrolled = s.enrolled ?? 0
+        const pct = purchased > 0 ? Math.min(100, Math.round((enrolled / purchased) * 100)) : 0
+        const full = purchased > 0 && enrolled >= purchased
+        const near = purchased > 0 && !full && purchased - enrolled <= 5
+        const barColor = full ? 'var(--danger)' : near ? 'var(--warning, #d97706)' : 'var(--brand-600)'
         return (
-          <div className="col" style={{ alignItems: 'flex-end', lineHeight: 1.2 }}>
-            <span className="fw6">{fmtNum(s.students)}{enrolled != null ? ` / ${fmtNum(enrolled)}` : ''}</span>
-            {near && <Badge tone={enrolled! >= limit ? 'danger' : 'warning'}>{enrolled! >= limit ? 'Seats full' : 'Near limit'}</Badge>}
+          <div className="col" style={{ alignItems: 'flex-end', gap: 5, minWidth: 128 }}>
+            <div>
+              <span className="fw7">{fmtNum(enrolled)}</span>
+              <span className="t-xs muted"> / {fmtNum(purchased)} seats</span>
+            </div>
+            <div style={{ width: 110, height: 5, borderRadius: 999, background: 'var(--border-2)', overflow: 'hidden' }}>
+              <div style={{ width: `${pct}%`, height: '100%', background: barColor, borderRadius: 999 }} />
+            </div>
+            {(full || near) && <Badge tone={full ? 'danger' : 'warning'}>{full ? 'Seats full' : `${purchased - enrolled} left`}</Badge>}
           </div>
         )
       },
@@ -336,12 +346,59 @@ function SubscriptionsTab({
   )
 }
 
+const seatReqTone: Record<string, BadgeTone> = { pending: 'warning', approved: 'success', rejected: 'danger' }
+
+/** School owner's own seat-increase requests across their schools (read-only history). */
+function OwnerSeatRequests({ schools }: { schools: School[] }) {
+  const q = useQuery({
+    queryKey: ['owner', 'my-seat-requests', schools.map((s) => s.id).sort().join(',')],
+    queryFn: async () => {
+      const lists = await Promise.all(schools.map((s) => listMySchoolSeatRequests(s.id).catch(() => [])))
+      return lists.flat().sort((a, b) => b.created_at.localeCompare(a.created_at))
+    },
+    enabled: schools.length > 0,
+  })
+
+  if (q.isLoading) return <div className="col ai-center jc-center gap12" style={{ minHeight: 120 }}><Spinner size={22} /></div>
+  const rows = q.data ?? []
+  if (rows.length === 0) {
+    return <Card><Empty icon="inbox" title="No seat requests yet" body="Use 'Request seats' on a subscription to ask the SchoolMate team for more seats." /></Card>
+  }
+
+  const statusLabel: Record<string, string> = { pending: 'Pending review', approved: 'Approved', rejected: 'Rejected' }
+  return (
+    <Card pad={false}>
+      <div className="col">
+        {rows.map((r, i) => (
+          <div key={r.id} className="row ai-center jc-between gap12"
+            style={{ padding: '12px 16px', borderTop: i === 0 ? undefined : '1px solid var(--border)' }}>
+            <div className="col" style={{ gap: 2, minWidth: 0 }}>
+              <span className="fw6" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.tenant_name ?? '—'}</span>
+              <span className="t-xs muted3">Raised {new Date(r.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+            </div>
+            <div className="row ai-center gap14">
+              <div className="row ai-baseline gap6">
+                <span className="t-sm muted">{fmtNum(r.current_seats)}</span>
+                <Icon name="arrowRight" size={13} />
+                <span className="fw7 t-md">{fmtNum(r.requested_seats)}</span>
+                <span className="t-xs muted">seats</span>
+              </div>
+              <Badge tone={seatReqTone[r.status] ?? 'neutral'} soft>{statusLabel[r.status] ?? r.status}</Badge>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
 function SeatRequestsTab() {
   const toast = useToast()
   const qc = useQueryClient()
+  const [filter, setFilter] = useState<'pending' | 'all'>('pending')
   const q = useQuery({
-    queryKey: [...queryKeys.owner.clients({}), 'seat-requests'],
-    queryFn: () => listSeatRequests('pending'),
+    queryKey: [...queryKeys.owner.clients({}), 'seat-requests', filter],
+    queryFn: () => listSeatRequests(filter === 'pending' ? 'pending' : undefined),
   })
   const [busyId, setBusyId] = useState<string | null>(null)
 
@@ -359,32 +416,36 @@ function SeatRequestsTab() {
     }
   }
 
-  if (q.isLoading) return <div className="col ai-center jc-center gap12" style={{ minHeight: 200 }}><Spinner size={24} /></div>
   const rows = q.data ?? []
-  if (rows.length === 0) {
-    return <Card><Empty icon="inbox" title="No pending seat requests" body="When a school asks for more seats, it shows here for approval." /></Card>
-  }
-
   const columns: Column<(typeof rows)[number]>[] = [
     { key: 'tenant_name', label: 'School', sortValue: (r) => r.tenant_name ?? '', render: (r) => <span className="fw6">{r.tenant_name ?? r.tenant_id}</span> },
     { key: 'current_seats', label: 'Current', align: 'right', render: (r) => fmtNum(r.current_seats) },
     { key: 'requested_seats', label: 'Requested', align: 'right', render: (r) => <span className="fw6">{fmtNum(r.requested_seats)}</span> },
-    { key: 'created_at', label: 'Raised', render: (r) => new Date(r.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) },
+    { key: 'status', label: 'Status', align: 'center', sortValue: (r) => r.status, render: (r) => <Badge tone={seatReqTone[r.status] ?? 'neutral'} dot>{r.status}</Badge> },
+    { key: 'created_at', label: 'Raised', sortValue: (r) => r.created_at, render: (r) => new Date(r.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) },
     {
       key: 'actions', label: '', align: 'right',
-      render: (r) => (
+      render: (r) => r.status === 'pending' ? (
         <div className="row gap6 jc-end">
           <Btn size="sm" variant="ghost" disabled={busyId === r.id} onClick={() => { void act(r.id, 'reject') }}>Reject</Btn>
           <Btn size="sm" variant="primary" icon="check" disabled={busyId === r.id} onClick={() => { void act(r.id, 'approve') }}>Approve</Btn>
         </div>
-      ),
+      ) : <span className="t-xs muted3">{new Date(r.updated_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</span>,
     },
   ]
 
   return (
-    <Card pad={false}>
-      <DataTable rows={rows} columns={columns} pageSize={10} rowKey={(r) => r.id} />
-    </Card>
+    <div className="col gap12">
+      <div className="row gap8">
+        <Btn size="sm" variant={filter === 'pending' ? 'primary' : 'secondary'} onClick={() => setFilter('pending')}>Pending</Btn>
+        <Btn size="sm" variant={filter === 'all' ? 'primary' : 'secondary'} onClick={() => setFilter('all')}>All history</Btn>
+      </div>
+      {q.isLoading
+        ? <div className="col ai-center jc-center gap12" style={{ minHeight: 160 }}><Spinner size={24} /></div>
+        : rows.length === 0
+          ? <Card><Empty icon="inbox" title={filter === 'pending' ? 'No pending seat requests' : 'No seat requests yet'} body="When a school asks for more seats, it shows here." /></Card>
+          : <Card pad={false}><DataTable rows={rows} columns={columns} pageSize={10} rowKey={(r) => r.id} initialSort={{ key: 'created_at', dir: 'desc' }} /></Card>}
+    </div>
   )
 }
 
@@ -405,7 +466,7 @@ const upgradeLabel: Record<UpgradeStatus, string> = {
   cancelled: 'Cancelled',
 }
 
-function UpgradeRequestsTab() {
+function UpgradeRequestsTab({ isPlatform, schools }: { isPlatform: boolean; schools: School[] }) {
   const q = useMyUpgradeRequests(true)
   if (q.isLoading) {
     return <div className="col ai-center jc-center gap12" style={{ minHeight: 200 }}><Spinner size={28} /><div className="t-sm muted">Loading upgrade requests…</div></div>
@@ -428,16 +489,25 @@ function UpgradeRequestsTab() {
     },
   ]
   return (
-    <Card pad={false}>
-      <DataTable<PlanUpgradeRequest>
-        columns={columns}
-        rows={rows}
-        pageSize={10}
-        rowKey={(r) => r.id}
-        initialSort={{ key: 'status', dir: 'asc' }}
-        empty={<Empty icon="sparkle" title="No upgrade requests" body="Use Upgrade on a school subscription to request Gold or Platinum." />}
-      />
-    </Card>
+    <div className="col gap20">
+      <div className="col gap8">
+        <div className="t-sm fw6 muted">Plan upgrades</div>
+        <Card pad={false}>
+          <DataTable<PlanUpgradeRequest>
+            columns={columns}
+            rows={rows}
+            pageSize={10}
+            rowKey={(r) => r.id}
+            initialSort={{ key: 'status', dir: 'asc' }}
+            empty={<Empty icon="sparkle" title="No upgrade requests" body="Use Upgrade on a school subscription to request Gold or Platinum." />}
+          />
+        </Card>
+      </div>
+      <div className="col gap8">
+        <div className="t-sm fw6 muted">Seat increase requests</div>
+        {isPlatform ? <SeatRequestsTab /> : <OwnerSeatRequests schools={schools} />}
+      </div>
+    </div>
   )
 }
 
@@ -455,23 +525,29 @@ function fmtDate(iso: string | null | undefined): string {
   return d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-function InvoicesTab({ isPlatform }: { isPlatform: boolean }) {
+function InvoicesTab({ isPlatform, schools }: { isPlatform: boolean; schools: School[] }) {
+  const toast = useToast()
+  const [dl, setDl] = useState<string | null>(null)
   const q = useQuery({
-    queryKey: [...queryKeys.owner.clients({}), 'invoices'],
-    queryFn: async () => (await listInvoices()).data,
-    enabled: isPlatform,
+    queryKey: [...queryKeys.owner.clients({}), 'invoices', isPlatform ? 'platform' : schools.map((s) => s.id).sort().join(',')],
+    queryFn: async () => {
+      if (isPlatform) return (await listInvoices()).data
+      const lists = await Promise.all(schools.map((s) => listMySchoolInvoices(s.id).catch(() => [])))
+      return lists.flat()
+    },
+    enabled: isPlatform || schools.length > 0,
   })
 
-  if (!isPlatform) {
-    return (
-      <Card>
-        <Empty
-          icon="doc"
-          title="No invoices yet"
-          body="Invoices appear after Catre admin activates a school and billing starts."
-        />
-      </Card>
-    )
+  const download = async (r: ApiInvoice) => {
+    setDl(r.id)
+    try {
+      const path = isPlatform ? platformInvoicePdfPath(r.id) : myInvoicePdfPath(r.tenant_id, r.id)
+      await downloadInvoicePdf(path, `invoice-${r.id.slice(0, 8)}.pdf`)
+    } catch (e) {
+      toast.danger('Download failed', e instanceof Error ? e.message : 'Please try again.')
+    } finally {
+      setDl(null)
+    }
   }
 
   if (q.isLoading) {
@@ -481,10 +557,10 @@ function InvoicesTab({ isPlatform }: { isPlatform: boolean }) {
     return <Card><Empty icon="alert" title="Could not load invoices" body="Check your connection and try again." /></Card>
   }
 
-  const invoices = q.data ?? []
+  const invoices = (q.data ?? []).slice().sort((a, b) => (b.issued ?? '').localeCompare(a.issued ?? ''))
   const columns: Column<ApiInvoice>[] = [
     { key: 'id', label: 'Invoice', sortValue: (r) => r.id, render: (r) => <span className="fw6 t-xs">{r.id.slice(0, 8)}…</span> },
-    { key: 'tenant_name', label: 'School', sortValue: (r) => r.tenant_name ?? '', render: (r) => <span className="fw6">{r.tenant_name ?? '—'}</span> },
+    ...(isPlatform ? [{ key: 'tenant_name', label: 'School', sortValue: (r: ApiInvoice) => r.tenant_name ?? '', render: (r: ApiInvoice) => <span className="fw6">{r.tenant_name ?? '—'}</span> }] : []),
     { key: 'plan_name', label: 'Plan', render: (r) => <span className="t-sm muted">{r.plan_name ?? '—'}</span> },
     { key: 'amount', label: 'Amount', align: 'right', sortValue: (r) => r.amount, render: (r) => <span className="fw6">{fmtMoney(Number(r.amount))}</span> },
     { key: 'issued', label: 'Issued', align: 'right', render: (r) => <span className="t-sm muted">{fmtDate(r.issued)}</span> },
@@ -496,6 +572,10 @@ function InvoicesTab({ isPlatform }: { isPlatform: boolean }) {
         return <Badge tone={invTone[st]} dot>{invLabel[st]}</Badge>
       },
     },
+    {
+      key: 'pdf', label: '', align: 'right',
+      render: (r) => <Btn size="sm" variant="secondary" icon="download" disabled={dl === r.id} onClick={() => { void download(r) }}>{dl === r.id ? '…' : 'PDF'}</Btn>,
+    },
   ]
 
   return (
@@ -505,8 +585,9 @@ function InvoicesTab({ isPlatform }: { isPlatform: boolean }) {
         rows={invoices}
         pageSize={10}
         rowKey={(r) => r.id}
-        initialSort={{ key: 'status', dir: 'asc' }}
-        empty={<Empty icon="doc" title="No invoices" body="No invoices have been issued yet." />}
+        initialSort={{ key: 'issued', dir: 'desc' }}
+        empty={<Empty icon="doc" title="No invoices yet"
+          body={isPlatform ? 'No invoices have been issued yet.' : 'Invoices appear after your school is activated and billing starts.'} />}
       />
     </Card>
   )
@@ -570,6 +651,7 @@ function RevenueTab({ schools }: { schools: School[] }) {
    Plans & pricing — published Catre plans (no dummy calculator trials)
    ============================================================ */
 function LivePlansTab({ plans, loading, error }: { plans: Plan[]; loading: boolean; error: boolean }) {
+  const [detail, setDetail] = useState<Plan | null>(null)
   if (loading) {
     return <div className="col ai-center jc-center gap12" style={{ minHeight: 200 }}><Spinner size={28} /><div className="t-sm muted">Loading published plans…</div></div>
   }
@@ -581,40 +663,90 @@ function LivePlansTab({ plans, loading, error }: { plans: Plan[]; loading: boole
   }
 
   return (
-    <div className="sm-grid-3">
-      {plans.map((p) => {
-        const tier = ((TIERS as readonly string[]).includes((p.tier ?? '').toLowerCase()) ? p.tier!.toLowerCase() : 'gold') as Tier
-        const price = p.pricing === 'per_student'
-          ? Number(p.per_student) || 0
-          : Number(p.price) || 0
-        return (
-          <Card key={p.id}>
-            <div className="row ai-center jc-between gap8">
-              <div className="t-md fw7">{p.name}</div>
-              <TierPill plan={tier} size="md" />
-            </div>
-            {p.description && <div className="t-xs muted3" style={{ marginTop: 6 }}>{p.description}</div>}
-            <div style={{ marginTop: 14 }}>
-              <div className="row ai-end gap6">
-                <div className="fw7" style={{ fontSize: 26, fontFamily: 'var(--font-display)' }}>{fmtMoney(price)}</div>
-                <div className="t-xs muted" style={{ marginBottom: 4 }}>
-                  {p.pricing === 'per_student' ? '/student' : 'flat'} · {p.period || 'month'}
+    <>
+      <div className="sm-grid-3">
+        {plans.map((p) => {
+          const tier = ((TIERS as readonly string[]).includes((p.tier ?? '').toLowerCase()) ? p.tier!.toLowerCase() : 'gold') as Tier
+          const price = p.pricing === 'per_student'
+            ? Number(p.per_student) || 0
+            : Number(p.price) || 0
+          return (
+            <Card key={p.id} hover style={{ cursor: 'pointer' }} onClick={() => setDetail(p)}>
+              <div className="row ai-center jc-between gap8">
+                <div className="t-md fw7">{p.name}</div>
+                <TierPill plan={tier} size="md" />
+              </div>
+              {p.description && <div className="t-xs muted3" style={{ marginTop: 6 }}>{p.description}</div>}
+              <div style={{ marginTop: 14 }}>
+                <div className="row ai-end gap6">
+                  <div className="fw7" style={{ fontSize: 26, fontFamily: 'var(--font-display)' }}>{fmtMoney(price)}</div>
+                  <div className="t-xs muted" style={{ marginBottom: 4 }}>
+                    {p.pricing === 'per_student' ? '/student' : 'flat'} · {p.period || 'month'}
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className="col gap2" style={{ marginTop: 10 }}>
-              {p.pricing !== 'per_student' && p.included_students != null && (
-                <div className="t-xs muted">Includes {fmtNum(p.included_students)} students</div>
-              )}
-              {p.allowed_cycles && (
-                <div className="t-xs muted">Cycles: {p.allowed_cycles.split(',').map((c) => c.trim()).join(' · ')}</div>
-              )}
-            </div>
-            <Badge tone="info" style={{ marginTop: 12 }}>Published by Catre</Badge>
-          </Card>
-        )
-      })}
-    </div>
+              <div className="col gap2" style={{ marginTop: 10 }}>
+                {p.pricing !== 'per_student' && p.included_students != null && (
+                  <div className="t-xs muted">Includes {fmtNum(p.included_students)} students</div>
+                )}
+                {p.allowed_cycles && (
+                  <div className="t-xs muted">Cycles: {p.allowed_cycles.split(',').map((c) => c.trim()).join(' · ')}</div>
+                )}
+              </div>
+              <div className="row ai-center jc-between" style={{ marginTop: 12 }}>
+                <Badge tone="info">Published by Catre</Badge>
+                <span className="t-xs fw6" style={{ color: 'var(--brand-600)' }}>View details →</span>
+              </div>
+            </Card>
+          )
+        })}
+      </div>
+      <PlanDetailsModal plan={detail} onClose={() => setDetail(null)} />
+    </>
+  )
+}
+
+function PlanDetailsModal({ plan, onClose }: { plan: Plan | null; onClose: () => void }) {
+  if (!plan) return null
+  const p = plan
+  const tier = ((TIERS as readonly string[]).includes((p.tier ?? '').toLowerCase()) ? p.tier!.toLowerCase() : 'gold') as Tier
+  const perStudent = p.pricing === 'per_student'
+  const rows: { label: string; value: ReactNode }[] = [
+    { label: 'Pricing', value: perStudent ? `${fmtMoney(Number(p.per_student) || 0)} / student / month` : `${fmtMoney(Number(p.price) || 0)} flat / month` },
+    ...(perStudent && p.min_students ? [{ label: 'Minimum billable students', value: fmtNum(p.min_students) }] : []),
+    ...(!perStudent && p.included_students != null ? [{ label: 'Included students', value: fmtNum(p.included_students) }] : []),
+    { label: 'Billing cycles', value: (p.allowed_cycles ?? 'month,quarter,year').split(',').map((c) => c.trim()).join(' · ') },
+    ...(p.seat_alert_threshold != null ? [{ label: 'Near-limit alert at', value: `${fmtNum(p.seat_alert_threshold)} seats left` }] : []),
+    ...(p.limits ? [{ label: 'Capacity', value: `${fmtNum(p.limits.students)} students · ${fmtNum(p.limits.staff)} staff · ${fmtNum(p.limits.storage_gb)} GB` }] : []),
+    { label: 'Audience', value: p.audience || 'all' },
+    { label: 'Visibility', value: p.visibility || '—' },
+  ]
+  return (
+    <Modal open onClose={onClose} icon="layers" size="md" title={p.name}
+      sub={p.description ?? 'Published plan details'}
+      footer={<div className="row jc-end" style={{ width: '100%' }}><Btn variant="primary" onClick={onClose}>Close</Btn></div>}>
+      <div className="row ai-center gap10" style={{ marginBottom: 14 }}>
+        <TierPill plan={tier} size="md" />
+        <Badge tone="info">Published by Catre</Badge>
+      </div>
+      <div className="col gap0">
+        {rows.map((r, i) => (
+          <div key={r.label} className="row ai-center jc-between gap12"
+            style={{ padding: '9px 0', borderTop: i === 0 ? undefined : '1px solid var(--border)' }}>
+            <span className="t-sm muted">{r.label}</span>
+            <span className="t-sm fw6" style={{ textAlign: 'right' }}>{r.value}</span>
+          </div>
+        ))}
+      </div>
+      {p.features && p.features.length > 0 && (
+        <div className="col gap6" style={{ marginTop: 14 }}>
+          <span className="t-sm fw6">Features</span>
+          <div className="row gap6" style={{ flexWrap: 'wrap' }}>
+            {p.features.map((f) => <Badge key={f} tone="neutral" soft>{f}</Badge>)}
+          </div>
+        </div>
+      )}
+    </Modal>
   )
 }
 
@@ -623,7 +755,21 @@ function LivePlansTab({ plans, loading, error }: { plans: Plan[]; loading: boole
    ============================================================ */
 function OwnerBilling() {
   const app = useApp()
-  const [tab, setTab] = useState('subs')
+  const BILLING_TABS = ['subs', 'upgrades', 'invoices', 'revenue', 'plans']
+  const [tab, setTabState] = useState(() => {
+    try {
+      const t = new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('tab')
+      return t && BILLING_TABS.includes(t) ? t : 'subs'
+    } catch { return 'subs' }
+  })
+  const setTab = (t: string) => {
+    setTabState(t)
+    // Reflect the active tab in the URL (no history spam) so it's refresh/deep-link safe.
+    try {
+      const path = window.location.hash.split('?')[0] || '#/owner/billing'
+      window.history.replaceState(null, '', t === 'subs' ? path : `${path}?tab=${t}`)
+    } catch { /* ignore */ }
+  }
   const [upgrade, setUpgrade] = useState<School | null>(null)
   const [seatsSchool, setSeatsSchool] = useState<School | null>(null)
   const schoolsQ = usePortfolioSchools(app.isPlatform)
@@ -662,19 +808,17 @@ function OwnerBilling() {
         value={tab} onChange={setTab}
         tabs={[
           { value: 'subs', label: 'Subscriptions', icon: 'list' },
-          ...(app.isPlatform ? [{ value: 'seat-requests', label: 'Seat requests', icon: 'building' }] : []),
           { value: 'upgrades', label: 'Upgrade requests', icon: 'sparkle' },
           { value: 'invoices', label: 'Invoices', icon: 'doc' },
-          { value: 'revenue', label: 'Revenue', icon: 'trend' },
+          { value: 'revenue', label: 'Bill', icon: 'trend' },
           { value: 'plans', label: 'Plans & pricing', icon: 'layers' },
         ]}
       />
 
       <div style={{ marginTop: 16 }}>
         {tab === 'subs' && <SubscriptionsTab schools={schools} isPlatform={app.isPlatform} onUpgrade={setUpgrade} onIncreaseSeats={setSeatsSchool} />}
-        {tab === 'seat-requests' && app.isPlatform && <SeatRequestsTab />}
-        {tab === 'upgrades' && <UpgradeRequestsTab />}
-        {tab === 'invoices' && <InvoicesTab isPlatform={app.isPlatform} />}
+        {tab === 'upgrades' && <UpgradeRequestsTab isPlatform={app.isPlatform} schools={schools} />}
+        {tab === 'invoices' && <InvoicesTab isPlatform={app.isPlatform} schools={schools} />}
         {tab === 'revenue' && <RevenueTab schools={schools} />}
         {tab === 'plans' && <LivePlansTab plans={plansQ.data ?? []} loading={plansQ.isLoading} error={plansQ.isError} />}
       </div>

@@ -85,7 +85,8 @@ function OwnerDashboard() {
   const schools = useMemo(() => clients.map(clientToSchool), [clients])
 
   const totals = useMemo(() => {
-    const students = schools.reduce((a, s) => a + s.students, 0)
+    // Actual enrolled students across the portfolio (not the purchased/billed seat count).
+    const students = schools.reduce((a, s) => a + (s.enrolled ?? s.students), 0)
     const staff = schools.reduce((a, s) => a + s.staff, 0)
     return { students, staff }
   }, [schools])
@@ -163,7 +164,7 @@ function OwnerDashboard() {
           foot={`${planCounts.platinum} Platinum · ${planCounts.gold} Gold · ${planCounts.silver} Silver`}
         />
         <Kpi
-          icon="users" iconBg="var(--info-bg)" iconColor="var(--info)"
+          icon="cap" iconBg="var(--info-bg)" iconColor="var(--info)"
           label="Total students" value={fmtNum(totals.students)}
           foot={`${fmtNum(totals.staff)} staff across portfolio`}
         />
@@ -300,6 +301,7 @@ function OwnerSchools() {
   const [report, setReport] = useState<School | null>(null)
   const [editSchool, setEditSchool] = useState<School | null>(null)
   const [upgrade, setUpgrade] = useState<School | null>(null)
+  const [opening, setOpening] = useState<string | null>(null)
   const [pendingDelete, setPendingDelete] = useState<School | null>(null)
   const [deleteStep, setDeleteStep] = useState<1 | 2>(1)
   const [deleteConfirmText, setDeleteConfirmText] = useState('')
@@ -365,17 +367,20 @@ function OwnerSchools() {
     },
     { key: 'status', label: 'Status', sortValue: (s) => s.status, render: (s) => <Badge tone={STATUS_TONE[s.status]}>{STATUS_LABEL[s.status]}</Badge> },
     {
-      key: 'actions', label: 'Actions', align: 'right',
+      key: 'actions', label: 'Actions', align: 'center',
       render: (s) => {
         const empty = (s.students ?? 0) === 0 && (s.staff ?? 0) === 0
         return (
-          <div className="row gap6 jc-end" style={{ flexWrap: 'nowrap' }}>
-            <Btn size="sm" variant="primary" icon="arrowRight" onClick={(e) => {
-              e.stopPropagation()
-              void app.enterSchool(s.id, s).then((ok) => {
-                if (!ok) toast.info('School not active', `${s.name} opens only after Catre approves payment and activates the school.`)
-              })
-            }}>Open</Btn>
+          <div className="row gap6 jc-center" style={{ flexWrap: 'nowrap' }}>
+            <Btn size="sm" variant="primary" icon={opening === s.id ? undefined : 'arrowRight'}
+              disabled={opening === s.id}
+              onClick={(e) => {
+                e.stopPropagation()
+                setOpening(s.id)
+                void app.enterSchool(s.id, s).then((ok) => {
+                  if (!ok) toast.info('School not active', `${s.name} opens only after Catre approves payment and activates the school.`)
+                }).finally(() => setOpening(null))
+              }}>{opening === s.id ? <Spinner size={14} /> : 'Open'}</Btn>
             <Btn size="sm" icon="edit" onClick={(e) => { e.stopPropagation(); setEditSchool(s) }}>Edit</Btn>
             <Btn size="sm" icon="doc" onClick={(e) => { e.stopPropagation(); setReport(s) }}>Report</Btn>
             {app.isPlatform && s.plan !== 'platinum' && (
