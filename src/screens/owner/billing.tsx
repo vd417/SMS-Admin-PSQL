@@ -16,8 +16,11 @@ import type { School, Tier } from '@/types'
 import { usePortfolioSchools, useOwnerPlans, useMyUpgradeRequests, useOwnerFeeSummary } from '@/api/hooks/useOwner'
 import { clientToSchool } from '@/api/ownerMap'
 import { listInvoices, type ApiInvoice } from '@/api/billing'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/api/queryKeys'
+import { listSeatRequests, approveSeatRequest, rejectSeatRequest } from '@/api/clients'
+import { useToast } from '@/lib/hooks'
+import { ApiError } from '@/api/ApiError'
 import type { Plan, FeeSchoolSummary } from '@/api/ownerTypes'
 import { UpgradePlanModal } from '@/screens/owner/UpgradePlanModal'
 import { IncreaseSeatsModal } from '@/screens/owner/IncreaseSeatsModal'
@@ -298,11 +301,16 @@ function SubscriptionsTab({
     },
     {
       key: 'actions', label: '', align: 'right',
-      render: (s) => isPlatform
-        ? <Btn size="sm" variant="secondary" icon="building" onClick={(e) => { e.stopPropagation(); onIncreaseSeats(s) }}>Increase seats</Btn>
-        : (s.plan !== 'platinum'
-          ? <Btn size="sm" variant="secondary" icon="sparkle" onClick={(e) => { e.stopPropagation(); onUpgrade(s) }}>Upgrade</Btn>
-          : null),
+      render: (s) => (
+        <div className="row gap6 jc-end">
+          {!isPlatform && s.plan !== 'platinum' && (
+            <Btn size="sm" variant="ghost" icon="sparkle" onClick={(e) => { e.stopPropagation(); onUpgrade(s) }}>Upgrade</Btn>
+          )}
+          <Btn size="sm" variant="secondary" icon="building" onClick={(e) => { e.stopPropagation(); onIncreaseSeats(s) }}>
+            {isPlatform ? 'Increase seats' : 'Request seats'}
+          </Btn>
+        </div>
+      ),
     },
   ]
 
@@ -324,6 +332,58 @@ function SubscriptionsTab({
         initialSort={{ key: 'mrr', dir: 'desc' }}
         empty={<Empty icon="building" title="No subscriptions" body="No schools in your portfolio." />}
       />
+    </Card>
+  )
+}
+
+function SeatRequestsTab() {
+  const toast = useToast()
+  const qc = useQueryClient()
+  const q = useQuery({
+    queryKey: [...queryKeys.owner.clients({}), 'seat-requests'],
+    queryFn: () => listSeatRequests('pending'),
+  })
+  const [busyId, setBusyId] = useState<string | null>(null)
+
+  const act = async (id: string, kind: 'approve' | 'reject') => {
+    setBusyId(id)
+    try {
+      if (kind === 'approve') { await approveSeatRequest(id); toast.success('Approved', 'Seats increased and the top-up invoice was raised.') }
+      else { await rejectSeatRequest(id); toast.info('Rejected', 'The seat request was declined.') }
+      await qc.invalidateQueries({ queryKey: ['owner'] })
+      await q.refetch()
+    } catch (e) {
+      toast.danger('Action failed', e instanceof ApiError ? e.message : 'Please try again.')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  if (q.isLoading) return <div className="col ai-center jc-center gap12" style={{ minHeight: 200 }}><Spinner size={24} /></div>
+  const rows = q.data ?? []
+  if (rows.length === 0) {
+    return <Card><Empty icon="inbox" title="No pending seat requests" body="When a school asks for more seats, it shows here for approval." /></Card>
+  }
+
+  const columns: Column<(typeof rows)[number]>[] = [
+    { key: 'tenant_name', label: 'School', sortValue: (r) => r.tenant_name ?? '', render: (r) => <span className="fw6">{r.tenant_name ?? r.tenant_id}</span> },
+    { key: 'current_seats', label: 'Current', align: 'right', render: (r) => fmtNum(r.current_seats) },
+    { key: 'requested_seats', label: 'Requested', align: 'right', render: (r) => <span className="fw6">{fmtNum(r.requested_seats)}</span> },
+    { key: 'created_at', label: 'Raised', render: (r) => new Date(r.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) },
+    {
+      key: 'actions', label: '', align: 'right',
+      render: (r) => (
+        <div className="row gap6 jc-end">
+          <Btn size="sm" variant="ghost" disabled={busyId === r.id} onClick={() => { void act(r.id, 'reject') }}>Reject</Btn>
+          <Btn size="sm" variant="primary" icon="check" disabled={busyId === r.id} onClick={() => { void act(r.id, 'approve') }}>Approve</Btn>
+        </div>
+      ),
+    },
+  ]
+
+  return (
+    <Card pad={false}>
+      <DataTable rows={rows} columns={columns} pageSize={10} rowKey={(r) => r.id} />
     </Card>
   )
 }
@@ -594,6 +654,7 @@ function OwnerBilling() {
         value={tab} onChange={setTab}
         tabs={[
           { value: 'subs', label: 'Subscriptions', icon: 'list' },
+          ...(app.isPlatform ? [{ value: 'seat-requests', label: 'Seat requests', icon: 'building' }] : []),
           { value: 'upgrades', label: 'Upgrade requests', icon: 'sparkle' },
           { value: 'invoices', label: 'Invoices', icon: 'doc' },
           { value: 'revenue', label: 'Revenue', icon: 'trend' },
@@ -603,6 +664,7 @@ function OwnerBilling() {
 
       <div style={{ marginTop: 16 }}>
         {tab === 'subs' && <SubscriptionsTab schools={schools} isPlatform={app.isPlatform} onUpgrade={setUpgrade} onIncreaseSeats={setSeatsSchool} />}
+        {tab === 'seat-requests' && app.isPlatform && <SeatRequestsTab />}
         {tab === 'upgrades' && <UpgradeRequestsTab />}
         {tab === 'invoices' && <InvoicesTab isPlatform={app.isPlatform} />}
         {tab === 'revenue' && <RevenueTab schools={schools} />}
@@ -610,7 +672,7 @@ function OwnerBilling() {
       </div>
 
       <UpgradePlanModal key={upgrade?.id} school={upgrade} onClose={() => setUpgrade(null)} isPlatform={app.isPlatform} />
-      <IncreaseSeatsModal key={seatsSchool?.id} school={seatsSchool} onClose={() => setSeatsSchool(null)} />
+      <IncreaseSeatsModal key={seatsSchool?.id} school={seatsSchool} isPlatform={app.isPlatform} onClose={() => setSeatsSchool(null)} />
     </div>
   )
 }

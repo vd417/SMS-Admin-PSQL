@@ -6,17 +6,20 @@ import { SchoolMark } from '@/components/SchoolMark'
 import { fmtNum } from '@/lib/format'
 import type { School } from '@/types'
 import { increaseClientSeats } from '@/api/clients'
+import { requestMySchoolSeats } from '@/api/mySchools'
 import { ApiError } from '@/api/ApiError'
 
 /**
- * CATRE team action: raise a school's billed seat limit. Recomputes MRR and (per-student) issues a
- * mid-cycle proration invoice server-side. Only increases are allowed.
+ * Seat change. Platform (CATRE) raises the billed seats directly (applies + bills). A school owner
+ * raises a REQUEST that CATRE must approve. Only increases are allowed.
  */
 export function IncreaseSeatsModal({
   school,
+  isPlatform,
   onClose,
 }: {
   school: School | null
+  isPlatform: boolean
   onClose: () => void
 }) {
   const toast = useToast()
@@ -29,21 +32,31 @@ export function IncreaseSeatsModal({
 
   const submit = async () => {
     if (limit <= currentLimit) {
-      toast.info('Not an increase', `Enter a seat limit above the current ${fmtNum(currentLimit)}.`)
+      toast.info('Not an increase', `Enter a seat count above the current ${fmtNum(currentLimit)}.`)
       return
     }
     setBusy(true)
     try {
-      await increaseClientSeats(school.id, { seat_limit: limit })
-      toast.success('Seats increased', `${school.name} now has ${fmtNum(limit)} billed seats.`)
+      if (isPlatform) {
+        await increaseClientSeats(school.id, { seat_limit: limit })
+        toast.success('Seats increased', `${school.name} now has ${fmtNum(limit)} billed seats.`)
+      } else {
+        await requestMySchoolSeats(school.id, { requested_seats: limit })
+        toast.success('Request sent', `Asked the SchoolMate team to raise ${school.name} to ${fmtNum(limit)} seats.`)
+      }
       await qc.invalidateQueries({ queryKey: ['owner'] })
       onClose()
     } catch (e) {
-      toast.danger('Could not increase seats', e instanceof ApiError ? e.message : 'Please try again.')
+      toast.danger(
+        isPlatform ? 'Could not increase seats' : 'Could not send request',
+        e instanceof ApiError ? e.message : 'Please try again.',
+      )
     } finally {
       setBusy(false)
     }
   }
+
+  const title = isPlatform ? `Increase seats · ${school.name}` : `Request more seats · ${school.name}`
 
   return (
     <Modal
@@ -51,13 +64,15 @@ export function IncreaseSeatsModal({
       onClose={onClose}
       icon="building"
       size="sm"
-      title={`Increase seats · ${school.name}`}
-      sub="Raise the billed seat limit so more students can enrol."
+      title={title}
+      sub={isPlatform
+        ? 'Raise the billed seat limit so more students can enrol.'
+        : 'Ask the SchoolMate team to raise your billed seats. They approve and bill the top-up.'}
       footer={
         <div className="row gap8 jc-end">
           <Btn variant="ghost" onClick={onClose} disabled={busy}>Cancel</Btn>
           <Btn variant="primary" icon="check" disabled={busy} onClick={() => { void submit() }}>
-            {busy ? 'Working…' : 'Increase seats'}
+            {busy ? 'Working…' : isPlatform ? 'Increase seats' : 'Send request'}
           </Btn>
         </div>
       }
@@ -82,7 +97,7 @@ export function IncreaseSeatsModal({
           </div>
         )}
         <label className="col gap4">
-          <span className="t-sm fw6">New seat limit</span>
+          <span className="t-sm fw6">{isPlatform ? 'New seat limit' : 'Seats requested'}</span>
           <input
             type="number"
             className="sm-input"
@@ -92,8 +107,9 @@ export function IncreaseSeatsModal({
           />
         </label>
         <div className="t-xs muted">
-          MRR is recomputed on the new count. Per-student plans are billed a prorated top-up for the
-          rest of the current cycle; the next cycle bills the full amount.
+          {isPlatform
+            ? 'MRR is recomputed on the new count. Per-student plans are billed a prorated top-up for the rest of the current cycle.'
+            : 'The SchoolMate team reviews your request. Once approved, the top-up is billed and the new seats apply.'}
         </div>
       </div>
     </Modal>

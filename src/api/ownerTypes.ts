@@ -53,10 +53,30 @@ export interface CreateClientBody {
   billing_cycle?: ApiBillingCycle
 }
 
-/** Raise a school's billed seat limit (CATRE team action). */
+/** Raise a school's billed seat limit (CATRE team direct action). */
 export interface IncreaseSeatsBody {
   seat_limit: number
   reason?: string
+}
+
+/** School owner raises a seat-increase request for CATRE to approve. */
+export interface RaiseSeatRequestBody {
+  requested_seats: number
+  note?: string
+}
+
+export type SeatRequestStatus = 'pending' | 'approved' | 'rejected'
+
+export interface SeatRequest {
+  id: string
+  tenant_id: string
+  tenant_name: string | null
+  current_seats: number
+  requested_seats: number
+  status: SeatRequestStatus
+  note: string | null
+  created_at: string
+  updated_at: string
 }
 
 export interface CreateMySchoolBody {
