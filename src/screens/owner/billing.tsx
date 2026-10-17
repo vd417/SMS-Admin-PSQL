@@ -278,7 +278,7 @@ function SubscriptionsTab({
     },
     { key: 'plan', label: 'Plan', sortValue: (s) => s.plan, render: (s) => <TierPill plan={s.plan} /> },
     {
-      key: 'students', label: 'Seats (billed / enrolled)', align: 'right', sortValue: (s) => s.students,
+      key: 'students', label: 'Seats (purchased / enrolled)', align: 'right', sortValue: (s) => s.students,
       render: (s) => {
         const limit = s.seatLimit ?? s.students
         const enrolled = s.enrolled
