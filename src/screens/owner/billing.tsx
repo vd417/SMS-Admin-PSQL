@@ -20,6 +20,7 @@ import { useQuery } from '@tanstack/react-query'
 import { queryKeys } from '@/api/queryKeys'
 import type { Plan, FeeSchoolSummary } from '@/api/ownerTypes'
 import { UpgradePlanModal } from '@/screens/owner/UpgradePlanModal'
+import { IncreaseSeatsModal } from '@/screens/owner/IncreaseSeatsModal'
 import type { PlanUpgradeRequest, UpgradeStatus } from '@/api/upgradeRequests'
 import { SchoolMark } from '@/components/SchoolMark'
 
@@ -255,10 +256,12 @@ function SubscriptionsTab({
   schools,
   isPlatform,
   onUpgrade,
+  onIncreaseSeats,
 }: {
   schools: School[]
   isPlatform: boolean
   onUpgrade: (s: School) => void
+  onIncreaseSeats: (s: School) => void
 }) {
   const columns: Column<School>[] = [
     {
@@ -274,7 +277,20 @@ function SubscriptionsTab({
       ),
     },
     { key: 'plan', label: 'Plan', sortValue: (s) => s.plan, render: (s) => <TierPill plan={s.plan} /> },
-    { key: 'students', label: 'Students', align: 'right', sortValue: (s) => s.students, render: (s) => fmtNum(s.students) },
+    {
+      key: 'students', label: 'Seats (billed / enrolled)', align: 'right', sortValue: (s) => s.students,
+      render: (s) => {
+        const limit = s.seatLimit ?? s.students
+        const enrolled = s.enrolled
+        const near = limit > 0 && enrolled != null && limit - enrolled <= 5
+        return (
+          <div className="col" style={{ alignItems: 'flex-end', lineHeight: 1.2 }}>
+            <span className="fw6">{fmtNum(s.students)}{enrolled != null ? ` / ${fmtNum(enrolled)}` : ''}</span>
+            {near && <Badge tone={enrolled! >= limit ? 'danger' : 'warning'}>{enrolled! >= limit ? 'Seats full' : 'Near limit'}</Badge>}
+          </div>
+        )
+      },
+    },
     { key: 'mrr', label: 'MRR', align: 'right', sortValue: (s) => s.mrr, render: (s) => fmtMoney(s.mrr) },
     {
       key: 'status', label: 'Status', align: 'center', sortValue: (s) => s.status,
@@ -282,9 +298,11 @@ function SubscriptionsTab({
     },
     {
       key: 'actions', label: '', align: 'right',
-      render: (s) => (!isPlatform && s.plan !== 'platinum'
-        ? <Btn size="sm" variant="secondary" icon="sparkle" onClick={(e) => { e.stopPropagation(); onUpgrade(s) }}>Upgrade</Btn>
-        : null),
+      render: (s) => isPlatform
+        ? <Btn size="sm" variant="secondary" icon="building" onClick={(e) => { e.stopPropagation(); onIncreaseSeats(s) }}>Increase seats</Btn>
+        : (s.plan !== 'platinum'
+          ? <Btn size="sm" variant="secondary" icon="sparkle" onClick={(e) => { e.stopPropagation(); onUpgrade(s) }}>Upgrade</Btn>
+          : null),
     },
   ]
 
@@ -539,6 +557,7 @@ function OwnerBilling() {
   const app = useApp()
   const [tab, setTab] = useState('subs')
   const [upgrade, setUpgrade] = useState<School | null>(null)
+  const [seatsSchool, setSeatsSchool] = useState<School | null>(null)
   const schoolsQ = usePortfolioSchools(app.isPlatform)
   const plansQ = useOwnerPlans(app.isPlatform)
   const schools = useMemo(() => (schoolsQ.data ?? []).map(clientToSchool), [schoolsQ.data])
@@ -583,7 +602,7 @@ function OwnerBilling() {
       />
 
       <div style={{ marginTop: 16 }}>
-        {tab === 'subs' && <SubscriptionsTab schools={schools} isPlatform={app.isPlatform} onUpgrade={setUpgrade} />}
+        {tab === 'subs' && <SubscriptionsTab schools={schools} isPlatform={app.isPlatform} onUpgrade={setUpgrade} onIncreaseSeats={setSeatsSchool} />}
         {tab === 'upgrades' && <UpgradeRequestsTab />}
         {tab === 'invoices' && <InvoicesTab isPlatform={app.isPlatform} />}
         {tab === 'revenue' && <RevenueTab schools={schools} />}
@@ -591,6 +610,7 @@ function OwnerBilling() {
       </div>
 
       <UpgradePlanModal key={upgrade?.id} school={upgrade} onClose={() => setUpgrade(null)} isPlatform={app.isPlatform} />
+      <IncreaseSeatsModal key={seatsSchool?.id} school={seatsSchool} onClose={() => setSeatsSchool(null)} />
     </div>
   )
 }

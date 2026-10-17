@@ -15,6 +15,7 @@ import {
   type StoredDoc,
 } from '@/api/studentExtras'
 import { parentMailFromStudent } from '@/api/students'
+import { ApiError } from '@/api/ApiError'
 import { PageHead, Card, CardHead, Btn, Badge, Icon, useFormKit, Spinner, Empty, Field, Input, Select, Checkbox } from '@/components/ui'
 import { useClasses, useClassNames } from '@/api/hooks/useClasses'
 import type { SchoolClass } from '@/api/classes'
@@ -506,6 +507,13 @@ function StudentFormScreen({ mode }: { mode: 'add' | 'edit' }) {
       onSuccess: (saved) => { void afterOk(saved).finally(() => setSaving(false)) },
       onError: (err) => {
         setSaving(false)
+        if (err instanceof ApiError && err.code === 'seat_limit_reached') {
+          toast.danger(
+            'Seat limit reached',
+            `${err.message} Ask the SchoolMate team to increase your plan's seats.`,
+          )
+          return
+        }
         toast.danger('Could not save', err instanceof Error ? err.message : 'Please try again.')
       },
     })

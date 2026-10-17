@@ -2,6 +2,8 @@ import type { ListEnvelope } from './types'
 
 export type ClientStatus = 'trial' | 'active' | 'past_due' | 'suspended' | 'cancelled'
 export type PlanTier = 'trial' | 'silver' | 'gold' | 'platinum' | 'metered' | 'exclusive'
+/** Billing cycle as the API expects it. */
+export type ApiBillingCycle = 'month' | 'quarter' | 'year'
 
 export interface Client {
   id: string
@@ -24,6 +26,12 @@ export interface Client {
   logo_url?: string | null
   image_url?: string | null
   health_score: number
+  /** Live active SIS enrolment (distinct from the billed students_count). */
+  enrolled_students?: number
+  /** Billing cycle the school is on. */
+  billing_cycle?: ApiBillingCycle
+  /** Billed seat cap + other plan limits. */
+  limits?: { students: number | null; staff: number | null; storage_gb: number | null }
 }
 
 export interface CreateClientBody {
@@ -39,8 +47,16 @@ export interface CreateClientBody {
   logo_url?: string
   image_url?: string
   csm?: string | null
-  /** Exact student count for per-student plans; drives billing. Omit for flat plans. */
+  /** Exact/expected student count entered at onboarding; drives billing. */
   students_count?: number
+  /** Billing cycle chosen at onboarding. Defaults to monthly server-side. */
+  billing_cycle?: ApiBillingCycle
+}
+
+/** Raise a school's billed seat limit (CATRE team action). */
+export interface IncreaseSeatsBody {
+  seat_limit: number
+  reason?: string
 }
 
 export interface CreateMySchoolBody {
@@ -54,8 +70,10 @@ export interface CreateMySchoolBody {
   logo_url?: string
   image_url?: string
   trial_days?: number
-  /** Expected student strength for per-student plans; drives billing. Omit for flat plans. */
+  /** Expected student strength entered at onboarding; drives billing. */
   students_count?: number
+  /** Billing cycle chosen at onboarding. Defaults to monthly server-side. */
+  billing_cycle?: ApiBillingCycle
 }
 
 export interface Plan {

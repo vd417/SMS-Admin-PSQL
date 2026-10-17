@@ -155,7 +155,14 @@ export interface School {
   slug?: string
   city: string
   plan: Tier
+  /** Billed student count (the committed/seat count invoices charge on). */
   students: number
+  /** Live active SIS enrolment, when known (distinct from the billed count). */
+  enrolled?: number
+  /** Billed seat cap; enrolment is blocked once reached. */
+  seatLimit?: number | null
+  /** Billing cycle: 'month' | 'quarter' | 'year'. */
+  billingCycle?: string
   staff: number
   status: SchoolStatus
   mrr: number

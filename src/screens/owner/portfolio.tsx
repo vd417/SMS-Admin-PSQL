@@ -569,7 +569,8 @@ function AccountReportModal({ school, fee, onClose }: {
     : 0
 
   const metrics: { label: string; value: string }[] = [
-    { label: 'Students enrolled', value: fmtNum(s.students) },
+    { label: 'Billed seats', value: fmtNum(s.students) },
+    ...(s.enrolled != null ? [{ label: 'Enrolled (live)', value: fmtNum(s.enrolled) }] : []),
     { label: 'Staff', value: fmtNum(s.staff) },
     { label: 'Fees collected', value: fmtMoney(collected, s.currency) },
     { label: 'Fees outstanding', value: fmtMoney(outstanding, s.currency) },
@@ -616,7 +617,10 @@ function AccountReportModal({ school, fee, onClose }: {
             <ReportTile label="Status" value={<Badge tone={STATUS_TONE[s.status]}>{STATUS_LABEL[s.status]}</Badge>} />
             <ReportTile label="Annual value" value={<span className="fw7">{fmtMoney(annual, s.currency)}</span>} sub={`${fmtNum(s.students)} × ${s.currency} ${rate}/yr`} />
           </div>
-          <div className="t-xs muted3" style={{ marginTop: 8 }}>Renews 01 Apr {new Date().getFullYear() + 1} · {s.currency} {rate}/student/yr ({TIER_META[s.plan].label} band)</div>
+          <div className="t-xs muted3" style={{ marginTop: 8 }}>
+            {CYCLE_LABEL[s.billingCycle ?? 'month']} billing · {s.currency} {rate}/student/yr ({TIER_META[s.plan].label} band)
+            {s.seatLimit ? ` · cap ${fmtNum(s.seatLimit)} seats` : ''}
+          </div>
         </div>
 
         {/* key metrics */}
@@ -704,6 +708,18 @@ const CYCLE_META: Record<BillingCycle, { label: string; div: number; per: string
   monthly: { label: 'Monthly', div: 12, per: '/mo' },
   quarterly: { label: 'Quarterly', div: 4, per: '/qtr' },
   yearly: { label: 'Yearly', div: 1, per: '/yr' },
+}
+/** Map the wizard's cycle to the API's cycle value. */
+const CYCLE_API: Record<BillingCycle, import('@/api/ownerTypes').ApiBillingCycle> = {
+  monthly: 'month',
+  quarterly: 'quarter',
+  yearly: 'year',
+}
+/** Human label for an API cycle value. */
+const CYCLE_LABEL: Record<string, string> = {
+  month: 'Monthly',
+  quarter: 'Quarterly',
+  year: 'Yearly',
 }
 
 interface WizardData {
@@ -969,8 +985,9 @@ function CreateSchoolWizard() {
       }
       const fullAddress = formatSchoolAddress(data)
       const locationLabel = [data.city.trim(), data.state.trim()].filter(Boolean).join(', ')
-      // Only per-student plans bill on the entered strength; flat plans ignore it.
-      const studentsCount = selectedPlan?.pricing === 'per_student' ? data.strength : undefined
+      // Both plan types carry the entered student count now (flat plans get an included-seat count too).
+      const studentsCount = data.strength > 0 ? data.strength : undefined
+      const billingCycle = CYCLE_API[data.cycle]
       const client = app.isPlatform
         ? await createMut.mutateAsync({
           name: data.name.trim(),
@@ -985,6 +1002,7 @@ function CreateSchoolWizard() {
           plan_id: planId,
           trial_days: 0,
           students_count: studentsCount,
+          billing_cycle: billingCycle,
         })
         : await createMut.mutateAsync({
           name: data.name.trim(),
@@ -998,6 +1016,7 @@ function CreateSchoolWizard() {
           admin_phone: data.adminPhone.trim() || undefined,
           trial_days: 0,
           students_count: studentsCount,
+          billing_cycle: billingCycle,
         })
 
       const planLabel = selectedPlan?.name ?? TIER_META[data.tier].label
