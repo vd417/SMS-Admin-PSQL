@@ -1177,7 +1177,7 @@ function AnnouncementModal({ open, initial, onClose }: { open: boolean; initial?
     { key: 'staff', label: 'Support staff', icon: 'shield', desc: 'Transport · security · admin' },
     { key: 'everyone', label: 'Everyone', icon: 'globe', desc: 'Parents, students & all staff' },
     { key: 'grades', label: 'Specific grades', icon: 'layers', desc: 'Pick one or more grades' },
-    { key: 'defaulters', label: 'Fee defaulters', icon: 'rupee', desc: 'Guardians with pending dues' },
+    { key: 'defaulters', label: 'Pending fee dues', icon: 'rupee', desc: 'Guardians with pending dues' },
     { key: 'specific', label: 'Specific people', icon: 'user', desc: 'Pick individuals by name' },
   ]
 

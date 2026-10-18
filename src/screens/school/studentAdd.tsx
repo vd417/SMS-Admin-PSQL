@@ -22,7 +22,8 @@ import type { SchoolClass } from '@/api/classes'
 import { listSchoolHouses } from '@/api/schoolHouses'
 import { useTransportRoutes, useRouteStops, useStudentTransport, useSetStudentTransport } from '@/api/hooks/useOperations'
 import { useFeeHeads } from '@/api/hooks/useFeeHeads'
-import { validateStudentForm } from '@/lib/studentValidation'
+import { validateStudentForm, MIN_STUDENT_AGE_YEARS } from '@/lib/studentValidation'
+import { validateMinAge } from '@/lib/validation'
 import { properName, properPlace } from '@/lib/properCase'
 import { toDateInputValue } from '@/lib/dateInput'
 import { predictStudentRoll } from '@/lib/studentRoll'
@@ -223,6 +224,8 @@ function StudentFormScreen({ mode }: { mode: 'add' | 'edit' }) {
   const [savedUrls, setSavedUrls] = useState<Partial<Record<keyof typeof INITIAL_FILES, string>>>({})
 
   const { txt, sel, area, upload, fieldGrid } = useFormKit(f, setForm, files, setFiles, errors)
+  /** Latest DOB the picker allows: the student must be at least MIN_STUDENT_AGE_YEARS old. */
+  const maxDob = (() => { const d = new Date(); d.setFullYear(d.getFullYear() - MIN_STUDENT_AGE_YEARS); return d.toISOString().slice(0, 10) })()
   const createStudent = useCreateStudent()
   const updateStudent = useUpdateStudent()
   const existingQ = useStudent(mode === 'edit' ? app.focus : null)
@@ -550,7 +553,7 @@ function StudentFormScreen({ mode }: { mode: 'add' | 'edit' }) {
           <CardHead title="Student details" icon="user" />
           <div style={{ marginTop: 12 }}>
             {fieldGrid(<>
-              {txt('adm', 'Admission number', { ph: suggestedAdm || 'scc/STU/26/0001', readOnly: true })}
+              {txt('adm', 'Student ID', { ph: suggestedAdm || 'scc/STU/26/0001', readOnly: true })}
               {txt('admissionDate', 'Admission date', { type: 'date' })}
               {txt('firstName', 'First name', { required: true, icon: 'user', ph: 'Aarav', case: 'name' })}
               {txt('lastName', 'Last name', { required: true, ph: 'Sharma', case: 'name' })}
@@ -565,7 +568,25 @@ function StudentFormScreen({ mode }: { mode: 'add' | 'edit' }) {
               </Field>
               {sel('house', 'House', houseOptions)}
               {sel('gender', 'Gender', GENDERS, true)}
-              {txt('dob', 'Date of birth', { required: true, type: 'date' })}
+              <Field label="Date of birth" required error={errors.dob}>
+                <Input
+                  type="date"
+                  max={maxDob}
+                  value={toDateInputValue(f.dob)}
+                  error={!!errors.dob}
+                  onChange={(ev) => {
+                    const v = ev.target.value
+                    setForm((s) => ({ ...s, dob: v }))
+                    setErrors((prev) => {
+                      const msg = validateMinAge(v, MIN_STUDENT_AGE_YEARS)
+                      const next = { ...prev }
+                      if (msg) next.dob = msg
+                      else delete next.dob
+                      return next
+                    })
+                  }}
+                />
+              </Field>
               {sel('academicYear', 'Academic year', ACADEMIC_YEARS)}
               {sel('status', 'Status', STATUSES)}
               {sel('bloodGroup', 'Blood group', BLOOD_GROUPS)}
@@ -581,8 +602,8 @@ function StudentFormScreen({ mode }: { mode: 'add' | 'edit' }) {
             </>)}
             <div className="t-xs muted" style={{ marginTop: 10 }}>
               {mode === 'edit'
-                ? 'Admission number is auto-generated and fixed.'
-                : 'Admission number is auto-generated · Class & house come from Academics · roll updates A–Z as you type name/class.'}
+                ? 'Student ID is auto-generated and fixed.'
+                : 'Student ID is auto-generated · Class & house come from Academics · roll updates A–Z as you type name/class.'}
             </div>
           </div>
         </Card>

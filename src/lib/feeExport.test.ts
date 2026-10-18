@@ -23,7 +23,7 @@ const inv = (partial: Partial<FeeInvoice>): FeeInvoice => ({
 describe('invoicesToCsv', () => {
   it('exports header + admission + amounts', () => {
     const csv = invoicesToCsv([inv({})])
-    expect(csv.split('\n')[0]).toContain('Admission')
+    expect(csv.split('\n')[0]).toContain('Student ID')
     expect(csv).toContain('Rahul Shrma')
     expect(csv).toContain('sccrdtb/STU/26/0001')
     expect(csv).toContain('IV-B')

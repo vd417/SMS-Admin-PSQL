@@ -21,6 +21,17 @@ export function required(value: string | null | undefined): string | null {
   return isBlank(value) ? 'This field is required' : null
 }
 
+/** Date of birth must be a real past date and the person at least `minYears` old. Empty is allowed. */
+export function validateMinAge(value: string | null | undefined, minYears: number): string | null {
+  if (isBlank(value)) return null
+  const dob = new Date(value as string)
+  if (Number.isNaN(dob.getTime())) return 'Enter a valid date of birth'
+  const today = new Date()
+  if (dob > today) return 'Date of birth cannot be in the future'
+  const cutoff = new Date(today.getFullYear() - minYears, today.getMonth(), today.getDate())
+  return dob > cutoff ? `Student must be at least ${minYears} years old` : null
+}
+
 /** Aadhaar: exactly 12 digits (spaces ignored). Empty is allowed. */
 export function validateAadhaar(value: string | null | undefined): string | null {
   if (isBlank(value)) return null

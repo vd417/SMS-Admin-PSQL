@@ -8,6 +8,26 @@ import { students, subjects } from '@/data/mockDb'
 export const fmtMoney = (n: number, cur = '₹'): string => cur + ' ' + Number(n).toLocaleString('en-IN')
 export const fmtNum = (n: number): string => Number(n).toLocaleString('en-IN')
 
+/** Readable day in IST from a date / ISO timestamp; empty → '—'. */
+export function fmtDate(raw?: string): string {
+  const s = (raw ?? '').trim()
+  if (!s) return '—'
+  const d = new Date(s)
+  if (Number.isNaN(d.getTime())) return s.slice(0, 10)
+  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })
+}
+
+/** Human-friendly, stable invoice number from a UUID + date: INV/YYYYMMDD/XXXXXX.
+ *  Deterministic (same id → same number); the 6-char id suffix keeps it unique. */
+export function feeInvoiceNo(id: string, dateIso?: string): string {
+  const d = dateIso ? new Date(dateIso) : null
+  const ymd = d && !Number.isNaN(d.getTime())
+    ? d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }).replace(/-/g, '')
+    : '00000000'
+  const short = (id || '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 6).toUpperCase() || '------'
+  return `INV/${ymd}/${short}`
+}
+
 function hash(str: string): number {
   let h = 0
   for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) & 0x7fffffff

@@ -15,6 +15,7 @@ export interface PtmItem {
   status: PtmStatus
   studentName: string
   teacherId: string | null
+  meetingLink: string | null
 }
 
 export interface PtmFilters {
@@ -32,6 +33,7 @@ export interface CreatePtmInput {
   date: string
   time: string
   mode: string
+  meetingLink?: string
 }
 
 function toPtm(row: Record<string, unknown>): PtmItem {
@@ -47,6 +49,7 @@ function toPtm(row: Record<string, unknown>): PtmItem {
     status: (String(c.status ?? 'pending')) as PtmStatus,
     studentName: c.studentName != null ? String(c.studentName) : '',
     teacherId: c.teacherId != null ? String(c.teacherId) : null,
+    meetingLink: c.meetingLink != null && String(c.meetingLink).trim() ? String(c.meetingLink) : null,
   }
 }
 
@@ -73,6 +76,7 @@ export async function createPtm(input: CreatePtmInput): Promise<PtmItem> {
     date: input.date,
     time: input.time,
     mode: input.mode,
+    meetingLink: input.meetingLink?.trim() || undefined,
   })
   const wire = await request<Record<string, unknown>>('/ptm', { method: 'POST', body: payload })
   return toPtm(wire)

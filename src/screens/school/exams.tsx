@@ -3045,7 +3045,7 @@ function ReportCardModal({ student, examId, examName, getMark, subjects, peers, 
 
         <div className="sm-grid-3 gap12 sm-report-card-body">
           <div><div className="t-xs muted">Student</div><div className="fw6">{studentDisplay}</div></div>
-          <div><div className="t-xs muted">Admission no</div><div className="fw6">{student.adm}</div></div>
+          <div><div className="t-xs muted">Student ID</div><div className="fw6">{student.adm}</div></div>
           <div><div className="t-xs muted">Class · Roll</div><div className="fw6">{student.cls} · {student.roll}</div></div>
           <div><div className="t-xs muted">Guardian</div><div className="fw6">{guardianDisplay || '—'}</div></div>
           <div><div className="t-xs muted">Attendance</div><div className="fw6">{student.attendance}%</div></div>

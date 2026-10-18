@@ -1428,16 +1428,10 @@ function CreateSchoolWizard() {
 
         {step === 4 && <ReviewStep data={data} plan={selectedPlan} />}
 
-        {/* nav buttons + running price summary */}
+        {/* nav buttons */}
         <div className="sm-divider" style={{ margin: '20px 0 16px' }} />
         <div className="row ai-center jc-between gap12 wrap">
           <Btn icon="arrowLeft" disabled={step === 0 || busy} onClick={() => setStep((s) => Math.max(0, s - 1))}>Back</Btn>
-          <div className="row ai-center gap8 t-sm muted" style={{ marginLeft: 'auto' }}>
-            <TierPill plan={data.tier} />
-            <span className="t-xs">{selectedPlan?.name ?? 'No plan'}</span>
-            <span>{fmtNum(data.strength)} students ·</span>
-            <span className="fw7" style={{ color: 'var(--text)' }}>{fmtMoney(cyclePrice)}{cycleMeta.per}</span>
-          </div>
           {step < WIZARD_STEPS.length - 1 ? (
             <Btn variant="primary" iconRight="arrowRight" disabled={!canNext} onClick={() => setStep((s) => s + 1)}>Next</Btn>
           ) : (

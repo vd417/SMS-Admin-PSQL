@@ -122,7 +122,7 @@ function academicReports(
     markSheet = {
       title: 'Consolidated mark sheet',
       subtitle: `${exam.name} · subject-wise marks & totals.`,
-      columns: ['Admission', 'Student', 'Class', ...subjects, 'Total', '%'],
+      columns: ['Student ID', 'Student', 'Class', ...subjects, 'Total', '%'],
       align: ['l', 'l', 'l', ...subjects.map(() => 'r' as const), 'r', 'r'],
       summary: [
         { label: 'Exam', value: exam.name },
@@ -182,7 +182,7 @@ function academicReports(
   const weakSpec: ReportSpec = {
     title: 'Weak-student tracker',
     subtitle: 'Students below 75% attendance flagged for remedial follow-up.',
-    columns: ['Admission', 'Student', 'Class', 'Attendance %', 'Fee status'],
+    columns: ['Student ID', 'Student', 'Class', 'Attendance %', 'Fee status'],
     align: ['l', 'l', 'l', 'r', 'l'],
     summary: [{ label: 'Flagged', value: String(weak.length) }],
     rows: weak.map((s) => [s.adm, s.name, s.cls, s.attendance ?? 0, s.feeStatus]),
@@ -199,7 +199,7 @@ function attendanceReports(students: Student[], teacherRows: Teacher[], staffRow
   const summarySpec: ReportSpec = {
     title: 'Student attendance summary',
     subtitle: 'Per-student attendance % for the period.',
-    columns: ['Admission', 'Student', 'Class', 'Attendance %', 'Status'],
+    columns: ['Student ID', 'Student', 'Class', 'Attendance %', 'Status'],
     align: ['l', 'l', 'l', 'r', 'l'],
     rows: students.map((s) => [s.adm, s.name, s.cls, s.attendance ?? 0, s.status]),
   }
@@ -217,7 +217,7 @@ function attendanceReports(students: Student[], teacherRows: Teacher[], staffRow
   const chronicSpec: ReportSpec = {
     title: 'Chronic absentee list',
     subtitle: 'Students under 75% attendance — contact guardians.',
-    columns: ['Admission', 'Student', 'Class', 'Attendance %', 'Guardian', 'Phone'],
+    columns: ['Student ID', 'Student', 'Class', 'Attendance %', 'Guardian', 'Phone'],
     align: ['l', 'l', 'l', 'r', 'l', 'l'],
     summary: [{ label: 'Students', value: String(chronic.length) }],
     rows: chronic.map((s) => [s.adm, s.name, s.cls, s.attendance ?? 0, s.guardian, s.phone]),
@@ -262,11 +262,11 @@ function financeReports(summary: FeeReportSummary | undefined, invoices: FeeInvo
   const dueSpec: ReportSpec = {
     title: 'Outstanding dues register',
     subtitle: 'Student-wise pending balances.',
-    columns: ['Admission', 'Student', 'Class', 'Term', 'Total', 'Paid', 'Due', 'Status'],
+    columns: ['Student ID', 'Student', 'Class', 'Term', 'Total', 'Paid', 'Due', 'Status'],
     align: ['l', 'l', 'l', 'l', 'r', 'r', 'r', 'l'],
     money: [false, false, false, false, true, true, true, false],
     summary: [
-      { label: 'Defaulters', value: String(due.length) },
+      { label: 'Pending dues', value: String(due.length) },
       { label: 'Total due', value: fmtMoney(due.reduce((s, i) => s + (i.due || 0), 0), cur) },
     ],
     rows: due.map((i) => [i.studentAdm || '', i.studentName, i.cls, i.term, i.total, i.paid, i.due, i.status]),

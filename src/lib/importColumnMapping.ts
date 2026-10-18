@@ -20,7 +20,7 @@ export interface BulkImportFieldDef {
  *  the payload silently drops would be a fake control, so it is not offered. (Adding real
  *  status-at-create support is a pre-existing gap in the single-add path, out of scope here.) */
 export const BULK_IMPORT_FIELDS: BulkImportFieldDef[] = [
-  { key: 'admissionNo', label: 'Admission Number', required: false, aliases: ['admission no', 'admission number', 'adm no'] },
+  { key: 'admissionNo', label: 'Student ID', required: false, aliases: ['admission no', 'admission number', 'adm no', 'student id'] },
   { key: 'admissionDate', label: 'Admission Date', required: false, aliases: ['admission date', 'doa'] },
   { key: 'firstName', label: 'First Name', required: true, aliases: ['first name', 'given name'] },
   { key: 'lastName', label: 'Last Name', required: true, aliases: ['last name', 'surname', 'family name'] },

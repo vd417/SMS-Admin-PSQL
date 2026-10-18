@@ -33,7 +33,7 @@ describe('registerToCsv', () => {
   it('emits a header and escapes commas/quotes', () => {
     const csv = registerToCsv([{ name: 'Doe, John', adm: 'A1', cls: 'IV-B', date: '2026-07-16', status: 'present' }])
     const [header, row] = csv.split('\n')
-    expect(header).toBe('Name,Admission,Class,Date,Status')
+    expect(header).toBe('Name,Student ID,Class,Date,Status')
     expect(row).toBe('"Doe, John",A1,IV-B,2026-07-16,present')
   })
 })

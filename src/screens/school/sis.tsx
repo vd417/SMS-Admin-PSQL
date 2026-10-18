@@ -23,7 +23,7 @@ import { markKey } from '@/lib/examData'
 import { properName, properPlace } from '@/lib/properCase'
 import { printReportCard } from '@/lib/reportCardPrint'
 import {
-  reportFor, classRank, fmtMoney,
+  reportFor, classRank, fmtMoney, fmtDate, feeInvoiceNo,
   overallToppers, classToppers,
   type TopperMetric, type ScoredStudent, type ClassTopperGroup, type TopperScoreOpts,
 } from '@/lib/format'
@@ -1375,7 +1375,7 @@ function StudentsScreen() {
       <>
       <Card pad={false}>
         <div className="row ai-center gap12 wrap" style={{ padding: 16, borderBottom: '1px solid var(--border)' }}>
-          <Search value={q} onChange={setQ} placeholder="Search name, admission no, class…" style={{ flex: 1, minWidth: 220 }} />
+          <Search value={q} onChange={setQ} placeholder="Search name, Student ID, class…" style={{ flex: 1, minWidth: 220 }} />
           <Select options={['all', ...gradeOptions]} value={grade} onChange={(e) => setGrade(e.target.value)} />
           <Select options={[{ value: 'all', label: 'All status' }, { value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }]} value={status} onChange={(e) => setStatus(e.target.value)} />
           <Select options={[{ value: 'all', label: 'All fees' }, { value: 'paid', label: 'Paid' }, { value: 'partial', label: 'Partial' }, { value: 'due', label: 'Due' }]} value={fee} onChange={(e) => setFee(e.target.value)} />
@@ -1617,7 +1617,8 @@ function Student360() {
       : [inv.term, inv.academicYear].filter(Boolean).join(' · ') || 'Fee invoice',
     amount: inv.total,
     paid: inv.paid,
-    date: inv.dueDate || '—',
+    date: inv.dueDate || '',
+    no: feeInvoiceNo(inv.id, inv.dueDate),
   }))
   const ledgerOutstanding = studentInvoices.length
     ? studentInvoices.reduce((s, inv) => s + (inv.due || 0), 0)
@@ -1713,7 +1714,7 @@ function Student360() {
           <Card>
             <CardHead title="Student" icon="user" />
             <div style={{ marginTop: 4 }}>
-              <DetailRow label="Admission no." value={stu.adm} />
+              <DetailRow label="Student ID" value={stu.adm} />
               <DetailRow label="Name" value={stu.name} />
               <DetailRow label="Gender" value={stu.gender === 'F' ? 'Female' : 'Male'} />
               <DetailRow label="Date of birth" value={stu.dob} />
@@ -2013,12 +2014,12 @@ function Student360() {
                   const bal = l.amount - l.paid
                   return (
                     <tr key={l.id}>
-                      <td className="fw6">{l.id}</td>
+                      <td className="fw6">{l.no}</td>
                       <td>{l.label}</td>
                       <td className="ta-right">{fmtMoney(l.amount)}</td>
                       <td className="ta-right">{fmtMoney(l.paid)}</td>
                       <td className="ta-right"><Badge tone={bal > 0 ? 'danger' : 'success'}>{fmtMoney(bal)}</Badge></td>
-                      <td className="muted">{l.date}</td>
+                      <td className="muted">{fmtDate(l.date)}</td>
                     </tr>
                   )
                 })}

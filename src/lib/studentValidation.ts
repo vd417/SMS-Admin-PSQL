@@ -1,7 +1,9 @@
 import {
   required, validateAadhaar, validateEmail, validatePhone, validateFile,
-  isDuplicateValue, normalizePhoneDigits, normalizeEmailKey, type FileLike,
+  validateMinAge, isDuplicateValue, normalizePhoneDigits, normalizeEmailKey, type FileLike,
 } from './validation'
+
+export const MIN_STUDENT_AGE_YEARS = 3
 
 const REQUIRED_FIELDS = ['firstName', 'lastName', 'cls', 'dob', 'gender', 'phone', 'email'] as const
 
@@ -21,6 +23,10 @@ export function validateStudentForm(input: StudentValidationInput): Record<strin
   for (const key of REQUIRED_FIELDS) {
     const msg = required(f[key])
     if (msg) e[key] = msg
+  }
+  if (!e.dob) {
+    const ageMsg = validateMinAge(f.dob, MIN_STUDENT_AGE_YEARS)
+    if (ageMsg) e.dob = ageMsg
   }
   if (!f.fatherName?.trim() && !f.motherName?.trim()) {
     e.fatherName = 'Enter father or mother name'

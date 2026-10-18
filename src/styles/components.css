@@ -904,6 +904,14 @@ html[dir=rtl] .sm-toasts{ right:auto; left:22px; }
 }
 .sm-fee-amount-table thead .sm-fee-amount-sticky{ z-index:3; background:var(--surface-2); }
 .sm-fee-amount-input{ width:100px !important; max-width:110px; text-align:right; }
+/* Center the number input inside each amount cell so it lines up under its header. */
+.sm-fee-amount-table td .sm-input-wrap{ justify-content:center; }
+.sm-fee-amount-table .sm-fee-amount-input{ text-align:center; }
+/* Darker, bolder, centered column headers. Double class (.sm-table.sm-fee-amount-table)
+   so it beats layout.css's muted-grey `.sm-table thead th`, which loads after this file. */
+.sm-table.sm-fee-amount-table thead th{ color:var(--text); font-weight:700; text-align:center; }
+.sm-table.sm-fee-amount-table thead th .col{ align-items:center; }
+.sm-table.sm-fee-amount-table td{ text-align:center; }
 @media (max-width:720px){
   .sm-fee-amount-cards{ display:flex; }
   .sm-fee-amount-table-wrap{ display:none; }
@@ -912,6 +920,12 @@ html[dir=rtl] .sm-toasts{ right:auto; left:22px; }
   .sm-fee-amount-cards{ display:none; }
   .sm-fee-amount-table-wrap{ display:block; }
 }
+
+/* ---- Create fee structure: compact inputs so the long form stays dense ---- */
+.sm-fee-create .sm-input{ height:32px; font-size:13px; }
+.sm-fee-create .sm-textarea{ min-height:64px; }
+.sm-fee-create .sm-field{ gap:4px; }
+.sm-fee-create .sm-label{ font-size:12px; }
 
 /* ---- Payroll: revenue vs payroll summary ---- */
 .sm-revpay{ display:flex; align-items:center; gap:16px; flex-wrap:wrap; }

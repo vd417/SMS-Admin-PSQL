@@ -1135,7 +1135,7 @@ describe('bulkImportTemplateXlsx', () => {
     expect(headers).toContain('Pickup Stop')
     expect(headers).not.toContain('Status') // not a mappable column any more
     expect(headers).not.toContain('Roll Number')
-    expect(headers).not.toContain('Admission Number') // server auto-generates it, same as Roll Number
+    expect(headers).not.toContain('Student ID') // server auto-generates it, same as Roll Number
     // A file built from this template auto-maps with zero manual column matching.
     const suggested = suggestColumnMapping(headers)
     expect(Object.values(suggested).every((v) => v !== null)).toBe(true)

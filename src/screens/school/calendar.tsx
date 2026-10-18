@@ -63,6 +63,7 @@ function CalendarScreen() {
   const editable = can(app.role, 'academics', 'E')
 
   const today = new Date()
+  const todayIso = iso(today.getFullYear(), today.getMonth(), today.getDate())
   const [cursor, setCursor] = useState({ y: today.getFullYear(), m: today.getMonth() })
   const [enabled, setEnabled] = useState<Set<EvType>>(new Set(TYPES))
   const [view, setView] = useState<'month' | 'agenda'>('month')
@@ -141,6 +142,10 @@ function CalendarScreen() {
   const addEvent = async () => {
     if (!form.title.trim()) {
       toast.danger('Title required', 'Enter an event title.')
+      return
+    }
+    if (form.date < todayIso) {
+      toast.danger('Past date', 'You can only create events for today or a future date.')
       return
     }
     setSaving(true)
@@ -373,7 +378,9 @@ function CalendarScreen() {
           ? (
             <div className="row gap8 jc-end">
               <Btn variant="ghost" onClick={() => setSelDay(null)}>Close</Btn>
-              <Btn variant="primary" icon="plus" onClick={() => { setForm((f) => ({ ...f, date: selDay! })); setSelDay(null); setAddOpen(true) }}>Add event</Btn>
+              {selDay && selDay >= todayIso && (
+                <Btn variant="primary" icon="plus" onClick={() => { setForm((f) => ({ ...f, date: selDay! })); setSelDay(null); setAddOpen(true) }}>Add event</Btn>
+              )}
             </div>
           )
           : undefined}
@@ -421,7 +428,7 @@ function CalendarScreen() {
         )}
       >
         <div className="col gap12">
-          <Field label="Date"><Input type="date" value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} /></Field>
+          <Field label="Date" hint="Today or later — past dates can be viewed but not created."><Input type="date" min={todayIso} value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} /></Field>
           <Field label="Type"><Select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as EvType }))} options={TYPES.map((t) => ({ value: t, label: EVENT_META[t].label }))} /></Field>
           <Field label="Title" required><Input icon="calendar" value={form.title} placeholder="e.g. Independence Day" onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} /></Field>
           <Field label="Description"><Textarea value={form.desc} placeholder="Optional details — agenda, venue, instructions…" onChange={(e) => setForm((f) => ({ ...f, desc: e.target.value }))} /></Field>

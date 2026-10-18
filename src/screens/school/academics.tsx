@@ -56,8 +56,8 @@ function teacherOptsOf(pool: Teacher[]): { value: string; label: string }[] {
 
 /* teachers qualified to teach a subject (fall back to all) */
 function qualified(pool: Teacher[], subject: string): Teacher[] {
-  const q = pool.filter((t) => t.subjects.includes(subject))
-  return q.length ? q : pool
+  const key = subject.trim().toLowerCase()
+  return pool.filter((t) => t.subjects.some((s) => s.trim().toLowerCase() === key))
 }
 
 /* ============================================================
@@ -155,8 +155,7 @@ function ClassesTab({ editable }: { editable: boolean }) {
     const grade = eGrade.trim()
     const section = eSec.trim()
     if (!grade) { toast.danger('Grade required', 'Enter a grade.'); return }
-    if (!section) { toast.danger('Section required', 'Enter a section.'); return }
-    const name = `${grade}-${section}`
+    const name = section ? `${grade}-${section}` : grade
     const clash = rows.some((r) => r.id !== editRow.id && (r.name === name || (`${r.grade}-${r.section}` === name)))
     if (clash) {
       toast.danger('Class exists', `${name} is already in the list.`)
@@ -258,8 +257,7 @@ function ClassesTab({ editable }: { editable: boolean }) {
     const grade = aGrade.trim()
     const section = aSec.trim()
     if (!grade) { toast.danger('Grade required', 'Enter a grade (e.g. VI, 10, Nursery).'); return }
-    if (!section) { toast.danger('Section required', 'Enter a section (e.g. A, B, Alpha).'); return }
-    const name = `${grade}-${section}`
+    const name = section ? `${grade}-${section}` : grade
     if (rows.some((r) => r.name === name || (`${r.grade}-${r.section}` === name))) {
       toast.danger('Class exists', `${name} is already in the list.`)
       return
@@ -302,7 +300,7 @@ function ClassesTab({ editable }: { editable: boolean }) {
     { key: 'name', label: 'Class', sortValue: (r) => r.name, render: (r) => (
       <div className="row ai-center gap10">
         <span className="sm-card-ic"><Icon name="grid" size={15} /></span>
-        <div><div className="fw6">{r.name}</div><div className="t-xs muted">Grade {r.grade} · Sec {r.section}</div></div>
+        <div><div className="fw6">{r.name}</div><div className="t-xs muted">Grade {r.grade}{r.section ? ` · Sec ${r.section}` : ''}</div></div>
       </div>
     ) },
     { key: 'teacher', label: 'Class teacher', sortValue: (r) => liveTeacherName(r.teacherId), render: (r) => (
@@ -399,7 +397,7 @@ function ClassesTab({ editable }: { editable: boolean }) {
               {gradeSuggestions.map((g) => <option key={g} value={g} />)}
             </datalist>
           </Field>
-          <Field label="Section" required hint="Custom OK — e.g. A, B, Alpha">
+          <Field label="Section" hint="Optional — leave blank if the school has no sections">
             <Input
               list="academics-section-suggestions"
               value={aSec}
@@ -412,7 +410,7 @@ function ClassesTab({ editable }: { editable: boolean }) {
           </Field>
         </div>
         <div className="t-xs muted" style={{ marginTop: 4 }}>
-          Class name will be <span className="fw6">{aGrade.trim() && aSec.trim() ? `${aGrade.trim()}-${aSec.trim()}` : 'Grade-Section'}</span>
+          Class name will be <span className="fw6">{aGrade.trim() ? (aSec.trim() ? `${aGrade.trim()}-${aSec.trim()}` : aGrade.trim()) : 'Grade'}</span>
         </div>
         <Field label="Room" hint="Optional — e.g. Room 204"><Input icon="building" value={aRoom} placeholder="Room…" onChange={(e) => setARoom(e.target.value)} /></Field>
         <Field
@@ -471,7 +469,7 @@ function ClassesTab({ editable }: { editable: boolean }) {
               {gradeSuggestions.map((g) => <option key={g} value={g} />)}
             </datalist>
           </Field>
-          <Field label="Section" required>
+          <Field label="Section" hint="Optional — leave blank if the school has no sections">
             <Input
               list="academics-edit-section-suggestions"
               value={eSec}
@@ -484,7 +482,7 @@ function ClassesTab({ editable }: { editable: boolean }) {
           </Field>
         </div>
         <div className="t-xs muted" style={{ marginTop: 4 }}>
-          Class name will be <span className="fw6">{eGrade.trim() && eSec.trim() ? `${eGrade.trim()}-${eSec.trim()}` : 'Grade-Section'}</span>
+          Class name will be <span className="fw6">{eGrade.trim() ? (eSec.trim() ? `${eGrade.trim()}-${eSec.trim()}` : eGrade.trim()) : 'Grade'}</span>
         </div>
         <Field label="Classroom / room" hint="e.g. Room 204, Lab 1, Block B-12">
           <Input icon="building" value={eRoom} placeholder="Room number or name…" onChange={(e) => setERoom(e.target.value)} />
@@ -545,6 +543,9 @@ function TeacherChips({ subject, ids, onChange, editable }: {
         <Select style={{ minWidth: 130, height: 30 }} value=""
           options={[{ value: '', label: '+ Add teacher' }, ...avail.map((t) => ({ value: t.id, label: t.name }))]}
           onChange={(e) => { if (e.target.value) onChange([...ids, e.target.value]) }} />
+      )}
+      {pool.length === 0 && ids.length === 0 && (
+        <span className="t-xs muted3">No teacher for this subject — assign it on the teacher’s profile.</span>
       )}
     </div>
   )

@@ -19,6 +19,7 @@ import { useFeeInvoices, useGenerateFeeInvoices } from '@/api/hooks/useFeeInvoic
 import { useCreateNotification } from '@/api/hooks/useNotifications'
 import { useFeeReportSummary } from '@/api/hooks/useFeeReports'
 import { useClasses } from '@/api/hooks/useClasses'
+import { useTransportSummary } from '@/api/hooks/useOperations'
 import { useStudents } from '@/api/hooks/useStudents'
 import { useTeachers } from '@/api/hooks/useTeachers'
 import { useStaff } from '@/api/hooks/useStaff'
@@ -29,6 +30,7 @@ import { downloadFeeReceipt } from '@/lib/feeReceipt'
 import { studentPhotoUrl } from '@/api/studentExtras'
 import { notifyFeeAudience } from '@/lib/feeNotify'
 import { collectAudienceContacts, contactsByStudentId } from '@/lib/collectAudienceEmails'
+import { openMailCompose, guardianEmailsFromStudent } from '@/lib/composeMail'
 import { can } from '@/lib/gating'
 import { newIdempotencyKey } from '@/lib/idempotencyKey'
 import {
@@ -37,7 +39,7 @@ import {
 } from '@/components/ui'
 import { TierGate } from '@/components/shell/gates'
 import { gradeRank } from '@/lib/defaultClasses'
-import { fmtMoney, fmtNum } from '@/lib/format'
+import { fmtMoney, fmtNum, feeInvoiceNo } from '@/lib/format'
 import { properName } from '@/lib/properCase'
 import { localDateIso, paymentDateIso } from '@/api/feeReports'
 import { currentPeriod, periodLabel, computeSalary, toAmount, type SalaryComponents } from '@/lib/payroll'
@@ -63,23 +65,38 @@ const STARTER_FEE_HEADS = ['Academic', 'Transport', 'Exam', 'Admission', 'Lab']
 /* ---------- Record-payment modal ---------- */
 const FEE_TYPE_ALL = '__all__'
 
-function PaymentModal({ invoice, cur, schoolName, studentAdm, onClose }: {
+/** Record-payment form body — rendered inside PaymentModal (Collection) or inline (Pay fees tab). */
+function PaymentForm({ invoice, cur, schoolName, studentAdm, onDone, onCancel }: {
   invoice: FeeInvoice
   cur: string
   schoolName: string
   studentAdm?: string
-  onClose: () => void
+  onDone: () => void
+  onCancel: () => void
 }) {
   const toast = useToast()
   const payInvoice = usePayInvoice()
   const headsQ = useFeeHeads()
+  const paymentsQ = useFeePayments()
   const heads = useMemo<FeeHead[]>(() => (headsQ.data ?? []).filter((h) => h.active !== false), [headsQ.data])
   const adm = studentAdm || invoice.studentAdm || ''
+
+  /* Auto receipt no. — RCP/YYYYMMDD/NNN, where NNN is the next in today's sequence. */
+  const autoRef = useMemo(() => {
+    const today = localDateIso()
+    const seq = (paymentsQ.data ?? []).filter((p) => (p.date ?? '').slice(0, 10) === today).length + 1
+    return `RCP/${today.replace(/-/g, '')}/${String(seq).padStart(3, '0')}`
+  }, [paymentsQ.data])
 
   const [amount, setAmount] = useState(String(invoice.due > 0 ? invoice.due : ''))
   const [mode, setMode] = useState(PAY_MODES[0])
   const [headId, setHeadId] = useState(() => (invoice.lines.length === 1 ? invoice.lines[0].headId : FEE_TYPE_ALL))
   const [ref, setRef] = useState('')
+  const [refTouched, setRefTouched] = useState(false)
+  /* Prefill the generated receipt no. once payments load, unless the user has typed their own. */
+  useEffect(() => {
+    if (!refTouched && !ref && autoRef) setRef(autoRef)
+  }, [autoRef, refTouched, ref])
   const [chequeNumber, setChequeNumber] = useState('')
   const [chequeBank, setChequeBank] = useState('')
   const [chequeDate, setChequeDate] = useState('')
@@ -114,7 +131,7 @@ function PaymentModal({ invoice, cur, schoolName, studentAdm, onClose }: {
       return
     }
     if (mode === 'Cheque' && !chequeNumber.trim()) { toast.danger('Cheque number required', 'Enter the cheque number.'); return }
-    if (mode === 'UPI (manual)' && !upiVpa.trim() && !ref.trim()) {
+    if (mode === 'UPI (manual)' && !upiVpa.trim() && !refTouched) {
       toast.danger('UPI VPA or reference required', 'Enter the school UPI ID for QR, or a UPI transaction reference.')
       return
     }
@@ -135,24 +152,13 @@ function PaymentModal({ invoice, cur, schoolName, studentAdm, onClose }: {
     payInvoice.mutate({ invoiceId: invoice.id, payment }, {
       onSuccess: () => {
         toast.success('Payment recorded', `${fmtMoney(n, cur)} · ${mode} · ${properName(invoice.studentName)} (${invoice.cls})`)
-        onClose()
+        onDone()
       },
       onError: (err) => { toast.danger('Payment failed', err instanceof Error ? err.message : 'Please try again.') },
     })
   }
 
   return (
-    <Modal
-      open onClose={onClose} icon="rupee" size="sm"
-      title="Record payment"
-      sub={adm ? `${properName(invoice.studentName)} · ${adm}` : `${properName(invoice.studentName)} · ${invoice.cls}`}
-      footer={
-        <div className="row gap8 jc-end">
-          <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
-          <Btn variant="primary" icon="check" onClick={submit}>Record payment</Btn>
-        </div>
-      }
-    >
       <div className="col gap16">
         <div className="row gap12 wrap" style={{ padding: 12, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface-2)' }}>
           <div style={{ flex: '1 1 140px' }}>
@@ -160,7 +166,7 @@ function PaymentModal({ invoice, cur, schoolName, studentAdm, onClose }: {
             <div className="fw6">{properName(invoice.studentName)}</div>
           </div>
           <div style={{ flex: '1 1 120px' }}>
-            <div className="t-xs muted">Admission no.</div>
+            <div className="t-xs muted">Student ID</div>
             <div className="fw6">{adm || '—'}</div>
           </div>
           <div style={{ flex: '1 1 80px' }}>
@@ -221,10 +227,33 @@ function PaymentModal({ invoice, cur, schoolName, studentAdm, onClose }: {
             </div>
           </div>
         )}
-        <Field label="Reference / receipt no." hint="UPI ref, transaction id, or leave blank for cash.">
-          <Input icon="clipboard" value={ref} placeholder="e.g. UPI-8842019" onChange={(e) => setRef(e.target.value)} />
+        <Field label="Reference / receipt no." hint="Auto-generated receipt no. — overwrite with a UPI ref / transaction id if you have one.">
+          <Input icon="clipboard" value={ref} placeholder="e.g. RCP/20261018/001" onChange={(e) => { setRef(e.target.value); setRefTouched(true) }} />
         </Field>
+        <div className="row gap8 jc-end" style={{ marginTop: 4 }}>
+          <Btn variant="ghost" onClick={onCancel}>Cancel</Btn>
+          <Btn variant="primary" icon="check" onClick={submit}>Pay fee</Btn>
+        </div>
       </div>
+  )
+}
+
+/* ---------- Record-payment modal (Collection tab) ---------- */
+function PaymentModal({ invoice, cur, schoolName, studentAdm, onClose }: {
+  invoice: FeeInvoice
+  cur: string
+  schoolName: string
+  studentAdm?: string
+  onClose: () => void
+}) {
+  const adm = studentAdm || invoice.studentAdm || ''
+  return (
+    <Modal
+      open onClose={onClose} icon="rupee" size="sm"
+      title="Pay fee"
+      sub={adm ? `${properName(invoice.studentName)} · ${adm}` : `${properName(invoice.studentName)} · ${invoice.cls}`}
+    >
+      <PaymentForm invoice={invoice} cur={cur} schoolName={schoolName} studentAdm={studentAdm} onDone={onClose} onCancel={onClose} />
     </Modal>
   )
 }
@@ -233,7 +262,7 @@ function PaymentModal({ invoice, cur, schoolName, studentAdm, onClose }: {
 function WaiverModal({ invoice, cur, onClose }: { invoice: FeeInvoice; cur: string; onClose: () => void }) {
   const toast = useToast()
   const payInvoice = usePayInvoice()
-  const [amount, setAmount] = useState(String(invoice.due))
+  const [amount, setAmount] = useState('')
   const [reason, setReason] = useState('Financial hardship')
   const idempotencyKeyRef = useRef<string | undefined>(undefined)
   if (!idempotencyKeyRef.current) idempotencyKeyRef.current = newIdempotencyKey()
@@ -241,6 +270,7 @@ function WaiverModal({ invoice, cur, onClose }: { invoice: FeeInvoice; cur: stri
   const submit = () => {
     const n = Number(amount)
     if (!n || n <= 0) { toast.danger('Amount required', 'Enter the waiver amount to approve.'); return }
+    if (n > invoice.due + 0.001) { toast.danger('Amount too high', `Outstanding due is ${fmtMoney(invoice.due, cur)}.`); return }
     const payment: FeePayment = {
       id: Date.now(), invoiceId: invoice.id, studentId: invoice.studentId, studentName: invoice.studentName, cls: invoice.cls,
       amount: n, mode: 'Adjustment / waiver', ref: '', note: reason,
@@ -256,7 +286,7 @@ function WaiverModal({ invoice, cur, onClose }: { invoice: FeeInvoice; cur: stri
   return (
     <Modal
       open onClose={onClose} icon="shield" size="sm"
-      title="Approve fee waiver" sub={`${invoice.studentName} · ${invoice.cls}`}
+      title="Waiver discount" sub={`${invoice.studentName} · ${invoice.cls}`}
       footer={
         <div className="row gap8 jc-end">
           <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
@@ -383,7 +413,7 @@ function FeeHistoryTab({ cur }: { cur: string }) {
       ref: p.ref,
       paidAt: p.date,
       headName: p.headName || p.feeType,
-      invoiceId: p.invoiceId,
+      invoiceId: feeInvoiceNo(p.invoiceId, p.date),
       logoUrl: app.school.logoUrl,
       logoInitials: app.school.logo,
       brandColor: app.school.color,
@@ -391,10 +421,14 @@ function FeeHistoryTab({ cur }: { cur: string }) {
   }
 
   const columns: Column<FeePayment>[] = [
-    { key: 'date', label: 'Date', sortValue: (p) => p.id, render: (p) => <span className="muted">{p.date}</span> },
+    { key: 'date', label: 'Date', sortValue: (p) => p.id, render: (p) => <span className="muted">{fmtDueDay(p.date)}</span> },
     {
       key: 'student', label: 'Student', sortValue: (p) => p.studentName,
       render: (p) => <div><div className="fw6">{properName(p.studentName)}</div><div className="t-xs muted">{p.cls}</div></div>,
+    },
+    {
+      key: 'adm', label: 'Student ID', sortValue: (p) => admOfStudent(p.studentId),
+      render: (p) => <span className="t-sm">{admOfStudent(p.studentId) || '—'}</span>,
     },
     {
       key: 'head', label: 'Fee type', sortValue: (p) => p.headName || p.feeType || '',
@@ -637,7 +671,6 @@ function FeeStructureTab({ cur, editable, onGenerated, loadVersionId, onDoneEdit
     )
   }
 
-  const [bulkByHead, setBulkByHead] = useState<Record<string, string>>({})
 
   const addHead = () => {
     const name = properName(newHead.trim())
@@ -669,14 +702,6 @@ function FeeStructureTab({ cur, editable, onGenerated, loadVersionId, onDoneEdit
   }, [studentsQ.data])
   const studentsInRow = (row: StructureClassRow) => studentCountByClass.get(row.label.trim().toLowerCase()) ?? 0
 
-  /* Total students across every class currently shown (respecting the grade/section/search
-     filters) — used to preview "rate × students" for the bulk "Same fee for all shown classes"
-     panel, before the admin even clicks Apply. */
-  const shownStudentsTotal = useMemo(
-    () => structureClasses.reduce((sum, row) => sum + studentsInRow(row), 0),
-    [structureClasses, studentCountByClass],
-  )
-
   /* Per-student fee for a set of rows. Sections of a grade share the same fee,
      so we report the range (min–max) instead of summing sections together. */
   const perStudentFee = (rows: StructureClassRow[]) => {
@@ -689,19 +714,43 @@ function FeeStructureTab({ cur, editable, onGenerated, loadVersionId, onDoneEdit
       ? fmtMoney(r.min, meta.currency || cur)
       : `${fmtMoney(r.min, meta.currency || cur)}–${fmtMoney(r.max, meta.currency || cur)}`
 
-  /* Expected annual collection = Σ (class fee × students enrolled in that class). */
+  /* Transport-only per-student range. Transport heads are billed only to students with an
+     active transport assignment, so it's called out separately from the all-in per-student fee. */
+  const transportPerStudent = (rows: StructureClassRow[]) => {
+    const transportIds = heads.filter((h) => h.isTransportFeeHead).map((h) => h.id)
+    if (!transportIds.length) return { min: 0, max: 0 }
+    const vals = rows
+      .map((row) => transportIds.reduce((a, id) => a + cellValue(row, id), 0))
+      .filter((v) => v > 0)
+    if (!vals.length) return { min: 0, max: 0 }
+    return { min: Math.min(...vals), max: Math.max(...vals) }
+  }
+
+  /* Students actually on transport, school-wide (live). Transport fees are billed only to them,
+     so the projection must not charge transport to every enrolled student. */
+  const transportStudents = useTransportSummary().data?.students ?? 0
+
+  /* Expected annual collection, split so transport isn't charged to everyone:
+     • base  = Σ (non-transport fee × students enrolled in that class)        — exact
+     • transport = (enrolment-weighted avg transport fee) × students on transport — estimate */
   const expected = useMemo(() => {
-    let revenue = 0
+    const transportIds = new Set(heads.filter((h) => h.isTransportFeeHead).map((h) => h.id))
+    const amt = (row: StructureClassRow, headId: string) => draft[row.key]?.[headId] ?? draft[row.grade]?.[headId] ?? 0
+    let baseRevenue = 0
     let billedStudents = 0
+    let transportFeeWeighted = 0 // Σ (transport fee × enrolled) across classes that charge transport
+    let transportEnrolled = 0
     for (const row of allClasses) {
-      const fee = heads.reduce((a, h) => a + (draft[row.key]?.[h.id] ?? draft[row.grade]?.[h.id] ?? 0), 0)
-      if (fee <= 0) continue
       const n = studentCountByClass.get(row.label.trim().toLowerCase()) ?? 0
-      revenue += fee * n
-      billedStudents += n
+      const baseFee = heads.reduce((a, h) => a + (transportIds.has(h.id) ? 0 : amt(row, h.id)), 0)
+      const transFee = heads.reduce((a, h) => a + (transportIds.has(h.id) ? amt(row, h.id) : 0), 0)
+      if (baseFee > 0) { baseRevenue += baseFee * n; billedStudents += n }
+      if (transFee > 0) { transportFeeWeighted += transFee * n; transportEnrolled += n }
     }
-    return { revenue, billedStudents }
-  }, [allClasses, heads, draft, studentCountByClass])
+    const avgTransportFee = transportEnrolled > 0 ? transportFeeWeighted / transportEnrolled : 0
+    const transportRevenue = Math.round(avgTransportFee * transportStudents)
+    return { baseRevenue, billedStudents, transportRevenue, total: baseRevenue + transportRevenue }
+  }, [allClasses, heads, draft, studentCountByClass, transportStudents])
 
   const buildDocument = (status: FeeStructureStatus): FeeStructureDocument => {
     /* Keep amounts for classes not on screen (other grades). */
@@ -822,6 +871,10 @@ function FeeStructureTab({ cur, editable, onGenerated, loadVersionId, onDoneEdit
       return
     }
     if (grandTotal <= 0) { toast.danger('Fill amounts', 'Enter fee amounts for at least one class / head.'); return }
+    if (genDue.trim() && meta.effectiveFrom.trim() && genDue.trim() < meta.effectiveFrom.trim()) {
+      toast.danger('Due date too early', `Due date can't be before the effective date (${meta.effectiveFrom}).`)
+      return
+    }
     setBusy(true)
     try {
       const doc = await saveStructure.mutateAsync(buildDocument('active'))
@@ -956,7 +1009,7 @@ function FeeStructureTab({ cur, editable, onGenerated, loadVersionId, onDoneEdit
           </div>
         </Card>
       )}
-      <Card pad={false}>
+      <Card pad={false} className="sm-fee-create">
         <div className="row ai-center jc-between gap12 wrap" style={{ padding: 16, borderBottom: '1px solid var(--border)' }}>
           <div>
             <div className="fw6">Create fee structure</div>
@@ -1103,7 +1156,7 @@ function FeeStructureTab({ cur, editable, onGenerated, loadVersionId, onDoneEdit
                 {editable && (
                   <div className="col gap8">
                     <div className="row ai-end gap12 wrap">
-                      <div style={{ flex: '1 1 200px' }}>
+                      <div style={{ flex: '0 1 300px', minWidth: 180 }}>
                         <Field label="Fee type" required hint="e.g. Academic, Transport, Exam">
                           <Input
                             value={newHead}
@@ -1117,7 +1170,7 @@ function FeeStructureTab({ cur, editable, onGenerated, loadVersionId, onDoneEdit
                         Add fee type
                       </Btn>
                     </div>
-                    <div style={{ flex: '1 1 220px' }}>
+                    <div style={{ width: '100%', maxWidth: 420 }}>
                       <Field label="Description (optional)" hint="Shown wherever this fee is billed">
                         <Input
                           value={newHeadDescription}
@@ -1228,79 +1281,6 @@ function FeeStructureTab({ cur, editable, onGenerated, loadVersionId, onDoneEdit
                       </div>
                     </div>
 
-                    {editable && heads.length > 0 && (
-                      <div
-                        className="col gap10"
-                        style={{
-                          padding: 12,
-                          borderRadius: 10,
-                          border: '1px solid var(--border)',
-                          background: 'color-mix(in srgb, var(--brand-600) 6%, var(--surface))',
-                        }}
-                      >
-                        <div>
-                          <div className="fw6 t-sm">Same fee for all shown classes</div>
-                          <div className="t-xs muted">
-                            Enter an amount, then Apply — fills every class in the table below (current filters).
-                          </div>
-                        </div>
-                        <div
-                          style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-                            gap: 10,
-                          }}
-                        >
-                          {heads.map((h) => {
-                            const rate = parseFeeAmount(bulkByHead[h.id] ?? '')
-                            const studentTotal = rate * shownStudentsTotal
-                            return (
-                              <div key={h.id} className="col gap4">
-                                <div className="row ai-end gap8">
-                                  <div style={{ flex: 1, minWidth: 0 }}>
-                                    <Field label={h.name}>
-                                      <Input
-                                        type="number"
-                                        min={0}
-                                        max={MAX_FEE_AMOUNT}
-                                        inputMode="numeric"
-                                        icon="rupee"
-                                        placeholder="0"
-                                        value={bulkByHead[h.id] ?? ''}
-                                        onChange={(e) => setBulkByHead((b) => ({ ...b, [h.id]: e.target.value }))}
-                                        onKeyDown={(e) => {
-                                          if (e.key === 'Enter') {
-                                            e.preventDefault()
-                                            applyHeadToAllShown(h.id, bulkByHead[h.id] ?? '')
-                                          }
-                                        }}
-                                        aria-label={`Same ${h.name} amount for all shown classes`}
-                                      />
-                                    </Field>
-                                  </div>
-                                  <Btn
-                                    type="button"
-                                    size="sm"
-                                    variant="secondary"
-                                    icon="check"
-                                    disabled={!structureClasses.length}
-                                    onClick={() => applyHeadToAllShown(h.id, bulkByHead[h.id] ?? '')}
-                                    title={`Apply ${h.name} to all ${structureClasses.length} shown class(es)`}
-                                  >
-                                    All
-                                  </Btn>
-                                </div>
-                                <div className="t-xs muted">
-                                  Fee {fmtMoney(rate, meta.currency || cur)}/student · {shownStudentsTotal} student{shownStudentsTotal === 1 ? '' : 's'} ·
-                                  {' '}Total {fmtMoney(studentTotal, meta.currency || cur)}
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )}
-
                     {/* Mobile / narrow: stacked cards */}
                     <div className="sm-fee-amount-cards">
                       {structureClasses.map((row) => (
@@ -1348,7 +1328,7 @@ function FeeStructureTab({ cur, editable, onGenerated, loadVersionId, onDoneEdit
                               <th key={h.id} className="ta-right">
                                 <div className="col ai-end gap6">
                                   <div className="col ai-end gap2">
-                                    <span className="fw6">{h.name}</span>
+                                    <span className="fw7">{h.name}</span>
                                     <span className="t-xs muted fw4">Amount</span>
                                   </div>
                                   {editable && (
@@ -1363,7 +1343,7 @@ function FeeStructureTab({ cur, editable, onGenerated, loadVersionId, onDoneEdit
                                         const first = structureClasses.find((r) => cellValue(r, h.id) > 0)
                                         const raw = first
                                           ? String(cellValue(first, h.id))
-                                          : (bulkByHead[h.id] ?? amountText[cellKey(structureClasses[0], h.id)] ?? '0')
+                                          : (amountText[cellKey(structureClasses[0], h.id)] ?? '0')
                                         applyHeadToAllShown(h.id, raw)
                                       }}
                                     >
@@ -1418,18 +1398,41 @@ function FeeStructureTab({ cur, editable, onGenerated, loadVersionId, onDoneEdit
                   <div className="row jc-between ai-center wrap gap8">
                     <span className="t-sm muted" title="Fee one student pays in this grade (sections share the same fee)">
                       This grade · {feeRangeLabel(perStudentFee(structureClasses))} per student
+                      {transportPerStudent(structureClasses).max > 0 && ` · incl. transport ${feeRangeLabel(transportPerStudent(structureClasses))}`}
                     </span>
                     <span className="fw7" title="Per-student fee across all classes (range if grades differ)">
                       All classes · {feeRangeLabel(perStudentFee(allClasses))} per student
+                      {transportPerStudent(allClasses).max > 0 && (
+                        <span className="t-sm muted fw4"> · incl. transport {feeRangeLabel(transportPerStudent(allClasses))}</span>
+                      )}
                     </span>
                   </div>
                   <div className="row jc-between ai-center wrap gap8">
-                    <span className="t-sm muted" title="Sum of each class fee × students enrolled in that class">
-                      Expected annual collection
+                    <span className="t-sm muted" title="Non-transport fee × students enrolled in each class">
+                      Base fee collection
+                    </span>
+                    <span className="fw6">
+                      {fmtMoney(expected.baseRevenue, meta.currency || cur)}
+                      <span className="t-xs muted fw4"> · {expected.billedStudents} student{expected.billedStudents === 1 ? '' : 's'}</span>
+                    </span>
+                  </div>
+                  {expected.transportRevenue > 0 && (
+                    <div className="row jc-between ai-center wrap gap8">
+                      <span className="t-sm muted" title="Avg transport fee × students currently assigned to transport (estimate)">
+                        Transport collection (est.)
+                      </span>
+                      <span className="fw6">
+                        {fmtMoney(expected.transportRevenue, meta.currency || cur)}
+                        <span className="t-xs muted fw4"> · {transportStudents} on transport</span>
+                      </span>
+                    </div>
+                  )}
+                  <div className="row jc-between ai-center wrap gap8">
+                    <span className="t-sm muted fw6" title="Base + estimated transport collection for a full year">
+                      Expected annual collection{expected.transportRevenue > 0 ? ' (est.)' : ''}
                     </span>
                     <span className="fw7">
-                      {fmtMoney(expected.revenue, meta.currency || cur)}
-                      <span className="t-xs muted fw4"> · {expected.billedStudents} student{expected.billedStudents === 1 ? '' : 's'}</span>
+                      {fmtMoney(expected.total, meta.currency || cur)}
                     </span>
                   </div>
                 </div>
@@ -1448,14 +1451,14 @@ function FeeStructureTab({ cur, editable, onGenerated, loadVersionId, onDoneEdit
           />
           <div className="col gap16" style={{ marginTop: 12 }}>
             <div className="row gap16 wrap">
-              <div style={{ flex: 1, minWidth: 160 }}>
+              <div style={{ flex: '0 1 220px', minWidth: 160 }}>
                 <Field label="Term" required>
                   <Select options={TERM_OPTIONS} value={genTerm} onChange={(e) => setGenTerm(e.target.value)} />
                 </Field>
               </div>
-              <div style={{ flex: 1, minWidth: 160 }}>
-                <Field label="Due date" hint="Optional">
-                  <Input type="date" value={genDue} onChange={(e) => setGenDue(e.target.value)} />
+              <div style={{ flex: '0 1 220px', minWidth: 160 }}>
+                <Field label="Due date" hint={meta.effectiveFrom ? `On/after effective date ${meta.effectiveFrom}` : 'Optional'}>
+                  <Input type="date" value={genDue} min={meta.effectiveFrom || undefined} onChange={(e) => setGenDue(e.target.value)} />
                 </Field>
               </div>
             </div>
@@ -1641,7 +1644,7 @@ function RemindersModal({ dueInvoices, allDueInvoices, defaultersCount, schoolNa
     <Modal
       open onClose={onClose} icon="bell" size="sm"
       title="Send fee reminders"
-      sub={audience === 'defaulters' ? `${fmtNum(defaultersCount)} defaulter(s) · full outstanding dues` : `${fmtNum(selectedIds.length)} invoice(s) in the current view`}
+      sub={audience === 'defaulters' ? `${fmtNum(defaultersCount)} student(s) with pending dues · full outstanding` : `${fmtNum(selectedIds.length)} invoice(s) in the current view`}
       footer={
         <div className="row gap8 jc-end">
           <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
@@ -1652,9 +1655,9 @@ function RemindersModal({ dueInvoices, allDueInvoices, defaultersCount, schoolNa
       }
     >
       <div className="col gap16">
-        <Field label="Audience" hint="Defaulters is every due/partial invoice school-wide; Selected uses invoices matching the current search/status filters.">
+        <Field label="Audience" hint="Pending dues is every due/partial invoice school-wide; Selected uses invoices matching the current search/status filters.">
           <div className="row gap8 wrap">
-            <Btn type="button" size="sm" variant={audience === 'defaulters' ? 'primary' : 'secondary'} onClick={() => setAudience('defaulters')}>Defaulters (all)</Btn>
+            <Btn type="button" size="sm" variant={audience === 'defaulters' ? 'primary' : 'secondary'} onClick={() => setAudience('defaulters')}>Pending dues (all)</Btn>
             <Btn type="button" size="sm" variant={audience === 'selected' ? 'primary' : 'secondary'} onClick={() => setAudience('selected')}>Selected (current view)</Btn>
           </div>
         </Field>
@@ -1839,6 +1842,330 @@ function FeeStructureHistoryTab({ editable, onEdit }: { editable: boolean; onEdi
   )
 }
 
+/* ---------- Pay fees: look a student up by admission no. and see all their invoices ---------- */
+/** Readable due date — invoices may carry a full ISO timestamp; show just the day. */
+function fmtDueDay(raw?: string): string {
+  const s = (raw ?? '').trim()
+  if (!s) return '—'
+  const d = new Date(s)
+  if (Number.isNaN(d.getTime())) return s.slice(0, 10)
+  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })
+}
+
+function StudentFeesPanel({ invoices, admOf, studentsById, cur, schoolName, canRecord }: {
+  invoices: FeeInvoice[]
+  admOf: (inv: FeeInvoice) => string
+  studentsById: Map<string, Student>
+  cur: string
+  schoolName: string
+  canRecord: boolean
+}) {
+  const app = useApp()
+  const toast = useToast()
+  const paymentsQ = useFeePayments()
+  const [q, setQ] = useState('')
+  const [picked, setPicked] = useState<string | null>(null)
+  const [payInv, setPayInv] = useState<FeeInvoice | null>(null)
+  const query = q.trim().toLowerCase()
+
+  const byStudent = useMemo(() => {
+    const m = new Map<string, FeeInvoice[]>()
+    for (const inv of invoices) {
+      const arr = m.get(inv.studentId)
+      if (arr) arr.push(inv)
+      else m.set(inv.studentId, [inv])
+    }
+    return m
+  }, [invoices])
+
+  const matchIds = useMemo(() => {
+    if (!query) return []
+    const ids: string[] = []
+    const seen = new Set<string>()
+    for (const inv of invoices) {
+      if (seen.has(inv.studentId)) continue
+      if (admOf(inv).toLowerCase().includes(query) || (inv.studentName ?? '').toLowerCase().includes(query)) {
+        ids.push(inv.studentId)
+        seen.add(inv.studentId)
+      }
+    }
+    return ids
+  }, [invoices, query, admOf])
+
+  const activeId = picked && byStudent.has(picked) ? picked : (matchIds.length === 1 ? matchIds[0] : null)
+  const studentInvoices = useMemo(
+    () => (activeId
+      ? [...(byStudent.get(activeId) ?? [])].sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? ''))
+      : []),
+    [activeId, byStudent],
+  )
+  const first = studentInvoices[0]
+  const student = activeId ? studentsById.get(activeId) : undefined
+  const totals = studentInvoices.reduce(
+    (t, inv) => ({ total: t.total + inv.total, paid: t.paid + inv.paid, due: t.due + inv.due }),
+    { total: 0, paid: 0, due: 0 },
+  )
+
+  /* This student's recorded payments (newest first) — same data as the History tab. */
+  const studentPayments = useMemo(
+    () => (activeId ? (paymentsQ.data ?? []).filter((p) => p.studentId === activeId) : [])
+      .slice()
+      .sort((a, b) => Number(b.id) - Number(a.id)),
+    [paymentsQ.data, activeId],
+  )
+  const downloadReceipt = (p: FeePayment) => {
+    downloadFeeReceipt({
+      schoolName: app.school.name,
+      schoolCity: app.school.city,
+      studentName: p.studentName,
+      studentAdm: student?.adm || (first ? admOf(first) : ''),
+      cls: p.cls,
+      amount: p.amount,
+      currency: cur,
+      mode: p.mode,
+      ref: p.ref,
+      paidAt: p.date,
+      headName: p.headName || p.feeType,
+      invoiceId: feeInvoiceNo(p.invoiceId, p.date),
+      logoUrl: app.school.logoUrl,
+      logoInitials: app.school.logo,
+      brandColor: app.school.color,
+    })
+  }
+  const mailReceipt = (p: FeePayment) => {
+    const emails = student ? guardianEmailsFromStudent(student) : []
+    if (!emails.length) { toast.danger('No guardian email', 'Add a guardian email on the student profile first.'); return }
+    const adm = student?.adm || (first ? admOf(first) : '') || '—'
+    const body = `Dear Parent/Guardian,\n\nReceipt for a fee payment received:\n\n`
+      + `Student: ${properName(p.studentName)} (Adm ${adm}, Class ${p.cls})\n`
+      + `Receipt no.: ${p.ref || '—'}\n`
+      + `Invoice: ${feeInvoiceNo(p.invoiceId, p.date)}\n`
+      + `Fee type: ${p.headName || p.feeType || 'All fee types'}\n`
+      + `Amount: ${fmtMoney(p.amount, cur)}\n`
+      + `Mode: ${p.mode}\n`
+      + `Date: ${fmtDueDay(p.date)}\n\n`
+      + `Thank you,\n${schoolName}`
+    try {
+      openMailCompose({ to: emails, subject: `Fee receipt ${p.ref || ''} · ${properName(p.studentName)}`.replace(/\s+·/, ' ·').trim(), body })
+    } catch (err) {
+      toast.danger('Could not open mail', err instanceof Error ? err.message : 'Invalid email.')
+    }
+  }
+
+  const esc = (s: string) => s.replace(/[&<>]/g, (c) => (c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;'))
+  const buildStatementHtml = (list: FeeInvoice[], title: string, forPrint: boolean): string | null => {
+    if (!list.length || !first) return null
+    const t = list.reduce((a, i) => ({ total: a.total + i.total, paid: a.paid + i.paid, due: a.due + i.due }), { total: 0, paid: 0, due: 0 })
+    const body = list.map((inv) => `<tr>
+      <td>${esc(inv.term || '—')}${inv.academicYear ? ` · ${esc(inv.academicYear)}` : ''}<br><span style="color:#64748b;font-size:11px">${esc(feeInvoiceNo(inv.id, inv.dueDate))}</span></td>
+      <td>${esc(fmtDueDay(inv.dueDate))}</td>
+      <td style="text-align:right">${esc(fmtMoney(inv.total, cur))}</td>
+      <td style="text-align:right">${esc(fmtMoney(inv.paid, cur))}</td>
+      <td style="text-align:right">${esc(fmtMoney(inv.due, cur))}</td>
+      <td>${esc(feeLabel[inv.status])}</td></tr>`).join('')
+    return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title>
+      <style>body{font-family:Arial,sans-serif;padding:24px;color:#0f172a}
+      h1{font-size:18px;margin:0 0 2px}h2{font-size:13px;font-weight:400;color:#475569;margin:0 0 14px}
+      .meta{font-size:13px;margin-bottom:14px}
+      table{width:100%;border-collapse:collapse;font-size:13px}
+      th,td{border-bottom:1px solid #e2e8f0;padding:8px 10px;text-align:left}
+      th{background:#f1f5f9;font-weight:700}
+      tfoot td{font-weight:700;border-top:2px solid #cbd5e1}</style></head><body>
+      <h1>${esc(schoolName)}</h1><h2>Fee statement</h2>
+      <div class="meta"><b>${esc(properName(first.studentName))}</b> · Adm ${esc(admOf(first) || '—')} · Class ${esc(first.cls || '—')}</div>
+      <table><thead><tr><th>Term</th><th>Due date</th><th style="text-align:right">Total</th><th style="text-align:right">Paid</th><th style="text-align:right">Due</th><th>Status</th></tr></thead>
+      <tbody>${body}</tbody>
+      <tfoot><tr><td colspan="2">Total</td><td style="text-align:right">${esc(fmtMoney(t.total, cur))}</td><td style="text-align:right">${esc(fmtMoney(t.paid, cur))}</td><td style="text-align:right">${esc(fmtMoney(t.due, cur))}</td><td></td></tr></tfoot>
+      </table>${forPrint ? '<script>window.onload=function(){window.print()}</script>' : ''}</body></html>`
+  }
+
+  const printInvoices = (list: FeeInvoice[], title: string) => {
+    const html = buildStatementHtml(list, title, true)
+    if (!html) return
+    const w = window.open('', '_blank')
+    if (!w) { toast.danger('Pop-up blocked', 'Allow pop-ups for this site to print.'); return }
+    w.document.write(html)
+    w.document.close()
+  }
+
+  const downloadStatement = () => {
+    const html = buildStatementHtml(studentInvoices, 'Fee statement', false)
+    if (!html || !first) return
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `fee-statement-${(admOf(first) || first.studentName).replace(/[^a-zA-Z0-9]+/g, '-')}.html`
+    a.rel = 'noopener'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  const emailStatement = () => {
+    if (!first) return
+    const emails = student ? guardianEmailsFromStudent(student) : []
+    if (!emails.length) { toast.danger('No guardian email', 'Add a guardian email on the student profile first.'); return }
+    const lines = studentInvoices
+      .map((inv) => `- ${inv.term || 'Fee'}${inv.academicYear ? ` (${inv.academicYear})` : ''}: total ${fmtMoney(inv.total, cur)}, paid ${fmtMoney(inv.paid, cur)}, due ${fmtMoney(inv.due, cur)}${inv.dueDate ? `, due ${fmtDueDay(inv.dueDate)}` : ''}`)
+      .join('\n')
+    const bodyText = `Dear Parent/Guardian,\n\nFee statement for ${properName(first.studentName)} (Adm ${admOf(first) || '—'}, Class ${first.cls || '—'}):\n\n${lines}\n\nTotal outstanding: ${fmtMoney(totals.due, cur)}\n\nRegards,\n${schoolName}`
+    try {
+      openMailCompose({ to: emails, subject: `Fee statement · ${properName(first.studentName)}`, body: bodyText })
+    } catch (err) {
+      toast.danger('Could not open mail', err instanceof Error ? err.message : 'Invalid email.')
+    }
+  }
+
+  return (
+    <Card>
+      <CardHead title="Pay fees" sub="Search a student by Student ID to see all their invoices" icon="rupee" />
+      <div className="col gap16" style={{ marginTop: 12 }}>
+        <Field label="Student ID or name" hint="Type or scan the Student ID.">
+          <Search value={q} onChange={(v) => { setQ(v); setPicked(null) }} placeholder="e.g. STU/26/0001 or Rahul" />
+        </Field>
+
+        {query && matchIds.length > 1 && !picked && (
+          <div className="col gap6">
+            <div className="t-xs muted">{matchIds.length} students match — pick one:</div>
+            {matchIds.slice(0, 8).map((id) => {
+              const inv = byStudent.get(id)?.[0]
+              if (!inv) return null
+              return (
+                <button key={id} type="button" className="row ai-center jc-between gap8" onClick={() => setPicked(id)}
+                  style={{ padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--surface)', cursor: 'pointer', textAlign: 'left' }}>
+                  <span className="fw6">{properName(inv.studentName)}</span>
+                  <span className="t-xs muted">{admOf(inv) || '—'} · {inv.cls}</span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        {query && matchIds.length === 0 && (
+          <Empty icon="search" title="No student found" body="Check the Student ID and try again." />
+        )}
+
+        {activeId && first && (
+          <>
+            <div className="row ai-center jc-between gap12 wrap" style={{ padding: 12, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface-2)' }}>
+              <div className="row gap16 wrap">
+                <div><div className="t-xs muted">Student</div><div className="fw6">{properName(first.studentName)}</div></div>
+                <div><div className="t-xs muted">Student ID</div><div className="fw6">{admOf(first) || '—'}</div></div>
+                <div><div className="t-xs muted">Class</div><div className="fw6">{first.cls || '—'}</div></div>
+                <div><div className="t-xs muted">Guardian</div><div className="fw6">{student?.guardian || '—'}{student?.phone ? ` · ${student.phone}` : ''}</div></div>
+              </div>
+            </div>
+
+            {payInv ? (
+              <div className="col gap12" style={{ padding: 14, borderRadius: 10, border: '1px solid var(--border)' }}>
+                <div className="row ai-center jc-between gap8 wrap">
+                  <div className="fw6">Pay fee · {payInv.term || 'Fee'}{payInv.academicYear ? ` · ${payInv.academicYear}` : ''}</div>
+                  <Btn size="sm" variant="ghost" icon="arrowLeft" onClick={() => setPayInv(null)}>Back to invoices</Btn>
+                </div>
+                <PaymentForm
+                  invoice={payInv}
+                  cur={cur}
+                  schoolName={schoolName}
+                  studentAdm={admOf(payInv)}
+                  onDone={() => setPayInv(null)}
+                  onCancel={() => setPayInv(null)}
+                />
+              </div>
+            ) : (<>
+            <div style={{ overflowX: 'auto' }}>
+              <table className="sm-table">
+                <thead>
+                  <tr>
+                    <th>Term</th><th>Due date</th>
+                    <th className="ta-right">Total</th><th className="ta-right">Paid</th><th className="ta-right">Due</th>
+                    <th>Status</th><th className="ta-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {studentInvoices.map((inv) => (
+                    <tr key={inv.id}>
+                      <td className="fw6">
+                        {inv.term || '—'}{inv.academicYear ? <span className="t-xs muted"> · {inv.academicYear}</span> : null}
+                        <div className="t-xs muted">{feeInvoiceNo(inv.id, inv.dueDate)}</div>
+                      </td>
+                      <td>{fmtDueDay(inv.dueDate)}</td>
+                      <td className="ta-right">{fmtMoney(inv.total, cur)}</td>
+                      <td className="ta-right">{fmtMoney(inv.paid, cur)}</td>
+                      <td className="ta-right" style={{ color: inv.due > 0 ? 'var(--danger)' : undefined }}>{fmtMoney(inv.due, cur)}</td>
+                      <td><Badge tone={feeTone[inv.status]} dot>{feeLabel[inv.status]}</Badge></td>
+                      <td className="ta-right">
+                        <div className="row gap6 jc-end">
+                          {canRecord && inv.due > 0 && (
+                            <Btn size="sm" variant="primary" icon="rupee" onClick={() => setPayInv(inv)}>Pay</Btn>
+                          )}
+                          <Btn size="sm" variant="ghost" icon="doc" onClick={() => printInvoices([inv], 'Fee invoice')}>Print</Btn>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colSpan={2} className="fw7">Total</td>
+                    <td className="ta-right fw7">{fmtMoney(totals.total, cur)}</td>
+                    <td className="ta-right fw7">{fmtMoney(totals.paid, cur)}</td>
+                    <td className="ta-right fw7" style={{ color: totals.due > 0 ? 'var(--danger)' : undefined }}>{fmtMoney(totals.due, cur)}</td>
+                    <td colSpan={2} />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            <div className="row gap8 jc-end wrap">
+              <Btn variant="secondary" icon="doc" onClick={() => printInvoices(studentInvoices, 'Fee statement')}>Print statement</Btn>
+              <Btn variant="secondary" icon="download" onClick={downloadStatement}>Download statement</Btn>
+              <Btn variant="secondary" icon="message" onClick={emailStatement}>Email statement</Btn>
+            </div>
+
+            <div className="col gap8" style={{ marginTop: 4 }}>
+              <div className="fw6 t-sm">Payment history</div>
+              {studentPayments.length === 0 ? (
+                <div className="t-sm muted">No payments recorded yet.</div>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="sm-table">
+                    <thead>
+                      <tr>
+                        <th>Date</th><th>Fee type</th><th className="ta-right">Amount</th>
+                        <th>Mode</th><th>Receipt no.</th><th className="ta-right">Receipt</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {studentPayments.map((p) => (
+                        <tr key={p.id}>
+                          <td className="muted">{fmtDueDay(p.date)}</td>
+                          <td><Badge tone="brand">{p.headName || p.feeType || 'All fee types'}</Badge></td>
+                          <td className="ta-right fw6">{fmtMoney(p.amount, cur)}</td>
+                          <td><Badge tone="neutral">{p.mode}</Badge></td>
+                          <td className="t-sm muted">{p.ref || '—'}</td>
+                          <td className="ta-right">
+                            <div className="row gap6 jc-end">
+                              <Btn variant="ghost" size="sm" icon="download" onClick={() => downloadReceipt(p)}>Download</Btn>
+                              <Btn variant="ghost" size="sm" icon="message" onClick={() => mailReceipt(p)}>Mail</Btn>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+            </>)}
+          </>
+        )}
+      </div>
+    </Card>
+  )
+}
+
 function FeesScreen() {
   const app = useApp()
   const cur = app.school.currency
@@ -1991,7 +2318,7 @@ function FeesScreen() {
       },
     },
     {
-      key: 'adm', label: 'Admission no.', sortValue: (r) => admOf(r),
+      key: 'adm', label: 'Student ID', sortValue: (r) => admOf(r),
       render: (r) => <span className="t-sm">{admOf(r) || '—'}</span>,
     },
     {
@@ -2031,8 +2358,8 @@ function FeesScreen() {
           {canRecord && razorpayReady && r.due > 0 && (
             <Btn size="sm" variant="ghost" icon="clipboard" disabled={createOrder.isPending} onClick={() => { void sendPayLink(r) }}>Send pay link</Btn>
           )}
-          {canRecord && <Btn size="sm" variant="secondary" icon="rupee" onClick={() => setPayRow(r)}>Record</Btn>}
-          {canWaive && r.due > 0 && <Btn size="sm" variant="ghost" icon="shield" onClick={() => setWaiveRow(r)}>Waiver</Btn>}
+          {canRecord && <Btn size="sm" variant="secondary" icon="rupee" onClick={() => setPayRow(r)}>Pay fee</Btn>}
+          {canWaive && r.due > 0 && <Btn size="sm" variant="ghost" icon="shield" onClick={() => setWaiveRow(r)}>Waiver discount</Btn>}
           {!canRecord && !canWaive && <span className="t-xs muted">—</span>}
         </div>
       ),
@@ -2049,6 +2376,7 @@ function FeesScreen() {
         actions={
           canRecord ? (
             <>
+              <Btn variant="primary" icon="rupee" onClick={() => setTab('pay')}>Pay fees</Btn>
               <Btn variant="secondary" icon="bell" onClick={() => setRemindOpen(true)}>Send reminders</Btn>
               <Btn variant="secondary" icon="download" onClick={exportCsv}>Export</Btn>
             </>
@@ -2059,12 +2387,23 @@ function FeesScreen() {
       <div style={{ marginBottom: 16 }}>
         <Tabs value={tab} onChange={setTab} tabs={[
           { value: 'collection', label: 'Collection', icon: 'wallet' },
+          { value: 'pay', label: 'Pay fees', icon: 'rupee' },
           { value: 'history', label: 'History', icon: 'clock' },
           { value: 'structure', label: 'Structure', icon: 'rupee' },
           { value: 'structure-versions', label: 'Saved versions', icon: 'doc' },
         ]} />
       </div>
 
+      {tab === 'pay' && (
+        <StudentFeesPanel
+          invoices={invoices}
+          admOf={admOf}
+          studentsById={studentsById}
+          cur={cur}
+          schoolName={app.school.name}
+          canRecord={canRecord}
+        />
+      )}
       {tab === 'history' && <FeeHistoryTab cur={cur} />}
       {tab === 'structure-versions' && (
         <FeeStructureHistoryTab
@@ -2108,7 +2447,7 @@ function FeesScreen() {
         <Kpi icon="rupee" iconBg="var(--success-bg)" iconColor="var(--success)" label="Collected today" value={fmtMoney(summary?.collectedToday ?? 0, cur)} foot="so far today" />
         <Kpi icon="wallet" iconBg="var(--brand-50)" iconColor="var(--brand-600)" label="Collected this term" value={fmtMoney(summary?.collectedTerm ?? 0, cur)} delta={`${summary?.pct ?? 0}%`} deltaDir="up" foot={`of ${fmtMoney(summary?.billedTerm ?? 0, cur)} billed`} />
         <Kpi icon="alert" iconBg="var(--warning-bg)" iconColor="var(--warning)" label="Outstanding dues" value={fmtMoney(summary?.outstanding ?? 0, cur)} foot="across all classes" />
-        <Kpi icon="users" iconBg="var(--danger-bg)" iconColor="var(--danger)" label="Defaulters" value={fmtNum(summary?.defaulters ?? 0)} foot="students with full dues" />
+        <Kpi icon="users" iconBg="var(--danger-bg)" iconColor="var(--danger)" label="Pending dues" value={fmtNum(summary?.defaulters ?? 0)} foot="students with unpaid fees" />
       </div>
 
       {/* Collection by class */}
@@ -2124,7 +2463,7 @@ function FeesScreen() {
         <div className="col gap12" style={{ padding: 16, borderBottom: '1px solid var(--border)' }}>
           <div className="row ai-end gap12 wrap">
             <div style={{ flex: 1, minWidth: 240 }}>
-              <Field label="Student search" hint="Name, class, or admission number — fields fill when one student matches.">
+              <Field label="Student search" hint="Name, class, or Student ID — fields fill when one student matches.">
                 <Search value={q} onChange={setQ} placeholder="e.g. Rahul or STU/26/0001" />
               </Field>
             </div>
@@ -2145,7 +2484,7 @@ function FeesScreen() {
                   <div className="fw6">{properName(searchHit.studentName)}</div>
                 </div>
                 <div>
-                  <div className="t-xs muted">Admission no.</div>
+                  <div className="t-xs muted">Student ID</div>
                   <div className="fw6">{admOf(searchHit) || '—'}</div>
                 </div>
                 <div>
@@ -2162,7 +2501,7 @@ function FeesScreen() {
                 </div>
               </div>
               {canRecord && (
-                <Btn size="sm" variant="primary" icon="rupee" onClick={() => setPayRow(searchHit)}>Record payment</Btn>
+                <Btn size="sm" variant="primary" icon="rupee" onClick={() => setPayRow(searchHit)}>Pay fee</Btn>
               )}
             </div>
           )}
@@ -2172,6 +2511,7 @@ function FeesScreen() {
           rows={rows}
           pageSize={10}
           rowKey={(r) => r.id}
+          onRowDoubleClick={(r) => app.go('school.student', { focus: r.studentId })}
           initialSort={{ key: 'due', dir: 'desc' }}
           empty={
             <Empty

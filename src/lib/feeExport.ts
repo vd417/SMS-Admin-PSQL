@@ -11,7 +11,7 @@ export function invoicesToCsv(
   rows: FeeInvoice[],
   admOf?: (inv: FeeInvoice) => string,
 ): string {
-  const header = ['Student', 'Admission', 'Class', 'Term', 'Year', 'Total', 'Paid', 'Due', 'Status']
+  const header = ['Student', 'Student ID', 'Class', 'Term', 'Year', 'Total', 'Paid', 'Due', 'Status']
   const lines = rows.map((r) => {
     const adm = admOf?.(r) || r.studentAdm || ''
     return [

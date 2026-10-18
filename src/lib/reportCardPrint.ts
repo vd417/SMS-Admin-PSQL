@@ -229,7 +229,7 @@ function buildHtml(opts: ReportCardPrintOpts): string {
     </div>
     <div class="layer info">
       <div><div class="lab">Student</div><div class="val">${esc(studentName)}</div></div>
-      <div><div class="lab">Admission no</div><div class="val">${esc(opts.student.adm)}</div></div>
+      <div><div class="lab">Student ID</div><div class="val">${esc(opts.student.adm)}</div></div>
       <div><div class="lab">Class · Roll</div><div class="val">${esc(opts.student.cls)} · ${opts.student.roll}</div></div>
       <div><div class="lab">Guardian</div><div class="val">${esc(guardian || '—')}</div></div>
       <div><div class="lab">Attendance</div><div class="val">${opts.student.attendance}%</div></div>

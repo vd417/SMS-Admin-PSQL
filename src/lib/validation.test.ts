@@ -2,8 +2,33 @@ import { describe, it, expect } from 'vitest'
 import {
   required, validateAadhaar, validateFile, validateEmail, validatePhone, MAX_FILE_MB,
   validatePAN, validateIFSC, validateURL, passwordsMatch, validatePassword,
-  normalizePhoneDigits, normalizeEmailKey, isDuplicateValue,
+  validateMinAge, normalizePhoneDigits, normalizeEmailKey, isDuplicateValue,
 } from './validation'
+
+describe('validateMinAge', () => {
+  const yearsAgo = (n: number) => {
+    const d = new Date()
+    d.setFullYear(d.getFullYear() - n)
+    return d.toISOString().slice(0, 10)
+  }
+  it('treats empty as valid (optional)', () => {
+    expect(validateMinAge('', 3)).toBeNull()
+    expect(validateMinAge(undefined, 3)).toBeNull()
+  })
+  it('accepts a child at or above the minimum age', () => {
+    expect(validateMinAge(yearsAgo(5), 3)).toBeNull()
+  })
+  it('rejects a child younger than the minimum age', () => {
+    expect(validateMinAge(yearsAgo(2), 3)).not.toBeNull()
+  })
+  it('rejects a future date of birth', () => {
+    const next = new Date(); next.setFullYear(next.getFullYear() + 1)
+    expect(validateMinAge(next.toISOString().slice(0, 10), 3)).not.toBeNull()
+  })
+  it('rejects an invalid date string', () => {
+    expect(validateMinAge('not-a-date', 3)).not.toBeNull()
+  })
+})
 
 describe('required', () => {
   it('rejects empty / whitespace', () => {

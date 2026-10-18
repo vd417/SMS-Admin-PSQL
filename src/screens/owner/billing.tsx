@@ -758,15 +758,15 @@ function OwnerBilling() {
   const BILLING_TABS = ['subs', 'upgrades', 'invoices', 'revenue', 'plans']
   const [tab, setTabState] = useState(() => {
     try {
-      const t = new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('tab')
+      const t = new URLSearchParams(window.location.search).get('tab')
       return t && BILLING_TABS.includes(t) ? t : 'subs'
     } catch { return 'subs' }
   })
   const setTab = (t: string) => {
     setTabState(t)
-    // Reflect the active tab in the URL (no history spam) so it's refresh/deep-link safe.
+    // Reflect the active tab in the URL query (no history spam) so it's refresh/deep-link safe.
     try {
-      const path = window.location.hash.split('?')[0] || '#/owner/billing'
+      const path = window.location.pathname || '/owner/billing'
       window.history.replaceState(null, '', t === 'subs' ? path : `${path}?tab=${t}`)
     } catch { /* ignore */ }
   }

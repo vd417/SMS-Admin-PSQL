@@ -105,7 +105,7 @@ describe('Add Student form', () => {
 
   it('shows the auto-generated admission number as read-only', () => {
     renderForm()
-    const input = within(screen.getByText('Admission number').closest('.sm-field') as HTMLElement).getByRole('textbox')
+    const input = within(screen.getByText('Student ID').closest('.sm-field') as HTMLElement).getByRole('textbox')
     expect(input).toHaveAttribute('readonly')
   })
 
@@ -138,7 +138,7 @@ describe('Add Student form', () => {
       return Promise.resolve(jsonResponse({ data: STUDENT_ROW }))
     }))
     renderForm()
-    const input = within(screen.getByText('Admission number').closest('.sm-field') as HTMLElement).getByRole('textbox')
+    const input = within(screen.getByText('Student ID').closest('.sm-field') as HTMLElement).getByRole('textbox')
     await waitFor(() => expect(input).toHaveValue('sch/STU/26/0007'))
     vi.unstubAllGlobals()
   })

@@ -12,6 +12,7 @@ import {
 import { usePtm, useCreatePtm, useDeletePtm } from '@/api/hooks/usePtm'
 import { useTeachers } from '@/api/hooks/useTeachers'
 import { useStudents } from '@/api/hooks/useStudents'
+import { useClasses } from '@/api/hooks/useClasses'
 import type { PtmItem, PtmStatus } from '@/api/ptm'
 
 const STATUS_TONE: Record<PtmStatus, BadgeTone> = { pending: 'warning', confirmed: 'success' }
@@ -20,16 +21,31 @@ const MODES = ['In person', 'Video call', 'Phone call']
 
 type StatusFilter = 'all' | PtmStatus
 
+type Scope = 'student' | 'section' | 'class' | 'all'
+const SCOPE_OPTIONS: { value: Scope; label: string }[] = [
+  { value: 'student', label: 'One student' },
+  { value: 'section', label: 'One class-section' },
+  { value: 'class', label: 'Whole class (all sections)' },
+  { value: 'all', label: 'All students' },
+]
+
 interface CreateForm {
+  scope: Scope
   studentId: string
+  grade: string
+  section: string
   teacherId: string
   subject: string
   date: string
   time: string
   mode: string
+  meetingLink: string
 }
 
-const EMPTY_FORM: CreateForm = { studentId: '', teacherId: '', subject: '', date: '', time: '', mode: MODES[0] }
+const EMPTY_FORM: CreateForm = {
+  scope: 'student', studentId: '', grade: '', section: '',
+  teacherId: '', subject: '', date: '', time: '', mode: MODES[0], meetingLink: '',
+}
 
 function PtmScreen() {
   const app = useApp()
@@ -55,33 +71,111 @@ function PtmScreen() {
   const { data: rows, isLoading, isError, error } = usePtm(filters)
   const { data: teachers } = useTeachers()
   const { data: students } = useStudents({ q: studentQuery })
+  const { data: roster } = useStudents()
+  const { data: classes } = useClasses()
   const createPtm = useCreatePtm()
   const deletePtm = useDeletePtm()
 
   const teacherOptions = (teachers ?? []).map((t) => ({ value: t.id, label: t.name }))
   const studentOptions = (students ?? []).map((s) => ({ value: s.id, label: s.name }))
 
+  // Grade/section with fallback to the class label (e.g. "IX-A") when the fields are blank.
+  const gradeOf = (s: { grade?: string; cls?: string }) =>
+    (s.grade || '').trim() || (s.cls || '').trim().split('-')[0] || ''
+  const sectionOf = (s: { section?: string; cls?: string }) =>
+    (s.section || '').trim() || (s.cls || '').trim().split('-').slice(1).join('-') || ''
+
+  const activeRoster = useMemo(
+    () => (roster ?? []).filter((s) => String(s.status ?? '').toLowerCase() !== 'inactive'),
+    [roster],
+  )
+  // Grade/section options come from the classes CREATED in the school (Academics), so a class
+  // with no students yet still appears. The bulk create still targets real students below.
+  const classGradeOf = (c: { grade?: string; name?: string }) =>
+    (c.grade || '').trim() || (c.name || '').trim().split('-')[0] || ''
+  const classSectionOf = (c: { section?: string; name?: string }) =>
+    (c.section || '').trim() || (c.name || '').trim().split('-').slice(1).join('-') || ''
+  const gradeOptions = useMemo(
+    () => [...new Set((classes ?? []).map(classGradeOf).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+      .map((g) => ({ value: g, label: g })),
+    [classes],
+  )
+  const sectionOptions = useMemo(
+    () => [...new Set((classes ?? []).filter((c) => classGradeOf(c) === form.grade).map(classSectionOf).filter(Boolean))]
+      .sort()
+      .map((sec) => ({ value: sec, label: sec })),
+    [classes, form.grade],
+  )
+  /** Students the current scope will create a meeting for. */
+  const scopeTargets = useMemo(() => {
+    if (form.scope === 'all') return activeRoster
+    if (form.scope === 'class') return form.grade ? activeRoster.filter((s) => gradeOf(s) === form.grade) : []
+    if (form.scope === 'section') {
+      if (!form.grade) return []
+      const hasSections = sectionOptions.length > 0
+      if (hasSections && !form.section) return []
+      // When the class has no sections, section scope == the whole class.
+      return activeRoster.filter((s) => gradeOf(s) === form.grade && (!hasSections || sectionOf(s) === form.section))
+    }
+    return []
+  }, [form.scope, form.grade, form.section, activeRoster, sectionOptions])
+
   const openAdd = () => { setForm(EMPTY_FORM); setStudentQuery(''); setAddOpen(true) }
 
   const submit = () => {
-    if (!form.studentId) { toast.danger('Student required', 'Pick the student for this meeting.'); return }
     if (!form.teacherId) { toast.danger('Teacher required', 'Pick the teacher for this meeting.'); return }
     if (!form.date) { toast.danger('Date required', 'Pick a meeting date.'); return }
     if (!form.time) { toast.danger('Time required', 'Pick a meeting time.'); return }
-    createPtm.mutate(
-      {
-        studentId: form.studentId,
-        teacherId: form.teacherId,
-        subject: form.subject.trim() || undefined,
-        date: form.date,
-        time: form.time,
-        mode: form.mode,
-      },
-      {
-        onSuccess: () => { toast.success('Meeting scheduled', 'Parents can confirm it in the app.'); setAddOpen(false) },
-        onError: (err) => toast.danger('Could not schedule', err instanceof Error ? err.message : 'Please try again.'),
-      },
-    )
+    const isVideo = form.mode === 'Video call'
+    if (isVideo && !form.meetingLink.trim()) { toast.danger('Meeting link required', 'Paste the video-call link for this meeting.'); return }
+
+    // Resolve the student id(s) this schedule applies to, per the chosen scope.
+    let targetIds: string[]
+    if (form.scope === 'student') {
+      if (!form.studentId) { toast.danger('Student required', 'Pick the student for this meeting.'); return }
+      targetIds = [form.studentId]
+    } else {
+      if (form.scope !== 'all' && !form.grade) { toast.danger('Class required', 'Pick the class/grade.'); return }
+      if (form.scope === 'section' && sectionOptions.length > 0 && !form.section) { toast.danger('Section required', 'Pick the section.'); return }
+      targetIds = scopeTargets.map((s) => s.id)
+      if (!targetIds.length) { toast.danger('No students', 'No active students match this selection.'); return }
+    }
+
+    const base = {
+      teacherId: form.teacherId,
+      subject: form.subject.trim() || undefined,
+      date: form.date,
+      time: form.time,
+      mode: form.mode,
+      meetingLink: isVideo ? form.meetingLink.trim() : undefined,
+    }
+
+    if (targetIds.length === 1) {
+      createPtm.mutate(
+        { ...base, studentId: targetIds[0] },
+        {
+          onSuccess: () => { toast.success('Meeting scheduled', 'Parents can confirm it in the app.'); setAddOpen(false) },
+          onError: (err) => toast.danger('Could not schedule', err instanceof Error ? err.message : 'Please try again.'),
+        },
+      )
+      return
+    }
+
+    // Bulk: one meeting per student, in parallel; report how many succeeded.
+    void (async () => {
+      const results = await Promise.allSettled(
+        targetIds.map((studentId) => createPtm.mutateAsync({ ...base, studentId })),
+      )
+      const ok = results.filter((r) => r.status === 'fulfilled').length
+      const failed = results.length - ok
+      if (ok > 0) {
+        toast.success('Meetings scheduled', `${ok} meeting(s) created${failed ? ` · ${failed} failed` : ''}. Parents can confirm in the app.`)
+        setAddOpen(false)
+      } else {
+        toast.danger('Could not schedule', 'No meetings were created. Please try again.')
+      }
+    })()
   }
 
   const confirmDelete = () => {
@@ -98,7 +192,19 @@ function PtmScreen() {
     { key: 'studentName', label: 'Student', sortValue: (r) => r.studentName },
     { key: 'teacher', label: 'Teacher', sortValue: (r) => r.teacher },
     { key: 'subject', label: 'Subject', render: (r) => r.subject ?? '—' },
-    { key: 'mode', label: 'Mode' },
+    {
+      key: 'mode', label: 'Mode', sortValue: (r) => r.mode,
+      render: (r) => (
+        <div>
+          <div>{r.mode}</div>
+          {r.meetingLink && (
+            <a href={r.meetingLink} target="_blank" rel="noopener noreferrer" className="t-xs" style={{ color: 'var(--brand-600)' }}>
+              Join link
+            </a>
+          )}
+        </div>
+      ),
+    },
     {
       key: 'status', label: 'Status',
       render: (r) => <Badge tone={STATUS_TONE[r.status] ?? 'neutral'}>{STATUS_LABEL[r.status] ?? r.status}</Badge>,
@@ -169,18 +275,58 @@ function PtmScreen() {
         )}
       >
         <div className="col gap12">
-          <Field label="Student" required>
-            <Input
-              placeholder="Search student…"
-              value={studentQuery}
-              onChange={(e) => setStudentQuery(e.target.value)}
-            />
+          <Field label="Schedule for">
             <Select
-              value={form.studentId}
-              onChange={(e) => setForm((f) => ({ ...f, studentId: e.target.value }))}
-              options={[{ value: '', label: 'Select student' }, ...studentOptions]}
+              value={form.scope}
+              onChange={(e) => setForm((f) => ({ ...f, scope: e.target.value as Scope }))}
+              options={SCOPE_OPTIONS}
             />
           </Field>
+          {form.scope === 'student' && (
+            <Field label="Student" required>
+              <Input
+                placeholder="Search student…"
+                value={studentQuery}
+                onChange={(e) => setStudentQuery(e.target.value)}
+              />
+              <Select
+                value={form.studentId}
+                onChange={(e) => setForm((f) => ({ ...f, studentId: e.target.value }))}
+                options={[{ value: '', label: 'Select student' }, ...studentOptions]}
+              />
+            </Field>
+          )}
+          {(form.scope === 'section' || form.scope === 'class') && (
+            <div className="sm-grid-2 gap16">
+              <Field label="Class / grade" required>
+                <Select
+                  value={form.grade}
+                  onChange={(e) => setForm((f) => ({ ...f, grade: e.target.value, section: '' }))}
+                  options={[{ value: '', label: 'Select class' }, ...gradeOptions]}
+                />
+              </Field>
+              {form.scope === 'section' && sectionOptions.length > 0 && (
+                <Field label="Section" required>
+                  <Select
+                    value={form.section}
+                    onChange={(e) => setForm((f) => ({ ...f, section: e.target.value }))}
+                    options={[{ value: '', label: 'Select section' }, ...sectionOptions]}
+                  />
+                </Field>
+              )}
+              {form.scope === 'section' && form.grade && sectionOptions.length === 0 && (
+                <Field label="Section">
+                  <div className="t-xs muted" style={{ paddingTop: 8 }}>This class has no sections — the whole class is selected.</div>
+                </Field>
+              )}
+            </div>
+          )}
+          {form.scope !== 'student' && (
+            <div className="t-xs muted">
+              Creates one meeting for each of <span className="fw6">{scopeTargets.length}</span> active student{scopeTargets.length === 1 ? '' : 's'}
+              {form.scope === 'all' ? ' (whole school)' : ''}.
+            </div>
+          )}
           <Field label="Teacher" required>
             <Select
               value={form.teacherId}
@@ -196,6 +342,15 @@ function PtmScreen() {
           <Field label="Mode">
             <Select value={form.mode} onChange={(e) => setForm((f) => ({ ...f, mode: e.target.value }))} options={MODES} />
           </Field>
+          {form.mode === 'Video call' && (
+            <Field label="Meeting link" required hint="Paste the video-call link — parents/teacher see it in the app.">
+              <Input
+                value={form.meetingLink}
+                placeholder="e.g. https://meet.google.com/abc-defg-hij"
+                onChange={(e) => setForm((f) => ({ ...f, meetingLink: e.target.value }))}
+              />
+            </Field>
+          )}
         </div>
       </Modal>
 

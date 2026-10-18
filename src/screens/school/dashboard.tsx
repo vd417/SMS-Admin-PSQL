@@ -629,6 +629,18 @@ const TAB_META: Record<ApprovalFilter, { sub: string; emptyTitle: string; emptyB
   },
 }
 
+/** Requester role/designation for the card. An account-role token ("school.teacher",
+ *  "vice_principal", "accountant") is cleaned + title-cased; a real job title already in
+ *  human form ("PGT Maths", "Head Clerk") is shown as-is so it isn't mangled. */
+function prettyRole(raw?: string): string {
+  const s = (raw ?? '').trim()
+  if (!s) return 'Requester'
+  if (/^[a-z]+([._][a-z]+)*$/.test(s)) {
+    return s.replace(/^school\./, '').replace(/[._]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+  }
+  return s
+}
+
 export function ApprovalCard({
   a,
   currency,
@@ -646,6 +658,7 @@ export function ApprovalCard({
   canOpenStudent?: boolean
   onOpenStudent?: (studentId: string) => void
 }) {
+  const [zoomUrl, setZoomUrl] = useState<string | null>(null)
   return (
     <Card>
       <div className="row ai-center jc-between gap12 wrap">
@@ -689,16 +702,48 @@ export function ApprovalCard({
       })()}
 
       {a.attachmentUrls && a.attachmentUrls.length > 0 && (
-        <div className="row gap8 wrap" style={{ marginTop: 10 }}>
+        <div className="row gap8 wrap ai-center" style={{ marginTop: 10 }}>
+          <span className="t-xs muted3">Attachment{a.attachmentUrls.length > 1 ? 's' : ''}:</span>
           {a.attachmentUrls.map((url, i) => (
-            <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+            <button
+              key={i}
+              type="button"
+              onClick={() => setZoomUrl(url)}
+              title="Click to view"
+              style={{ border: 'none', padding: 0, background: 'none', cursor: 'pointer', lineHeight: 0 }}
+            >
               <img
                 src={url}
                 alt={`Attachment ${i + 1}`}
-                style={{ width: 56, height: 56, borderRadius: 8, objectFit: 'cover', display: 'block' }}
+                style={{ width: 56, height: 56, borderRadius: 8, objectFit: 'cover', display: 'block', border: '1px solid var(--border)' }}
               />
-            </a>
+            </button>
           ))}
+        </div>
+      )}
+
+      {zoomUrl && (
+        <div
+          onClick={() => setZoomUrl(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,.8)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, cursor: 'zoom-out',
+          }}
+        >
+          <img
+            src={zoomUrl}
+            alt="Attachment"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: '92vw', maxHeight: '92vh', borderRadius: 10, objectFit: 'contain', background: '#fff' }}
+          />
+          <button
+            type="button"
+            onClick={() => setZoomUrl(null)}
+            aria-label="Close"
+            style={{ position: 'fixed', top: 16, right: 20, background: 'rgba(255,255,255,.15)', color: '#fff', border: 'none', borderRadius: 8, width: 36, height: 36, cursor: 'pointer', fontSize: 18 }}
+          >
+            ✕
+          </button>
         </div>
       )}
 
@@ -727,7 +772,7 @@ export function ApprovalCard({
           <Avatar name={a.requester} size={32} />
           <div>
             <div className="t-md" style={{ fontWeight: 600 }}>{a.requester}</div>
-            <div className="t-xs muted3">{a.role || 'Requester'}</div>
+            <div className="t-xs muted3">{prettyRole(a.role)}</div>
           </div>
           {a.amount != null && (
             <Badge tone="info" icon="rupee" style={{ marginLeft: 6 }}>

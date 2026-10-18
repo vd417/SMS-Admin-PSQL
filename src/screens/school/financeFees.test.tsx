@@ -456,14 +456,14 @@ describe('Fee collection tab', () => {
     await waitFor(() => {
       expect(within(container).getByText('Asha Verma')).toBeInTheDocument()
     })
-    fireEvent.click(within(container).getAllByText('Record')[0])
+    fireEvent.click(within(container).getAllByText('Pay fee')[0])
     const dialog = within(container).getByRole('dialog')
     // fee-head options load async; wait for the default head to be selected before changing it
     await waitFor(() => { expect(within(dialog).getByDisplayValue('Academic')).toBeInTheDocument() })
     const [headSelect, modeSelect] = within(dialog).getAllByRole('combobox')
     fireEvent.change(headSelect, { target: { value: 'h2' } })
     fireEvent.change(modeSelect, { target: { value: 'Bank transfer' } })
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Record payment' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Pay fee' }))
 
     const fetchMock = vi.mocked(fetch)
     await waitFor(() => {
@@ -479,10 +479,10 @@ describe('Fee collection tab', () => {
     await waitFor(() => {
       expect(within(container).getByText('Asha Verma')).toBeInTheDocument()
     })
-    fireEvent.click(within(container).getAllByText('Record')[0])
+    fireEvent.click(within(container).getAllByText('Pay fee')[0])
     const dialog = within(container).getByRole('dialog')
     await waitFor(() => { expect(within(dialog).getByDisplayValue('Academic')).toBeInTheDocument() })
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Record payment' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Pay fee' }))
 
     await waitFor(() => {
       expect(within(container).getByText(/Payment recorded/i)).toBeInTheDocument()
@@ -495,10 +495,10 @@ describe('Fee collection tab', () => {
     await waitFor(() => {
       expect(within(container).getByText('Asha Verma')).toBeInTheDocument()
     })
-    fireEvent.click(within(container).getAllByText('Record')[0])
+    fireEvent.click(within(container).getAllByText('Pay fee')[0])
     const dialog = within(container).getByRole('dialog')
     await waitFor(() => { expect(within(dialog).getByDisplayValue('Academic')).toBeInTheDocument() })
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Record payment' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Pay fee' }))
 
     const fetchMock = vi.mocked(fetch)
     await waitFor(() => {
@@ -515,7 +515,7 @@ describe('Fee collection tab', () => {
     await waitFor(() => {
       expect(within(container).getByText('Asha Verma')).toBeInTheDocument()
     })
-    fireEvent.click(within(container).getAllByText('Record')[0])
+    fireEvent.click(within(container).getAllByText('Pay fee')[0])
     const dialog = within(container).getByRole('dialog')
     await waitFor(() => { expect(within(dialog).getByDisplayValue('Academic')).toBeInTheDocument() })
 
@@ -523,11 +523,11 @@ describe('Fee collection tab', () => {
     const payCalls = () => fetchMock.mock.calls.filter(([url, opts]) => opts?.method === 'POST' && String(url).includes('/fees/invoices/inv-1/pay'))
 
     // First submit fails (server error); the modal stays open so the user can retry.
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Record payment' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Pay fee' }))
     await waitFor(() => { expect(payCalls().length).toBe(1) })
 
     // Retry within the same modal instance — the idempotency key must not be regenerated.
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Record payment' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Pay fee' }))
     await waitFor(() => { expect(payCalls().length).toBe(2) })
 
     const [firstCall, secondCall] = payCalls()
@@ -540,10 +540,11 @@ describe('Fee collection tab', () => {
   it('approves a waiver with a stable idempotency_key', async () => {
     const { container } = renderScreen({ asRole: 'principal' })
     await waitFor(() => {
-      expect(within(container).getAllByText('Waiver').length).toBeGreaterThan(0)
+      expect(within(container).getAllByText('Waiver discount').length).toBeGreaterThan(0)
     })
-    fireEvent.click(within(container).getAllByText('Waiver')[0])
+    fireEvent.click(within(container).getAllByText('Waiver discount')[0])
     const dialog = within(container).getByRole('dialog')
+    fireEvent.change(within(dialog).getByRole('spinbutton'), { target: { value: '500' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Approve waiver' }))
 
     const fetchMock = vi.mocked(fetch)
@@ -560,7 +561,7 @@ describe('Fee collection tab', () => {
     await waitFor(() => {
       expect(within(container).getByText('Asha Verma')).toBeInTheDocument()
     })
-    fireEvent.click(within(container).getAllByText('Record')[0])
+    fireEvent.click(within(container).getAllByText('Pay fee')[0])
     const dialog = within(container).getByRole('dialog')
     expect(within(dialog).queryByText('Cheque number')).not.toBeInTheDocument()
 
@@ -573,10 +574,11 @@ describe('Fee collection tab', () => {
     // Waiver approval requires `can(role, 'fees', 'A')`, granted to Principal only.
     const { container } = renderScreen({ asRole: 'principal' })
     await waitFor(() => {
-      expect(within(container).getAllByText('Waiver').length).toBeGreaterThan(0)
+      expect(within(container).getAllByText('Waiver discount').length).toBeGreaterThan(0)
     })
-    fireEvent.click(within(container).getAllByText('Waiver')[0])
+    fireEvent.click(within(container).getAllByText('Waiver discount')[0])
     const dialog = within(container).getByRole('dialog')
+    fireEvent.change(within(dialog).getByRole('spinbutton'), { target: { value: '500' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Approve waiver' }))
 
     const fetchMock = vi.mocked(fetch)

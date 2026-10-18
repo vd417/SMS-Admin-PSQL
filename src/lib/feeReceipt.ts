@@ -80,7 +80,7 @@ export function buildFeeReceiptHtml(data: FeeReceiptData): string {
   <div class="ok" style="margin-top:12px">Fee receipt · Paid</div>
   <div class="box">
     <div class="row"><span class="muted">Student</span><strong>${esc(name)}</strong></div>
-    ${data.studentAdm ? `<div class="row"><span class="muted">Admission no.</span><strong>${esc(data.studentAdm)}</strong></div>` : ''}
+    ${data.studentAdm ? `<div class="row"><span class="muted">Student ID</span><strong>${esc(data.studentAdm)}</strong></div>` : ''}
     <div class="row"><span class="muted">Class</span><strong>${esc(data.cls)}</strong></div>
     ${data.term ? `<div class="row"><span class="muted">Term</span><strong>${esc(data.term)}${data.academicYear ? ` · ${esc(data.academicYear)}` : ''}</strong></div>` : ''}
     ${data.headName ? `<div class="row"><span class="muted">Fee head</span><strong>${esc(data.headName)}</strong></div>` : ''}

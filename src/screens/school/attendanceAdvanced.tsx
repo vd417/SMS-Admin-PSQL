@@ -356,7 +356,7 @@ export function AttendanceAdvanced() {
             <thead>
               <tr>
                 <th>Student Name</th>
-                <th>Admission No</th>
+                <th>Student ID</th>
                 <th>Class</th>
                 <th>Section</th>
                 <th>Status</th>

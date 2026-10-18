@@ -36,7 +36,7 @@ export function buildStudentRegisterRows(records: AttendanceRecord[], students: 
 
 /** Serialize register rows to CSV text. */
 export function registerToCsv(rows: RegisterRow[]): string {
-  const header = ['Name', 'Admission', 'Class', 'Date', 'Status']
+  const header = ['Name', 'Student ID', 'Class', 'Date', 'Status']
   const lines = rows.map((r) => [r.name, r.adm, r.cls, r.date, r.status].map(csvCell).join(','))
   return [header.join(','), ...lines].join('\n')
 }
