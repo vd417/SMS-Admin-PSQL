@@ -772,7 +772,7 @@ export function ApprovalCard({
           <Avatar name={a.requester} size={32} />
           <div>
             <div className="t-md" style={{ fontWeight: 600 }}>{a.requester}</div>
-            <div className="t-xs muted3">{prettyRole(a.role)}</div>
+            <div className="t-xs muted3">{prettyRole(a.role)}{a.roleTitle ? ` · ${a.roleTitle}` : ''}</div>
           </div>
           {a.amount != null && (
             <Badge tone="info" icon="rupee" style={{ marginLeft: 6 }}>

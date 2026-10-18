@@ -458,6 +458,8 @@ export interface Approval {
   detail: string
   requester: string
   role: string
+  /** Human job title (teacher designation / staff role) shown next to the role, e.g. "Teacher · HOD". Optional. */
+  roleTitle?: string
   amount: number | null
   age: string
   priority: 'high' | 'medium' | 'low'
