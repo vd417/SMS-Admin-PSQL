@@ -243,6 +243,9 @@ export interface FeeStructureHistoryEntry {
   totalAmount: number
   /** Per-fee-head breakdown of totalAmount, e.g. [{ headName: 'Exam Fee', amount: 8000 }]. */
   headAmounts: FeeStructureHeadAmount[]
+  /** True only for a version that was never published — the only ones that can be deleted. A
+   *  version that was ever published is treated as "used" (it may have been billed) and kept. */
+  deletable: boolean
 }
 
 interface ListEnvelope { data: Record<string, unknown>[]; next_cursor: string | null }
@@ -268,6 +271,8 @@ function toHistoryEntry(row: Record<string, unknown>): FeeStructureHistoryEntry 
     createdAt: String(row.created_at ?? '').trim(),
     totalAmount: Number(row.total_amount) || 0,
     headAmounts: Array.isArray(row.head_amounts) ? row.head_amounts.map(toHeadAmount) : [],
+    // Only never-published versions are deletable; default to not-deletable if the field is absent.
+    deletable: row.deletable === true,
   }
 }
 
@@ -298,8 +303,9 @@ export async function unpublishFeeStructureVersion(id: string): Promise<void> {
   await request<void>(`/fees/structures/${id}/unpublish`, { method: 'POST' })
 }
 
-/** Deletes a draft outright. The backend refuses (409) to delete a currently published
- *  version — unpublish it first. */
+/** Archives (soft-deletes) a version that was never published. The backend refuses (409) any
+ *  version that was ever published — unpublishing does NOT make it deletable, since it may have
+ *  been billed against. Only rows with `deletable === true` can be removed. */
 export async function deleteFeeStructureVersion(id: string): Promise<void> {
   await request<void>(`/fees/structures/${id}`, { method: 'DELETE' })
 }

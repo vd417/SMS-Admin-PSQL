@@ -1759,7 +1759,7 @@ function FeeStructureHistoryTab({ editable, onEdit }: { editable: boolean; onEdi
   const confirmDelete = () => {
     if (!deleteTarget) return
     deleteVersion.mutate(deleteTarget.id, {
-      onSuccess: () => { toast.success('Draft deleted', deleteTarget.name); setDeleteId(null) },
+      onSuccess: () => { toast.success('Version deleted', deleteTarget.name); setDeleteId(null) },
       onError: (e) => { toast.danger('Could not delete', e instanceof Error ? e.message : 'Please try again.'); setDeleteId(null) },
     })
   }
@@ -1813,8 +1813,14 @@ function FeeStructureHistoryTab({ editable, onEdit }: { editable: boolean; onEdi
                       <>
                         <Btn size="sm" variant="ghost" icon="edit" onClick={() => onEdit(e.id)}>Edit</Btn>
                         <Btn size="sm" variant="secondary" icon="check" disabled={publishVersion.isPending} onClick={() => publish(e.id, e.name)}>Publish</Btn>
-                        <Btn size="sm" variant="ghost" icon="trash" onClick={() => setDeleteId(e.id)}>Delete</Btn>
                       </>
+                    )}
+                    {/* Delete shows on every row so it's discoverable, but a version that was ever
+                        published (deletable === false) can't be removed — it may have been billed. */}
+                    {editable && (
+                      <span title={e.deletable ? undefined : 'Only versions that were never published can be deleted.'}>
+                        <Btn size="sm" variant="ghost" icon="trash" disabled={!e.deletable} onClick={() => { if (e.deletable) setDeleteId(e.id) }}>Delete</Btn>
+                      </span>
                     )}
                   </div>
                 </td>
@@ -1827,7 +1833,7 @@ function FeeStructureHistoryTab({ editable, onEdit }: { editable: boolean; onEdi
       {deleteTarget && (
         <Modal
           open onClose={() => setDeleteId(null)} icon="trash" size="sm"
-          title="Delete this draft?" sub={deleteTarget.name}
+          title="Delete this version?" sub={deleteTarget.name}
           footer={
             <div className="row gap8 jc-end">
               <Btn variant="ghost" onClick={() => setDeleteId(null)}>Cancel</Btn>
@@ -1835,7 +1841,7 @@ function FeeStructureHistoryTab({ editable, onEdit }: { editable: boolean; onEdi
             </div>
           }
         >
-          <div className="t-sm">This draft was never published, so nothing was ever billed against it. This cannot be undone.</div>
+          <div className="t-sm">This version was never published, so nothing has been billed against it. It will be archived and removed from this list.</div>
         </Modal>
       )}
     </Card>
