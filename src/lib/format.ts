@@ -19,7 +19,7 @@ export function fmtDate(raw?: string): string {
 
 /** Human-friendly, stable invoice number from a UUID + date: INV/YYYYMMDD/XXXXXX.
  *  Deterministic (same id → same number); the 6-char id suffix keeps it unique. */
-export function feeInvoiceNo(id: string, dateIso?: string): string {
+export function feeInvoiceNo(id: string | undefined, dateIso?: string): string {
   const d = dateIso ? new Date(dateIso) : null
   const ymd = d && !Number.isNaN(d.getTime())
     ? d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }).replace(/-/g, '')
