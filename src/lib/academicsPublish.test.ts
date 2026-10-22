@@ -21,17 +21,34 @@ function jsonOk(data: unknown, status = 200) {
   } as Response)
 }
 
+function emptyWire() {
+  return { draft_json: null, published_json: null, draft_saved_at: null, published_at: null }
+}
+
 describe('academicsPublish', () => {
-  it('timetable draft stays in session memory (not localStorage)', async () => {
+  it('timetable draft persists through the class-routine API and is cached in memory', async () => {
     const draft = [{ label: 'P1' }]
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>
+    fetchMock
+      .mockResolvedValueOnce(jsonOk(emptyWire()))
+      .mockResolvedValueOnce(jsonOk({
+        draft_json: JSON.stringify(draft),
+        published_json: null,
+        draft_saved_at: '2026-10-22T08:00:00Z',
+        published_at: null,
+      }))
+
     const env = await saveDraftSnapshot('timetable', draft)
     expect(env.draft).toEqual(draft)
     expect(loadPublishEnvelope('timetable').draft).toEqual(draft)
     expect(publishStatusOf(env, draft)).toBe('draft')
     expect(localStorage.getItem('sms_academics_pub:default:timetable')).toBeNull()
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/class-routine')
+    expect(String(fetchMock.mock.calls[1][0])).toContain('/class-routine')
+    expect((fetchMock.mock.calls[1][1] as RequestInit).method).toBe('PUT')
   })
 
-  it('timetable publish clears legacy LS and keeps envelope in memory', async () => {
+  it('timetable publish clears legacy LS and reloads the published envelope from the API', async () => {
     localStorage.setItem('sms_academics_pub:default:timetable', JSON.stringify({
       draft: [{ label: 'Stale' }],
       published: [{ label: 'Stale' }],
@@ -39,10 +56,18 @@ describe('academicsPublish', () => {
       publishedAt: '2026-01-01T00:00:00Z',
     }))
     const data = [{ label: 'P1' }]
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>
+    fetchMock.mockResolvedValueOnce(jsonOk({
+      draft_json: JSON.stringify(data),
+      published_json: JSON.stringify(data),
+      draft_saved_at: '2026-10-22T08:01:00Z',
+      published_at: '2026-10-22T08:01:00Z',
+    }))
     const pub = await publishSnapshot('timetable', data)
     expect(pub.published).toEqual(data)
     expect(loadPublishEnvelope('timetable').published).toEqual(data)
     expect(localStorage.getItem('sms_academics_pub:default:timetable')).toBeNull()
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/class-routine')
   })
 
   it('periods draft/publish go through API', async () => {
@@ -104,10 +129,31 @@ describe('academicsPublish', () => {
 
   it('hides publish after timetable publish until draft is saved again', async () => {
     const data = [{ label: 'P1' }]
+    const edited = [{ label: 'P1b' }]
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>
+    fetchMock
+      .mockResolvedValueOnce(jsonOk({
+        draft_json: JSON.stringify(data),
+        published_json: JSON.stringify(data),
+        draft_saved_at: '2026-10-22T08:01:00Z',
+        published_at: '2026-10-22T08:01:00Z',
+      }))
+      .mockResolvedValueOnce(jsonOk({
+        draft_json: JSON.stringify(data),
+        published_json: JSON.stringify(data),
+        draft_saved_at: '2026-10-22T08:01:00Z',
+        published_at: '2026-10-22T08:01:00Z',
+      }))
+      .mockResolvedValueOnce(jsonOk({
+        draft_json: JSON.stringify(edited),
+        published_json: JSON.stringify(data),
+        draft_saved_at: '2026-10-22T08:02:00Z',
+        published_at: '2026-10-22T08:01:00Z',
+      }))
+
     const pub = await publishSnapshot('timetable', data)
     expect(showPublishButton(publishStatusOf(pub, data), pub, data)).toBe(false)
 
-    const edited = [{ label: 'P1b' }]
     const st = publishStatusOf(pub, edited)
     expect(st).toBe('unpublished')
     expect(showPublishButton(st, pub, edited)).toBe(false)

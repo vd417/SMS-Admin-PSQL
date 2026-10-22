@@ -3,6 +3,7 @@ import {
   getClassSubjects, setClassSubjects, subjectsForClass, loadClassSubjectsMap,
   subjectsMatchPeriodsHint, hydrateClassSubjectsFromClasses, unionMappedSubjects,
   parseSubjectsFromClassWire, listClassSubjects, saveClassSubjects,
+  effectiveClassPeriods, periodChoicesForSchool, suggestedClassPeriods,
   __resetClassSubjectsMemoryForTests,
 } from './classSubjects'
 import { ApiError } from './ApiError'
@@ -17,6 +18,24 @@ beforeEach(() => {
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 }
+
+describe('class period override', () => {
+  it('inherits the school bell until a class overrides it', () => {
+    expect(effectiveClassPeriods(8, null)).toBe(8)
+    expect(effectiveClassPeriods(8, 5)).toBe(5)
+    expect(effectiveClassPeriods(8, 6)).toBe(6)
+    expect(effectiveClassPeriods(6, 8)).toBe(6)
+    expect(periodChoicesForSchool(8)).toEqual([5, 6, 8])
+    expect(periodChoicesForSchool(6)).toEqual([5, 6])
+  })
+
+  it('suggests 8 for grades 5–8 and 5 for grades 9–12', () => {
+    expect(suggestedClassPeriods('VII', 8)).toBe(8)
+    expect(suggestedClassPeriods('9', 8)).toBe(5)
+    expect(suggestedClassPeriods('XI', 8)).toBe(5)
+    expect(suggestedClassPeriods('2', 8)).toBe(6)
+  })
+})
 
 describe('classSubjects', () => {
   it('stores and returns subjects by class id in memory', () => {

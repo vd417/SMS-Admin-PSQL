@@ -48,6 +48,7 @@ export const queryKeys = {
   classes: {
     all: ['classes'] as const,
     subjects: (classId: string) => ['classes', 'subjects', classId] as const,
+    periodOverrides: () => ['classes', 'period-overrides', tenantScope()] as const,
   },
   timetable: {
     all: () => ['timetable', tenantScope()] as const,

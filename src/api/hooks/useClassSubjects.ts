@@ -10,6 +10,7 @@ import {
   saveClassSubjects,
   type ClassSubjectsMap,
 } from '../classSubjects'
+import { listClassPeriodOverrides, saveClassPeriodOverride, type ClassPeriodOverrideMap } from '../classPeriodOverrides'
 import { queryKeys } from '../queryKeys'
 
 /** In-memory class→subject map. Hydrates from GET /classes.subjects when present. */
@@ -68,6 +69,23 @@ export function useSaveClassSubjects(): UseMutationResult<
     onSuccess: (_data, vars) => {
       void qc.invalidateQueries({ queryKey: queryKeys.classes.subjects(vars.classId) })
       void qc.invalidateQueries({ queryKey: queryKeys.classes.all })
+    },
+  })
+}
+
+export function useClassPeriodOverrides(): UseQueryResult<ClassPeriodOverrideMap> {
+  return useQuery({
+    queryKey: queryKeys.classes.periodOverrides(),
+    queryFn: listClassPeriodOverrides,
+  })
+}
+
+export function useSaveClassPeriodOverride(): UseMutationResult<void, Error, { classId: string; periodCount: number | null }> {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ classId, periodCount }) => saveClassPeriodOverride(classId, periodCount),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.classes.periodOverrides() })
     },
   })
 }

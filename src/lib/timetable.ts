@@ -12,6 +12,16 @@ export type PeriodBellMap = Record<number, { start: string; end: string }>
 /** Stable key for a 0-based day + 0-based period slot. */
 export const cellKey = (day: number, period: number): string => `${day}-${period}`
 
+/** Drop teaching slots at or after `periods` (0-based). Keeps a shorter class on the school bell. */
+export function clipGridToPeriods(grid: Grid, periods: number): Grid {
+  const next: Grid = {}
+  for (const [key, cell] of Object.entries(grid)) {
+    const p = Number(key.split('-')[1])
+    if (Number.isFinite(p) && p >= 0 && p < periods) next[key] = cell
+  }
+  return next
+}
+
 /**
  * Auto-fill a class grid from periods-per-week quotas.
  * Uses a diagonal walk (start subject rotates by day+period) so consecutive

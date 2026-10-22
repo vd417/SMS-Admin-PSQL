@@ -220,6 +220,37 @@ export async function saveClassSubjects(
   return fromApi
 }
 
+/** Class may use the full school bell, or stop after 5, 6, or 8 teaching periods. */
+export const CLASS_PERIOD_CHOICES = [5, 6, 8] as const
+
+export function periodChoicesForSchool(schoolPeriods: number): number[] {
+  const school = schoolPeriods > 0 ? schoolPeriods : 8
+  return CLASS_PERIOD_CHOICES.filter((n) => n <= school)
+}
+
+/** No override uses the school bell. An override cannot ask for a period the bell does not have. */
+export function effectiveClassPeriods(schoolPeriods: number, override: number | null | undefined): number {
+  const school = schoolPeriods > 0 ? schoolPeriods : 8
+  if (override == null) return school
+  if (!CLASS_PERIOD_CHOICES.includes(override as (typeof CLASS_PERIOD_CHOICES)[number])) return school
+  return Math.min(override, school)
+}
+
+const GRADE_ROMAN: Record<string, number> = {
+  I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6, VII: 7, VIII: 8, IX: 9, X: 10, XI: 11, XII: 12,
+}
+
+export function suggestedClassPeriods(grade: string, schoolPeriods: number): number {
+  const token = grade.trim().toUpperCase()
+  const n = GRADE_ROMAN[token] ?? (Number.isFinite(Number(token)) && Number(token) > 0 ? Number(token) : null)
+  let want = 6
+  if (n != null && n >= 5 && n <= 8) want = 8
+  else if (n != null && n >= 9 && n <= 12) want = 5
+  const choices = periodChoicesForSchool(schoolPeriods)
+  if (choices.includes(want)) return want
+  return choices[choices.length - 1] ?? (schoolPeriods > 0 ? schoolPeriods : 8)
+}
+
 /** How many teaching (Class) periods are in the Periods schedule. */
 export function teachingPeriodCount(fallback = 8): number {
   const env = loadPublishEnvelope<Array<{ type?: string }>>('periods')

@@ -28,6 +28,20 @@ export interface CreateTimetableSlotInput {
   teacherId?: string | null
 }
 
+export interface TimetableHistoryEntry {
+  id: string
+  kind: string
+  snapshotJson: string | null
+  savedAt: string
+}
+
+/** Last 5 draft/publish snapshots, newest first. */
+export async function listTimetableHistory(): Promise<TimetableHistoryEntry[]> {
+  const wire = await request<Record<string, unknown>[] | null>('/class-routine/history')
+  if (!Array.isArray(wire)) return []
+  return wire.map((row) => snakeToCamel<TimetableHistoryEntry>(row))
+}
+
 export async function listTimetable(): Promise<TimetableSlot[]> {
   const wire = await request<Record<string, unknown>[] | null>('/timetable')
   return Array.isArray(wire) ? wire.map((s) => snakeToCamel<TimetableSlot>(s)) : []

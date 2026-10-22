@@ -1,4 +1,5 @@
-/* Academics draft/publish snapshots — periods & tests via API; timetable draft/publish session memory only. */
+/* Academics draft/publish snapshots — periods, tests, and timetable envelopes via API.
+   publishMemory is only a cache of the last successful fetch/save (not the source of truth). */
 import { request } from '@/api/client'
 import { snakeToCamel, camelToSnake } from '@/api/mapper'
 import { tokenStore } from '@/api/auth/tokenStore'
@@ -48,8 +49,10 @@ function writeMemory<T>(tab: AcademicsPublishTab, env: PublishEnvelope<T>): void
   publishMemory.set(memKey(tab), env as PublishEnvelope<unknown>)
 }
 
-function apiPath(tab: 'periods' | 'tests'): string {
-  return tab === 'periods' ? '/academic-periods' : '/class-tests'
+function apiPath(tab: AcademicsPublishTab): string {
+  if (tab === 'periods') return '/academic-periods'
+  if (tab === 'tests') return '/class-tests'
+  return '/class-routine'
 }
 
 function parseJsonField<T>(raw: unknown): T | null {
@@ -64,7 +67,8 @@ function parseJsonField<T>(raw: unknown): T | null {
   return raw as T
 }
 
-function fromWire<T>(wire: Record<string, unknown>): PublishEnvelope<T> {
+function fromWire<T>(wire: unknown): PublishEnvelope<T> {
+  if (!wire || typeof wire !== 'object' || Array.isArray(wire)) return emptyEnvelope()
   const c = snakeToCamel<Record<string, unknown>>(wire)
   return {
     draft: parseJsonField<T>(c.draftJson ?? c.draft),
@@ -84,7 +88,7 @@ export function loadPublishEnvelope<T>(tab: AcademicsPublishTab): PublishEnvelop
 }
 
 async function upsertRemote<T>(
-  tab: 'periods' | 'tests',
+  tab: AcademicsPublishTab,
   env: PublishEnvelope<T>,
 ): Promise<PublishEnvelope<T>> {
   const wire = await request<Record<string, unknown>>(apiPath(tab), {
@@ -104,9 +108,6 @@ async function upsertRemote<T>(
 
 export async function fetchPublishEnvelope<T>(tab: AcademicsPublishTab): Promise<PublishEnvelope<T>> {
   clearLegacy(tab)
-  if (tab === 'timetable') {
-    return readMemory<T>('timetable')
-  }
   const wire = await request<Record<string, unknown>>(apiPath(tab))
   const remote = fromWire<T>(wire)
   writeMemory(tab, remote)
@@ -114,17 +115,6 @@ export async function fetchPublishEnvelope<T>(tab: AcademicsPublishTab): Promise
 }
 
 export async function saveDraftSnapshot<T>(tab: AcademicsPublishTab, draft: T): Promise<PublishEnvelope<T>> {
-  if (tab === 'timetable') {
-    const prev = readMemory<T>('timetable')
-    const next: PublishEnvelope<T> = {
-      ...prev,
-      draft,
-      draftSavedAt: new Date().toISOString(),
-    }
-    writeMemory('timetable', next)
-    clearLegacy('timetable')
-    return next
-  }
   const prev = await fetchPublishEnvelope<T>(tab)
   const next: PublishEnvelope<T> = {
     ...prev,
@@ -141,11 +131,6 @@ export async function publishSnapshot<T>(tab: AcademicsPublishTab, draft: T): Pr
     published: draft,
     draftSavedAt: now,
     publishedAt: now,
-  }
-  if (tab === 'timetable') {
-    writeMemory('timetable', next)
-    clearLegacy('timetable')
-    return next
   }
   return upsertRemote(tab, next)
 }

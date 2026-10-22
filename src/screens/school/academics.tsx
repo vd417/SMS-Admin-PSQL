@@ -16,18 +16,18 @@ import { useTeachers } from '@/api/hooks/useTeachers'
 import { useUpdateTeacher } from '@/api/hooks/useTeacherMutations'
 import { useSubjects, useCreateSubject, useUpdateSubject, useDeleteSubject, useEnsureDefaultSubjects, useSubjectNames } from '@/api/hooks/useSubjects'
 import { addSchoolHouse, listSchoolHouses, removeSchoolHouse, renameSchoolHouse } from '@/api/schoolHouses'
-import { getClassSubjects, saveClassSubjects, teachingPeriodCount, subjectsMatchPeriodsHint } from '@/api/classSubjects'
-import { useClassSubjectsMap, useListClassSubjects } from '@/api/hooks/useClassSubjects'
+import { getClassSubjects, saveClassSubjects, teachingPeriodCount, subjectsMatchPeriodsHint, effectiveClassPeriods, periodChoicesForSchool, suggestedClassPeriods } from '@/api/classSubjects'
+import { useClassSubjects, useClassSubjectsMap, useClassPeriodOverrides, useListClassSubjects, useSaveClassPeriodOverride } from '@/api/hooks/useClassSubjects'
 import { DEFAULT_GRADES, DEFAULT_SECTIONS } from '@/lib/defaultClasses'
-import { cellKey, clashingClass, clashingClasses, pickTeacher, conflictsFor, teacherLoads, clashingTeachers, teacherSchedule, subjectSchedule, planTimetableSync, bellTimesFromPeriodRows, gridsFromRemoteSlots, hasFilledGrid, generateAutoTimetableGrid, classTimetableMode, subjectsInGrids, DEFAULT_CLASS_BELL_TIMES, type Cell, type Grid } from '@/lib/timetable'
+import { cellKey, clashingClass, clashingClasses, pickTeacher, conflictsFor, teacherLoads, clashingTeachers, teacherSchedule, subjectSchedule, planTimetableSync, bellTimesFromPeriodRows, gridsFromRemoteSlots, hasFilledGrid, generateAutoTimetableGrid, classTimetableMode, subjectsInGrids, clipGridToPeriods, DEFAULT_CLASS_BELL_TIMES, type Cell, type Grid } from '@/lib/timetable'
 import { exportTimetablePdf, hasPrintableTimetable, type TimetablePrintView } from '@/lib/timetablePrint'
-import { listTimetable, replaceTimetableSlots } from '@/api/timetable'
+import { listTimetable, listTimetableHistory, replaceTimetableSlots, type TimetableHistoryEntry } from '@/api/timetable'
 import { ensureSubjectsNamed, ensureDefaultSubjects } from '@/api/subjects'
 import { useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/api/queryKeys'
 import {
   activeSnapshot, fetchPublishEnvelope, loadPublishEnvelope, publishSnapshot, publishStatusOf, saveDraftSnapshot,
-  statusLabel, statusTone, publishMetaLine, showPublishButton, type PublishEnvelope,
+  statusLabel, statusTone, publishMetaLine, formatPublishTime, showPublishButton, type PublishEnvelope, type PublishStatus,
 } from '@/lib/academicsPublish'
 import { useAssignments, useCreateAssignment } from '@/api/hooks/useAssignments'
 import { homeworkStatusLabel } from '@/api/assignments'
@@ -97,6 +97,13 @@ function ClassesTab({ editable }: { editable: boolean }) {
   const [eSec, setESec] = useState('')
   const [eRoom, setERoom] = useState('')
   const [eSubjects, setESubjects] = useState<string[]>([])
+  const [eOverride, setEOverride] = useState(false)
+  const [ePeriods, setEPeriods] = useState(8)
+  const periodOverridesQ = useClassPeriodOverrides()
+  const periodOverrides = periodOverridesQ.data ?? {}
+  const savePeriodOverride = useSaveClassPeriodOverride()
+  const periodChoices = periodChoicesForSchool(periodTarget)
+  const editPeriods = eOverride ? effectiveClassPeriods(periodTarget, ePeriods) : periodTarget
   const classSubjectsMap = useClassSubjectsMap()
   const subjTick = Object.keys(classSubjectsMap).length
 
@@ -145,6 +152,9 @@ function ClassesTab({ editable }: { editable: boolean }) {
     setESec(r.section)
     setERoom(r.room === '—' ? '' : r.room)
     setESubjects(getClassSubjects(r.id, r.name))
+    const saved = r.id ? periodOverrides[r.id] : undefined
+    setEOverride(saved != null)
+    setEPeriods(saved != null ? effectiveClassPeriods(periodTarget, saved) : suggestedClassPeriods(r.grade, periodTarget))
   }
 
   const saveEdit = () => {
@@ -167,9 +177,14 @@ function ClassesTab({ editable }: { editable: boolean }) {
       {
         onSuccess: () => {
           void saveClassSubjects(editRow.id!, name, eSubjects).then(
-            () => {
+            async () => {
+              await savePeriodOverride.mutateAsync({
+                classId: editRow.id!,
+                periodCount: eOverride ? ePeriods : null,
+              })
               const subLabel = eSubjects.length ? ` · ${eSubjects.length} subjects` : ''
-              toast.success('Class updated', `${name}${room !== '—' ? ` · Room ${room}` : ''}${subLabel}.`)
+              const periodLabel = eOverride ? ` · ${ePeriods} periods` : ''
+              toast.success('Class updated', `${name}${room !== '—' ? ` · Room ${room}` : ''}${subLabel}${periodLabel}.`)
               setEditRow(null)
             },
             (err) => {
@@ -300,7 +315,7 @@ function ClassesTab({ editable }: { editable: boolean }) {
     { key: 'name', label: 'Class', sortValue: (r) => r.name, render: (r) => (
       <div className="row ai-center gap10">
         <span className="sm-card-ic"><Icon name="grid" size={15} /></span>
-        <div><div className="fw6">{r.name}</div><div className="t-xs muted">Grade {r.grade}{r.section ? ` · Sec ${r.section}` : ''}</div></div>
+        <div><div className="fw6">{r.name}</div><div className="t-xs muted">Grade {r.grade}{r.section ? ` · Sec ${r.section}` : ''} · {effectiveClassPeriods(periodTarget, r.id ? periodOverrides[r.id] : null)} periods{r.id && periodOverrides[r.id] != null ? ' · override' : ''}</div></div>
       </div>
     ) },
     { key: 'teacher', label: 'Class teacher', sortValue: (r) => liveTeacherName(r.teacherId), render: (r) => (
@@ -488,14 +503,40 @@ function ClassesTab({ editable }: { editable: boolean }) {
           <Input icon="building" value={eRoom} placeholder="Room number or name…" onChange={(e) => setERoom(e.target.value)} />
         </Field>
         <Field
+          label="Periods per day"
+          hint={eOverride
+            ? `This class uses Periods 1–${editPeriods} from the school bell. Later periods are not generated.`
+            : `Uses the full school bell (${periodTarget} teaching periods). Turn on override for a shorter day.`}
+        >
+          <Checkbox
+            label="Override periods"
+            checked={eOverride}
+            onChange={() => {
+              setEOverride((on) => {
+                if (!on) setEPeriods(suggestedClassPeriods(eGrade, periodTarget))
+                return !on
+              })
+            }}
+          />
+          {eOverride && periodChoices.length > 0 && (
+            <div style={{ marginTop: 8, maxWidth: 220 }}>
+              <Select
+                value={String(editPeriods)}
+                options={periodChoices.map((n) => ({ value: String(n), label: `${n} periods (P1–P${n})` }))}
+                onChange={(e) => setEPeriods(Number(e.target.value))}
+              />
+            </div>
+          )}
+        </Field>
+        <Field
           label="Subjects"
-          hint={subjectsMatchPeriodsHint(eSubjects.length, periodTarget)}
+          hint={subjectsMatchPeriodsHint(eSubjects.length, editPeriods)}
         >
           <div className="row ai-center gap8 wrap" style={{ marginBottom: 8 }}>
-            <Badge tone={eSubjects.length === periodTarget ? 'success' : eSubjects.length === 0 ? 'neutral' : 'warning'}>
-              {eSubjects.length} / {periodTarget} subjects
+            <Badge tone={eSubjects.length === editPeriods ? 'success' : eSubjects.length === 0 ? 'neutral' : 'warning'}>
+              {eSubjects.length} / {editPeriods} subjects
             </Badge>
-            <span className="t-xs muted">Same count as Class periods → clean auto-generate.</span>
+            <span className="t-xs muted">Same count as this class’s periods → clean auto-generate.</span>
           </div>
           {catalogSubjects.length === 0 ? (
             <div className="t-sm muted">No subjects in catalog yet.</div>
@@ -779,6 +820,40 @@ function ClassOverview({ grids, classList }: { grids: GridsState; classList: str
   )
 }
 
+/* Per-class timetable publish status — compares one class's current grid against its
+   last published baseline (hydrated from live slots). Replaces the old whole-school
+   status that flagged every class 'published' whenever any slot row existed anywhere. */
+function canonicalClassGrid(grid: Grid | undefined): string {
+  if (!grid) return ''
+  const keys = Object.keys(grid).filter((k) => grid[k]).sort()
+  if (!keys.length) return ''
+  return JSON.stringify(keys.map((k) => { const c = grid[k] as Cell; return [k, c.subject, c.teacherId] }))
+}
+function timetableHistorySummary(snapshotJson: string | null): string {
+  if (!snapshotJson) return 'Empty timetable'
+  try {
+    const snap = JSON.parse(snapshotJson) as { grids?: Record<string, Grid> }
+    const classes = Object.entries(snap.grids ?? {}).filter(([, grid]) => Object.values(grid ?? {}).some(Boolean))
+    if (!classes.length) return 'Empty timetable'
+    const periods = classes.reduce((n, [, grid]) => n + Object.values(grid).filter(Boolean).length, 0)
+    const names = classes.map(([name]) => name)
+    const shown = names.slice(0, 3).join(', ')
+    const extra = names.length > 3 ? ` +${names.length - 3}` : ''
+    return `${shown}${extra} · ${periods} period${periods === 1 ? '' : 's'}`
+  } catch {
+    return 'Saved timetable'
+  }
+}
+
+function timetableClassStatus(published: Grid | undefined, current: Grid | undefined): PublishStatus {
+  const pub = canonicalClassGrid(published)
+  const cur = canonicalClassGrid(current)
+  if (!pub && !cur) return 'empty'
+  if (!pub) return 'draft'
+  if (pub === cur) return 'published'
+  return 'unpublished'
+}
+
 function TimetableTab({ editable }: { editable: boolean }) {
   const toast = useToast()
   const app = useApp()
@@ -799,6 +874,7 @@ function TimetableTab({ editable }: { editable: boolean }) {
   const [classTeachers, setClassTeachers] = useState<Record<string, string>>({})
   const [bellTimes, setBellTimes] = useState(DEFAULT_CLASS_BELL_TIMES)
   const [liveReady, setLiveReady] = useState(() => hasFilledGrid(initialSnap.grids ?? {}))
+  const [history, setHistory] = useState<TimetableHistoryEntry[]>([])
   const teachersRef = useRef(teachers)
   teachersRef.current = teachers
 
@@ -822,10 +898,16 @@ function TimetableTab({ editable }: { editable: boolean }) {
     () => (classesData ?? []).find((c) => (c.name || `${c.grade}-${c.section}`) === cls),
     [classesData, cls],
   )
-  const assignedSubjects = getClassSubjects(selectedClassRow?.id, cls)
-  const periodTarget = teachingPeriodCount(PERIODS)
-  /* Prefer class-assigned subjects for generate/palette; catalog only as fallback. */
-  const subjectNames = assignedSubjects.length ? assignedSubjects : catalogSubjects
+  const assignedSubjects = useClassSubjects(selectedClassRow?.id, cls)
+  const { data: periodOverrides = {} } = useClassPeriodOverrides()
+  const schoolPeriods = teachingPeriodCount(PERIODS)
+  const classPeriods = effectiveClassPeriods(schoolPeriods, selectedClassRow?.id ? periodOverrides[selectedClassRow.id] : null)
+  const periodTarget = classPeriods
+  const totalSlots = classPeriods * DAYS.length
+  /* Only the class's own mapped subjects drive generate/palette — NO generic-catalog
+     fallback. A class with no mapped subjects cannot generate/build a timetable; the
+     empty-state below tells the admin to map subjects first. */
+  const subjectNames = assignedSubjects
   const subjectsAligned = assignedSubjects.length > 0 && assignedSubjects.length === periodTarget
 
   useEffect(() => {
@@ -878,8 +960,8 @@ function TimetableTab({ editable }: { editable: boolean }) {
       setPpw(Object.fromEntries(subjectNames.map((s) => [s, DAYS.length])))
       return
     }
-    const base = Math.floor(TOTAL_SLOTS / subjectNames.length)
-    let extra = TOTAL_SLOTS - base * subjectNames.length
+    const base = Math.floor(totalSlots / subjectNames.length)
+    let extra = totalSlots - base * subjectNames.length
     setPpw(Object.fromEntries(subjectNames.map((s) => [s, base + (extra-- > 0 ? 1 : 0)])))
   }, [subjectNames, periodTarget])
   const [brush, setBrush] = useState('')
@@ -893,7 +975,7 @@ function TimetableTab({ editable }: { editable: boolean }) {
   /* clash confirmation popup when a manual placement would double-book a teacher */
   const [clashPrompt, setClashPrompt] = useState<{ d: number; p: number; subject: string; tid: string; others: string[]; onConfirm: () => void } | null>(null)
 
-  const g = grids[cls] ?? {}
+  const g = clipGridToPeriods(grids[cls] ?? {}, classPeriods)
   const m = classTimetableMode(mode[cls], g)
   const conflicts = useMemo(() => conflictsFor(grids, cls), [grids, cls])
   const loads = useMemo(() => teacherLoads(grids), [grids])
@@ -906,7 +988,10 @@ function TimetableTab({ editable }: { editable: boolean }) {
   }, [catalogSubjects, grids])
 
   const snap: TimetableSnap = useMemo(() => ({ grids, mode }), [grids, mode])
-  const status = publishStatusOf(pubMeta, snap)
+  /* Per-class status: compare THIS class's grid to its published baseline (not a global flag). */
+  const publishedGrids = (pubMeta.published as TimetableSnap | null)?.grids ?? {}
+  const status = timetableClassStatus(publishedGrids[cls], grids[cls])
+  const showPublishClass = status === 'draft' || status === 'unpublished'
   const anyClash = useMemo(() => {
     for (const c of Object.keys(grids)) {
       if (conflictsFor(grids, c).size > 0) return true
@@ -919,9 +1004,10 @@ function TimetableTab({ editable }: { editable: boolean }) {
       try {
         const next = await saveDraftSnapshot('timetable', snap)
         setPubMeta(next)
+        setHistory(await listTimetableHistory())
         const n = conflicts.size
-        if (n > 0) toast.danger('Draft saved with clashes', `${cls} draft (${filled}/${TOTAL_SLOTS}) · ${n} clash${n > 1 ? 'es' : ''} — resolve before publishing.`)
-        else toast.success('Draft saved', `${cls} routine saved as draft (${filled}/${TOTAL_SLOTS} periods).`)
+        if (n > 0) toast.danger('Draft saved with clashes', `${cls} draft (${filled}/${totalSlots}) · ${n} clash${n > 1 ? 'es' : ''} — resolve before publishing.`)
+        else toast.success('Draft saved', `${cls} routine saved as draft (${filled}/${totalSlots} periods).`)
       } catch (err) {
         toast.danger('Could not save draft', err instanceof Error ? err.message : 'Please try again.')
       }
@@ -939,6 +1025,7 @@ function TimetableTab({ editable }: { editable: boolean }) {
         const { slotCount, subjectsCreated } = await syncTimetableToBackend()
         const next = await publishSnapshot('timetable', snap)
         setPubMeta(next)
+        setHistory(await listTimetableHistory())
         void qc.invalidateQueries({ queryKey: queryKeys.subjects.all })
         void qc.invalidateQueries({ queryKey: queryKeys.timetable.all() })
         toast.success(
@@ -991,8 +1078,15 @@ function TimetableTab({ editable }: { editable: boolean }) {
     } catch {
       /* use DEFAULT_CLASS_BELL_TIMES */
     }
+    const periodsForClass = (className: string) => {
+      const row = (classesData ?? []).find((c) => (c.name || `${c.grade}-${c.section}`) === className)
+      return effectiveClassPeriods(schoolPeriods, row?.id ? periodOverrides[row.id] : null)
+    }
+    const clippedGrids = Object.fromEntries(
+      Object.entries(grids).map(([name, grid]) => [name, clipGridToPeriods(grid, periodsForClass(name))]),
+    )
     const plan = planTimetableSync(
-      grids,
+      clippedGrids,
       DAYS,
       classIdFor,
       remote.map((r) => ({ id: r.id, day: r.day, period: r.period, classId: r.classId })),
@@ -1026,7 +1120,8 @@ function TimetableTab({ editable }: { editable: boolean }) {
     return { slotCount: plan.toCreate.length, subjectsCreated }
   }
 
-  /* Hydrate editor from session draft/published, else from live GET /timetable. */
+  /* Hydrate editor from the saved draft/published envelope, else from live GET /timetable
+     (schools that published slots before the envelope existed). */
   useEffect(() => {
     let cancelled = false
     void (async () => {
@@ -1034,8 +1129,10 @@ function TimetableTab({ editable }: { editable: boolean }) {
         const env = await fetchPublishEnvelope<TimetableSnap>('timetable')
         if (cancelled) return
         setPubMeta(env)
+        try { setHistory(await listTimetableHistory()) } catch { /* history is optional beside the grid */ }
         const snap = activeSnapshot(env, editable, { grids: {}, mode: {} } as TimetableSnap)
-        if (hasFilledGrid(snap.grids ?? {})) {
+        const hasEnvelope = env.draft != null || env.published != null
+        if (hasFilledGrid(snap.grids ?? {}) || hasEnvelope) {
           const gridsSnap = snap.grids ?? {}
           setGrids(gridsSnap)
           const modeMap = { ...(snap.mode ?? {}) }
@@ -1079,7 +1176,7 @@ function TimetableTab({ editable }: { editable: boolean }) {
       publish,
       status,
       canPublish: !anyClash && !publishing && subjectNames.length > 0,
-      showPublish: showPublishButton(status, pubMeta, snap),
+      showPublish: showPublishClass,
       draftSavedAt: pubMeta.draftSavedAt,
       publishedAt: pubMeta.publishedAt,
     })
@@ -1131,7 +1228,7 @@ function TimetableTab({ editable }: { editable: boolean }) {
   /* ---- auto generate: diagonal walk so periods don't repeat the same day-row ---- */
   const cfgTotal = Object.values(ppw).reduce((a, b) => a + b, 0)
   const generate = () => {
-    const next = generateAutoTimetableGrid(DAYS.length, PERIODS, subjectNames, ppw)
+    const next = generateAutoTimetableGrid(DAYS.length, classPeriods, subjectNames, ppw)
     const rot: Record<string, number> = {}
     for (const [key, cell] of Object.entries(next)) {
       if (!cell) continue
@@ -1148,16 +1245,19 @@ function TimetableTab({ editable }: { editable: boolean }) {
     setPlaceCounts({})
     setCfgOpen(false)
     void saveDraftSnapshot('timetable', { grids: nextGrids, mode: nextMode })
-      .then(setPubMeta)
+      .then((env) => {
+        setPubMeta(env)
+        return listTimetableHistory().then(setHistory)
+      })
       .catch(() => { /* keep generated grid even if draft persist fails */ })
     const clashCount = conflictsFor({ ...grids, [cls]: next }, cls).size
     const filledCount = Object.values(next).filter(Boolean).length
     toast.success('Timetable generated', `${filledCount} periods placed for ${cls} · ${clashCount === 0 ? '0 clashes' : `${clashCount} clash${clashCount > 1 ? 'es' : ''} to review`}.`)
   }
 
-  /* grid rows incl. fixed lunch break */
+  /* grid rows incl. fixed lunch break — only this class's teaching periods */
   const rowsDesc: ({ type: 'period'; p: number } | { type: 'lunch' })[] = []
-  for (let p = 0; p < PERIODS; p++) { rowsDesc.push({ type: 'period', p }); if (p === LUNCH_AFTER - 1) rowsDesc.push({ type: 'lunch' }) }
+  for (let p = 0; p < classPeriods; p++) { rowsDesc.push({ type: 'period', p }); if (p === LUNCH_AFTER - 1) rowsDesc.push({ type: 'lunch' }) }
 
   const printView: TimetablePrintView = view === 'overview' ? 'overview' : view === 'teacher' ? 'teacher' : view === 'subject' ? 'subject' : 'class'
   const handlePrintPdf = () => {
@@ -1220,6 +1320,27 @@ function TimetableTab({ editable }: { editable: boolean }) {
         </div>
       </Card>
 
+      {liveReady && (
+        <Card>
+          <CardHead title="Saved history" sub="Last 5 drafts and publishes are kept" icon="clock" />
+          {history.length === 0 ? (
+            <div className="t-sm muted" style={{ marginTop: 8 }}>Nothing saved yet. Save a draft or publish to start the history.</div>
+          ) : (
+            <div className="col gap8" style={{ marginTop: 8 }}>
+              {history.slice(0, 5).map((h) => (
+                <div key={h.id} className="row ai-center jc-between gap12 wrap">
+                  <div className="row ai-center gap8 wrap">
+                    <Badge tone={h.kind === 'published' ? 'success' : 'info'}>{h.kind === 'published' ? 'Published' : 'Draft'}</Badge>
+                    <span className="t-sm">{timetableHistorySummary(h.snapshotJson)}</span>
+                  </div>
+                  <span className="t-xs muted">{formatPublishTime(h.savedAt) ?? h.savedAt}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
+
       {view === 'teacher' && (
         liveReady
           ? <TeacherView grids={grids} setGrids={setGrids} editable={editable} onTeacherChange={setViewTeacherId} />
@@ -1241,7 +1362,16 @@ function TimetableTab({ editable }: { editable: boolean }) {
       )}
 
       {view === 'class' && classList.length > 0 && subjectNames.length === 0 && (
-        <Empty icon="book" title="No subjects yet" body="Add subjects under Academics → Subjects before building a timetable." />
+        <div className="col gap12">
+          <Card>
+            <Field label="Class"><Select style={{ minWidth: 140 }} options={classList} value={cls} onChange={(e) => setCls(e.target.value)} /></Field>
+          </Card>
+          {catalogSubjects.length === 0 ? (
+            <Empty icon="book" title="No subjects yet" body="Add subjects under Academics → Subjects, then map them to each class before building a timetable." />
+          ) : (
+            <Empty icon="book" title={`No subjects mapped to ${cls || 'this class'}`} body="Map subjects to this class under Academics → Classes → Subjects. The timetable generates only from the class's own mapped subjects — it no longer falls back to generic default subjects." />
+          )}
+        </div>
       )}
 
       {view === 'class' && classList.length > 0 && subjectNames.length > 0 && (<>
@@ -1251,6 +1381,9 @@ function TimetableTab({ editable }: { editable: boolean }) {
           <div className="row ai-center gap12 wrap">
             <Field label="Class"><Select style={{ minWidth: 140 }} options={classList} value={cls} onChange={(e) => setCls(e.target.value)} /></Field>
             {ctId && <Badge tone="brand" icon="user" style={{ alignSelf: 'flex-end', marginBottom: 4 }}>Class teacher: {teacherName(teachers, ctId)}</Badge>}
+            <Badge tone="neutral" style={{ alignSelf: 'flex-end', marginBottom: 4 }}>
+              {classPeriods} periods/day{selectedClassRow?.id && periodOverrides[selectedClassRow.id] != null ? ' · override' : ''}
+            </Badge>
             {assignedSubjects.length > 0 ? (
               <Badge
                 tone={subjectsAligned ? 'success' : 'warning'}
@@ -1267,14 +1400,14 @@ function TimetableTab({ editable }: { editable: boolean }) {
           </div>
           {m === 'build' && (
             <div className="row ai-center gap8 wrap">
-              <Badge tone={filled === TOTAL_SLOTS ? 'success' : 'neutral'}>{filled}/{TOTAL_SLOTS} periods set</Badge>
+              <Badge tone={filled === totalSlots ? 'success' : 'neutral'}>{filled}/{totalSlots} periods set</Badge>
               {conflicts.size > 0
                 ? <Badge tone="danger" icon="alert">{conflicts.size} clash{conflicts.size > 1 ? 'es' : ''}</Badge>
                 : filled > 0 ? <Badge tone="success" icon="checkCircle">No clashes</Badge> : null}
               {editable && <Btn size="sm" variant="secondary" icon="sparkle" onClick={() => setCfgOpen(true)}>Re-generate</Btn>}
               {editable && <Btn size="sm" variant="ghost" icon="refresh" onClick={restart}>Restart</Btn>}
               {editable && <Btn size="sm" variant="ghost" icon="check" onClick={saveDraft}>Save draft</Btn>}
-              {editable && showPublishButton(status, pubMeta, snap) && (
+              {editable && showPublishClass && (
                 <Btn size="sm" variant="primary" icon="check" onClick={publish} disabled={anyClash || publishing}>
                   {publishing ? 'Publishing…' : 'Save & publish'}
                 </Btn>
@@ -1423,8 +1556,8 @@ function TimetableTab({ editable }: { editable: boolean }) {
         sub={`Class ${cls} · ${subjectNames.length} subjects · ${periodTarget} periods/day`}
         footer={
           <div className="row ai-center jc-between" style={{ width: '100%' }}>
-            <Badge tone={cfgTotal === TOTAL_SLOTS ? 'success' : cfgTotal > TOTAL_SLOTS ? 'danger' : 'warning'}>
-              {cfgTotal}/{TOTAL_SLOTS} periods{cfgTotal === TOTAL_SLOTS ? ' · perfect fit' : cfgTotal > TOTAL_SLOTS ? ' · over capacity' : ' · free periods left'}
+            <Badge tone={cfgTotal === totalSlots ? 'success' : cfgTotal > totalSlots ? 'danger' : 'warning'}>
+              {cfgTotal}/{totalSlots} periods{cfgTotal === totalSlots ? ' · perfect fit' : cfgTotal > totalSlots ? ' · over capacity' : ' · free periods left'}
             </Badge>
             <div className="row gap8">
               <Btn variant="ghost" onClick={() => setCfgOpen(false)}>Cancel</Btn>
