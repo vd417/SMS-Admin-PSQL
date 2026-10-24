@@ -55,6 +55,10 @@ export interface CreateThreadInput {
 
 interface ListEnvelope { data: Record<string, unknown>[]; next_cursor: string | null }
 
+// All chat timestamps are shown in India Standard Time regardless of the viewer's device
+// timezone (server sends UTC ISO with a trailing Z; this is an India-only product).
+const IST = 'Asia/Kolkata'
+
 /** Short relative label (now / 5m / 3h / 2d / 12 Jan) from an ISO datetime. */
 export function relTime(iso: unknown): string {
   if (typeof iso !== 'string' || !iso) return ''
@@ -68,7 +72,7 @@ export function relTime(iso: unknown): string {
   if (hr < 24) return `${hr}h`
   const day = Math.floor(hr / 24)
   if (day < 7) return `${day}d`
-  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: IST })
 }
 
 /** In-conversation message timestamp — 12-hour clock with AM/PM (e.g. "2:35 PM"), prefixed
@@ -77,10 +81,11 @@ export function messageTime(iso: unknown): string {
   if (typeof iso !== 'string' || !iso) return ''
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
-  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true })
-  const now = new Date()
-  const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()
-  return sameDay ? time : `${d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}, ${time}`
+  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: IST })
+  // "Same day" is evaluated in IST too, so the date prefix matches the IST clock shown above.
+  const istDay = (x: Date): string => x.toLocaleDateString('en-CA', { timeZone: IST })
+  const sameDay = istDay(d) === istDay(new Date())
+  return sameDay ? time : `${d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: IST })}, ${time}`
 }
 
 export function toThread(wire: Record<string, unknown>): ChatThread {

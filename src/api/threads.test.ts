@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { listThreads, createThread, listThreadMessages, sendMessage, messageTime } from './threads'
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -7,17 +7,17 @@ function jsonResponse(body: unknown, status = 200): Response {
 beforeEach(() => { localStorage.clear(); vi.restoreAllMocks() })
 
 describe('messageTime', () => {
-  it('formats a same-day timestamp as 12-hour clock time with AM/PM', () => {
-    const now = new Date()
-    now.setHours(14, 35, 0, 0)
-    expect(messageTime(now.toISOString())).toMatch(/^2:35\s?PM$/i)
+  // Chat times always render in IST (Asia/Kolkata, UTC+5:30) regardless of the test runner's
+  // own timezone. "Now" is pinned so same-day detection is deterministic.
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date('2026-10-24T12:00:00Z')) }) // 17:30 IST
+  afterEach(() => { vi.useRealTimers() })
+
+  it('formats a same-day timestamp as 12-hour clock IST time with AM/PM', () => {
+    expect(messageTime('2026-10-24T09:05:00Z')).toMatch(/^2:35\s?PM$/i) // 09:05Z -> 14:35 IST
   })
 
   it('prefixes the date for a timestamp not from today', () => {
-    const old = new Date()
-    old.setDate(old.getDate() - 3)
-    old.setHours(9, 5, 0, 0)
-    expect(messageTime(old.toISOString())).toMatch(/^\w{3} \d{1,2}, 9:05\s?AM$/i)
+    expect(messageTime('2026-10-21T03:35:00Z')).toMatch(/^\w{3} \d{1,2}, 9:05\s?AM$/i) // -> 09:05 IST, 21 Oct
   })
 
   it('returns empty string for missing/invalid input', () => {
