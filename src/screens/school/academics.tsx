@@ -38,7 +38,6 @@ import { subjStyle } from '@/lib/subjectStyle'
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const PERIODS = 8                 // teaching periods per day (P1..P8)
 const LUNCH_AFTER = 4             // lunch break shown after period 4
-const TOTAL_SLOTS = PERIODS * DAYS.length   // 48 teaching slots / week (Mon–Sat)
 const ERASE = '__erase'
 
 const LiveTeachersCtx = createContext<Teacher[]>([])
