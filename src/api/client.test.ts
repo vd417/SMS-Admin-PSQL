@@ -92,6 +92,33 @@ describe('request', () => {
     expect(tokenStore.getAccess()).toBe('new')
   })
 
+  it('serializes refresh across tabs via a Web Lock and uses the latest stored refresh token', async () => {
+    // Multi-tab race: a sibling tab already rotated r1 -> r2 in shared localStorage and
+    // released the lock before this tab's refresh runs. This tab must read r2 (not the
+    // spent r1 it started with) and refresh cleanly instead of 401-ing into a logout.
+    tokenStore.set({ access_token: 'old', refresh_token: 'r2' })
+    const locksRequest = vi.fn((_name: string, cb: () => Promise<boolean>) => cb())
+    vi.stubGlobal('navigator', { locks: { request: locksRequest } })
+    const onFail = vi.fn()
+    setOnAuthFailure(onFail)
+    const fetchMock = vi.fn(async (url: unknown, init?: RequestInit) => {
+      const path = new URL(String(url)).pathname
+      if (path.endsWith('/auth/refresh')) {
+        const sent = (JSON.parse(init?.body as string) as { refresh_token: string }).refresh_token
+        if (sent !== 'r2') return jsonResponse({ error: { code: 'invalid_token', message: 'spent' } }, 401)
+        return jsonResponse({ data: { access_token: 'new', refresh_token: 'r3' } })
+      }
+      const headers = (init?.headers ?? {}) as Record<string, string>
+      if (headers.Authorization === 'Bearer new') return jsonResponse({ data: { ok: true } })
+      return jsonResponse({ error: { code: 'invalid_token', message: 'exp' } }, 401)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    expect(await request<{ ok: boolean }>('/secure')).toEqual({ ok: true })
+    expect(locksRequest).toHaveBeenCalledWith('sms-admin-auth-refresh', expect.any(Function))
+    expect(tokenStore.getRefresh()).toBe('r3')
+    expect(onFail).not.toHaveBeenCalled()
+  })
+
   it('clears tokens and fires onAuthFailure when refresh fails', async () => {
     tokenStore.set({ access_token: 'old', refresh_token: 'r1' })
     const onFail = vi.fn()
