@@ -454,7 +454,7 @@ const LANG_OPTIONS = [
 const FEATURE_GROUPS: { tier: Tier; key: string; features: string[] }[] = [
   { tier: 'silver', key: 'sis', features: ['SIS · Academics · Attendance', 'Examinations & report cards', 'Fees & online payments', 'Communication & complaints'] },
   { tier: 'gold', key: 'analytics.weak_students', features: ['Weak-student analytics', 'Advanced reporting'] },
-  { tier: 'platinum', key: 'hr_payroll', features: ['Staff & support', 'Operations (transport · hostel · sports)', 'HR & Payroll', 'Geo-fenced attendance', 'Live GPS bus tracking', 'Dedicated support'] },
+  { tier: 'platinum', key: 'hr_payroll', features: ['Staff & Support', 'Operations (transport · hostel · sports)', 'HR & Payroll', 'Geo-fenced attendance', 'Live GPS bus tracking', 'Dedicated support'] },
 ]
 
 function SettingsScreen() {
@@ -848,7 +848,7 @@ const CAP_COLOR: Record<Cap, string> = { V: 'var(--info)', E: 'var(--warning)', 
 const MODULE_LABEL: Record<string, string> = {
   setup: 'School setup',
   dashboard: 'Dashboard',
-  identity: 'Identity & access',
+  identity: 'Identity & Access',
   sis: 'Student information',
   academics: 'Academics',
   attendance: 'Attendance',
@@ -858,6 +858,8 @@ const MODULE_LABEL: Record<string, string> = {
   communication: 'Communication',
   operations: 'Operations',
   settings: 'Settings',
+  issues: 'Issues & complaints',
+  staffTasks: 'Staff tasks',
 }
 
 const roleTone = (r: Role): BadgeTone =>
@@ -1734,16 +1736,16 @@ function IdentityScreen() {
   return (
     <div>
       <PageHead
-        title="Identity & access"
+        title="Identity & Access"
         sub="Manage staff accounts, role permissions & access invitations"
       />
       <Tabs
         value={tab} onChange={setTab}
         tabs={[
           { value: 'users', label: 'Users', icon: 'users', count: userCount },
-          { value: 'roles', label: 'Roles & permissions', icon: 'lock' },
+          { value: 'roles', label: 'Roles & Permissions', icon: 'lock' },
           { value: 'invites', label: 'Invitations', icon: 'inbox', count: inviteCount },
-          { value: 'audit', label: 'Audit log', icon: 'clock' },
+          { value: 'audit', label: 'Audit Log', icon: 'clock' },
         ]}
       />
       <div style={{ marginTop: 16 }}>

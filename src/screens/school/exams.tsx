@@ -50,7 +50,7 @@ const statusTone: Record<Exam['status'], BadgeTone> = {
   scheduled: 'info', completed: 'success', marks_entry: 'warning', draft: 'neutral',
 }
 const statusLabel: Record<Exam['status'], string> = {
-  scheduled: 'Scheduled', completed: 'Completed', marks_entry: 'Marks entry', draft: 'Draft',
+  scheduled: 'Scheduled', completed: 'Completed', marks_entry: 'Marks Entry', draft: 'Draft',
 }
 const fmtDate = (iso: string): string =>
   iso ? new Date(iso + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—'
@@ -3873,16 +3873,16 @@ function ExamsScreen() {
   const [publishExam, setPublishExam] = useState<Exam | null>(null)
 
   const tabs = [
-    { value: 'exams', label: 'Exams & tests', icon: 'clipboard' },
-    { value: 'timetable', label: 'Exam timetable', icon: 'calendar' },
-    { value: 'marks', label: 'Marks entry', icon: 'edit' },
-    { value: 'attendance', label: 'Exam attendance', icon: 'clock' },
-    { value: 'reports', label: 'Report cards', icon: 'cap' },
+    { value: 'exams', label: 'Exams & Tests', icon: 'clipboard' },
+    { value: 'timetable', label: 'Exam Timetable', icon: 'calendar' },
+    { value: 'marks', label: 'Marks Entry', icon: 'edit' },
+    { value: 'attendance', label: 'Exam Attendance', icon: 'clock' },
+    { value: 'reports', label: 'Report Cards', icon: 'cap' },
   ]
 
   return (
     <div>
-      <PageHead title="Exams & grading" sub={`Live schedule · timetable · marks · notify Email / SMS / App · ${app.school.name}`} />
+      <PageHead title="Exams & Grading" sub={`Live schedule · timetable · marks · notify Email / SMS / App · ${app.school.name}`} />
       <div style={{ marginBottom: 16 }}>
         <Tabs value={tab} onChange={setTab} tabs={tabs} />
       </div>

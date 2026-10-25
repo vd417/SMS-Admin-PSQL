@@ -1,5 +1,5 @@
 /* ============================================================
-   SchoolMate — Owner console: Fee collection (school-wise cash)
+   SchoolMate — Owner console: Fee Collection (school-wise cash)
    Live data from GET /me/schools/fee-summary — no dummy series.
    ============================================================ */
 import { useMemo, type ComponentType } from 'react'
@@ -143,7 +143,7 @@ function OwnerRevenue() {
   return (
     <div className="col gap20">
       <PageHead
-        title="Fee collection"
+        title="Fee Collection"
         sub={`School-wise student fee cash · ${periodLabel}`}
         actions={
           <Btn icon="trend" onClick={() => app.go('owner.dashboard')}>Dashboard</Btn>

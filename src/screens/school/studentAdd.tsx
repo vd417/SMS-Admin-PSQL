@@ -544,7 +544,7 @@ function StudentFormScreen({ mode }: { mode: 'add' | 'edit' }) {
       </div>
 
       <PageHead
-        title={mode === 'edit' ? 'Edit student' : 'Add student'}
+        title={mode === 'edit' ? 'Edit Student' : 'Add Student'}
         sub={`${mode === 'edit' ? 'Update enrolment' : 'New enrolment'} · ${app.school.name}`}
       />
 

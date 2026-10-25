@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient, type UseQueryResult, type UseMutationResult } from '@tanstack/react-query'
-import { listClasses, createClass, updateClass, ensureDefaultClasses, type SchoolClass, type UpdateClassPatch } from '../classes'
+import { listClasses, createClass, updateClass, deleteClass, ensureDefaultClasses, type SchoolClass, type UpdateClassPatch } from '../classes'
 import { queryKeys } from '../queryKeys'
 import { mergeClassNames } from '@/lib/defaultClasses'
 
@@ -37,6 +37,14 @@ export function useUpdateClass(): UseMutationResult<SchoolClass, Error, { id: st
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ id, patch }) => updateClass(id, patch),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.classes.all }) },
+  })
+}
+
+export function useDeleteClass(): UseMutationResult<void, Error, string> {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => deleteClass(id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.classes.all }) },
   })
 }

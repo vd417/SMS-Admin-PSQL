@@ -80,6 +80,10 @@ export async function createClass(c: SchoolClass): Promise<SchoolClass> {
   return toSchoolClass(wire)
 }
 
+export async function deleteClass(id: string): Promise<void> {
+  await request<void>(`/classes/${id}`, { method: 'DELETE' })
+}
+
 export interface UpdateClassPatch {
   name?: string
   grade?: string

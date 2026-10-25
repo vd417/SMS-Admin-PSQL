@@ -1,5 +1,9 @@
 import type { ListEnvelope } from './types'
 
+/** Preset education boards offered when creating / editing a school. "Other" reveals a
+ *  free-text field so any board name can be stored. */
+export const SCHOOL_BOARDS = ['CBSE', 'ICSE', 'State Board'] as const
+
 export type ClientStatus = 'trial' | 'active' | 'past_due' | 'suspended' | 'cancelled'
 export type PlanTier = 'trial' | 'silver' | 'gold' | 'platinum' | 'metered' | 'exclusive'
 /** Billing cycle as the API expects it. */
@@ -36,6 +40,8 @@ export interface Client {
   seat_increase_mode?: 'auto' | 'manual'
   /** Per-school near-limit warning gap (null = use plan/default). */
   seat_alert_threshold?: number | null
+  /** Education board: 'CBSE' | 'ICSE' | 'State Board' | a custom name. */
+  board?: string | null
 }
 
 /** CATRE updates a school's seat policy. */
@@ -61,6 +67,8 @@ export interface CreateClientBody {
   students_count?: number
   /** Billing cycle chosen at onboarding. Defaults to monthly server-side. */
   billing_cycle?: ApiBillingCycle
+  /** Education board: 'CBSE' | 'ICSE' | 'State Board' | a custom name. */
+  board?: string
 }
 
 /** Raise a school's billed seat limit (CATRE team direct action). */
@@ -104,6 +112,8 @@ export interface CreateMySchoolBody {
   students_count?: number
   /** Billing cycle chosen at onboarding. Defaults to monthly server-side. */
   billing_cycle?: ApiBillingCycle
+  /** Education board: 'CBSE' | 'ICSE' | 'State Board' | a custom name. */
+  board?: string
 }
 
 export interface Plan {

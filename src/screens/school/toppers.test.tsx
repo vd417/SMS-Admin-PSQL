@@ -67,7 +67,7 @@ describe('Students Toppers view', () => {
     renderScreen()
     fireEvent.click(screen.getByText('Toppers'))
     await screen.findByText(/Exam toppers|Overall toppers|No live exam marks/i)
-    fireEvent.click(screen.getByText('Attendance toppers'))
+    fireEvent.click(screen.getByText('Attendance Toppers'))
     // Attendance toppers now rank on real day marks only. With no live marks in
     // the test env, the empty state shows; otherwise the leaderboard renders.
     expect((await screen.findAllByText(/Attendance %|Overall toppers|No live attendance/i)).length).toBeGreaterThan(0)
@@ -77,7 +77,7 @@ describe('Students Toppers view', () => {
     renderScreen()
     fireEvent.click(screen.getByText('Toppers'))
     await screen.findByText(/Exam toppers|Overall toppers|No live exam marks/i)
-    fireEvent.click(screen.getByText('All students'))
+    fireEvent.click(screen.getByText('All Students'))
     expect(screen.getByPlaceholderText(/Search name/i)).toBeInTheDocument()
   }, 15000)
 

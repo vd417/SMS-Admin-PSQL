@@ -588,7 +588,7 @@ function TeacherFormScreen({ mode }: { mode: 'add' | 'edit' }) {
       </div>
 
       <PageHead
-        title={mode === 'edit' ? 'Edit teacher' : 'Onboard teacher'}
+        title={mode === 'edit' ? 'Edit Teacher' : 'Onboard Teacher'}
         sub={`${mode === 'edit' ? 'Update profile' : 'Name, address & documents'} · ${app.school.name}`}
       />
 

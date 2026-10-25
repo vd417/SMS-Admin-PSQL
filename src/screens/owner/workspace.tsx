@@ -46,7 +46,7 @@ const CAP_COLOR: Record<Cap, string> = { V: 'var(--info)', E: 'var(--warning)', 
 const MODULE_LABEL: Record<string, string> = {
   setup: 'School setup',
   dashboard: 'Dashboard',
-  identity: 'Identity & access',
+  identity: 'Identity & Access',
   sis: 'Student information',
   academics: 'Academics',
   attendance: 'Attendance',
@@ -56,6 +56,8 @@ const MODULE_LABEL: Record<string, string> = {
   communication: 'Communication',
   operations: 'Operations',
   settings: 'Settings',
+  issues: 'Issues & complaints',
+  staffTasks: 'Staff tasks',
 }
 
 const roleTone = (r: Role): BadgeTone =>
@@ -312,7 +314,7 @@ function OnboardPeopleModal({
   return (
     <Modal
       open={open} onClose={onClose} icon="user"
-      title={kind === 'teacher' ? 'Onboard teacher' : 'Onboard staff'}
+      title={kind === 'teacher' ? 'Onboard Teacher' : 'Onboard Staff'}
       sub="Opens the full form (name, address, documents). CRM roles use Send invite."
       footer={
         <div className="row gap8 jc-end">
@@ -1270,6 +1272,8 @@ function OwnerUsers() {
   const [schoolId, setSchoolId] = useState('')
   const [switching, setSwitching] = useState(false)
   const switchSchoolMut = useSwitchSchool()
+  // With exactly one mapped school there's nothing to choose — auto-select it and skip the picker.
+  const single = schools.length === 1
 
   const selectSchool = (id: string) => {
     if (!id || id === schoolId || id === ALL_SCHOOLS_ID) { setSchoolId(id); return }
@@ -1285,35 +1289,47 @@ function OwnerUsers() {
     })
   }
 
+  // One school → open straight into it (no dropdown). Runs once; re-selecting is a no-op.
+  useEffect(() => {
+    if (single && !schoolId) selectSchool(schools[0].id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [single, schoolId, schools])
+
   return (
     <div>
       <PageHead
-        title="Users & roles"
+        title="Users & Roles"
         sub="Workspace team for your mapped schools only — other clients never appear"
       />
       <div className="row ai-center gap12 wrap" style={{ marginBottom: 16 }}>
-        <Field label="School" hint="Pick a mapped school to manage its team, roles, invitations and audit log.">
-          <Select
-            aria-label="Select school"
-            options={[
-              { value: '', label: schools.length ? 'Select a school…' : 'No schools mapped' },
-              ...(schools.length ? [{ value: ALL_SCHOOLS_ID, label: 'All schools' }] : []),
-              ...schools.map((s) => ({ value: s.id, label: s.name })),
-            ]}
-            value={schoolId}
-            onChange={(e) => selectSchool(e.target.value)}
-            disabled={switching}
-          />
-        </Field>
+        {single ? (
+          <Field label="School" hint="Managing your only mapped school.">
+            <Input icon="building" value={schools[0].name} readOnly aria-label="Selected school" />
+          </Field>
+        ) : (
+          <Field label="School" hint="Pick a mapped school to manage its team, roles, invitations and audit log.">
+            <Select
+              aria-label="Select school"
+              options={[
+                { value: '', label: schools.length ? 'Select a school…' : 'No schools mapped' },
+                ...(schools.length ? [{ value: ALL_SCHOOLS_ID, label: 'All schools' }] : []),
+                ...schools.map((s) => ({ value: s.id, label: s.name })),
+              ]}
+              value={schoolId}
+              onChange={(e) => selectSchool(e.target.value)}
+              disabled={switching}
+            />
+          </Field>
+        )}
         {switching && <Spinner size={18} />}
       </div>
       <Tabs
         value={tab} onChange={setTab}
         tabs={[
           { value: 'team', label: 'Team', icon: 'users' },
-          { value: 'roles', label: 'Roles & permissions', icon: 'lock' },
+          { value: 'roles', label: 'Roles & Permissions', icon: 'lock' },
           { value: 'invites', label: 'Invitations', icon: 'inbox' },
-          { value: 'audit', label: 'Audit log', icon: 'clock' },
+          { value: 'audit', label: 'Audit Log', icon: 'clock' },
         ]}
       />
       <div style={{ marginTop: 16 }}>
@@ -1431,229 +1447,13 @@ function CompanyTab() {
   )
 }
 
-/* ---------- Branding ---------- */
-const ACCENTS = ['#4f46e5', '#16a34a', '#0ea5e9', '#f59e0b', '#ec4899', '#0d9488']
-
-function BrandingTab() {
-  const toast = useToast()
-  const [accent, setAccent] = useState(ACCENTS[0])
-  const [logoUrl, setLogoUrl] = useState('https://cdn.schoolmate.io/logo.svg')
-  const [darkDefault, setDarkDefault] = useState(false)
-  const [showSchoolLogos, setShowSchoolLogos] = useState(true)
-  const [whiteLabel, setWhiteLabel] = useState(false)
-
-  return (
-    <div className="col gap16">
-      <Card>
-        <CardHead title="Brand identity" sub="Colours & logo applied across tenant consoles" icon="sparkle" />
-        <div className="col gap16" style={{ marginTop: 16 }}>
-          <Field label="Accent colour" hint="Used for primary buttons, links & highlights.">
-            <div className="row ai-center gap8 wrap">
-              {ACCENTS.map((c) => (
-                <button
-                  key={c} type="button" onClick={() => setAccent(c)}
-                  title={c}
-                  style={{
-                    width: 30, height: 30, borderRadius: 8, cursor: 'pointer', background: c,
-                    border: accent === c ? '2px solid var(--text)' : '2px solid transparent',
-                  }}
-                />
-              ))}
-              <Input value={accent} onChange={(e) => setAccent(e.target.value)} style={{ width: 120 }} />
-            </div>
-          </Field>
-          <FormGrid>
-            <Field label="Logo URL" hint="SVG or PNG, transparent background recommended.">
-              <Input icon="globe" value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} />
-            </Field>
-            <Field label="Favicon URL">
-              <Input icon="globe" placeholder="https://cdn.schoolmate.io/favicon.ico" defaultValue="" />
-            </Field>
-          </FormGrid>
-        </div>
-      </Card>
-
-      <Card>
-        <CardHead title="Display options" icon="settings" />
-        <div className="col gap12" style={{ marginTop: 16 }}>
-          <Toggle checked={darkDefault} onChange={() => setDarkDefault((v) => !v)} label="Default to dark theme for new users" />
-          <Toggle checked={showSchoolLogos} onChange={() => setShowSchoolLogos((v) => !v)} label="Show individual school logos in the switcher" />
-          <Toggle checked={whiteLabel} onChange={() => setWhiteLabel((v) => !v)} label="White-label (hide “Powered by SchoolMate”)" />
-        </div>
-        <SaveBar onSave={() => toast.success('Branding saved', 'Brand settings applied across consoles.')} />
-      </Card>
-    </div>
-  )
-}
-
-/* ---------- Default policies ---------- */
-const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-
-function PoliciesTab() {
-  const toast = useToast()
-  const [days, setDays] = useState<Record<string, boolean>>({ Mon: true, Tue: true, Wed: true, Thu: true, Fri: true, Sat: true, Sun: false })
-  const [grading, setGrading] = useState('cbse')
-  const [periodStart, setPeriodStart] = useState('08:00')
-  const [periodEnd, setPeriodEnd] = useState('14:30')
-  const [periodLen, setPeriodLen] = useState('45')
-  const [weekStart, setWeekStart] = useState('Mon')
-  const [lockAttendance, setLockAttendance] = useState(true)
-
-  const toggleDay = (d: string) => setDays((m) => ({ ...m, [d]: !m[d] }))
-
-  return (
-    <div className="col gap16">
-      <Card>
-        <CardHead title="Working days" sub="Applied as the default calendar for new schools" icon="calendar" />
-        <div className="row gap8 wrap" style={{ marginTop: 16 }}>
-          {DAYS.map((d) => (
-            <button
-              key={d} type="button" onClick={() => toggleDay(d)}
-              style={{
-                padding: '8px 14px', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer',
-                border: `1px solid ${days[d] ? 'var(--brand-600)' : 'var(--border)'}`,
-                background: days[d] ? 'var(--brand-600)' : 'transparent',
-                color: days[d] ? '#fff' : 'var(--text-2)',
-              }}
-            >
-              {d}
-            </button>
-          ))}
-        </div>
-      </Card>
-
-      <Card>
-        <CardHead title="Academic defaults" icon="cap" />
-        <div className="col gap16" style={{ marginTop: 16 }}>
-          <FormGrid>
-            <Field label="Grading scheme">
-              <Select
-                options={[
-                  { value: 'cbse', label: 'CBSE (A1–E2)' },
-                  { value: 'pct', label: 'Percentage (0–100)' },
-                  { value: 'gpa', label: 'GPA (0–10)' },
-                  { value: 'letter', label: 'Letter (A–F)' },
-                ]}
-                value={grading} onChange={(e) => setGrading(e.target.value)}
-              />
-            </Field>
-            <Field label="Week starts on">
-              <Select options={DAYS} value={weekStart} onChange={(e) => setWeekStart(e.target.value)} />
-            </Field>
-            <Field label="School day starts">
-              <Input type="time" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} />
-            </Field>
-            <Field label="School day ends">
-              <Input type="time" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
-            </Field>
-            <Field label="Period length (minutes)">
-              <Input type="number" value={periodLen} onChange={(e) => setPeriodLen(e.target.value)} />
-            </Field>
-          </FormGrid>
-          <Toggle checked={lockAttendance} onChange={() => setLockAttendance((v) => !v)} label="Lock attendance after the school day ends" />
-        </div>
-        <SaveBar onSave={() => toast.success('Policies saved', 'Default policies updated for new schools.')} />
-      </Card>
-    </div>
-  )
-}
-
-/* ---------- API & webhooks ---------- */
-function ApiTab() {
-  const toast = useToast()
-  const [apiKey, setApiKey] = useState('smk_demo_0000xxxxxxxxxxxxxxxxxxxxxxxx')
-  const [revealed, setRevealed] = useState(false)
-  const [webhookUrl, setWebhookUrl] = useState('https://hooks.schoolmate.io/v1/events')
-  const [secret, setSecret] = useState('whsec_3b9f1a2c4d6e8f0a1b2c3d4e5f6a7b8c')
-  const [enrolEvt, setEnrolEvt] = useState(true)
-  const [feeEvt, setFeeEvt] = useState(true)
-  const [attEvt, setAttEvt] = useState(false)
-
-  const masked = apiKey.slice(0, 7) + '•'.repeat(18) + apiKey.slice(-4)
-
-  const regenerate = () => {
-    const hex = '0123456789abcdef'
-    let k = 'smk_demo_'
-    for (let i = 0; i < 32; i++) k += hex[Math.floor(Math.random() * 16)]
-    setApiKey(k)
-    setRevealed(false)
-    toast.danger('API key regenerated', 'The previous key has been revoked immediately.')
-  }
-
-  const copy = () => {
-    if (typeof navigator !== 'undefined' && navigator.clipboard) navigator.clipboard.writeText(apiKey).catch(() => {})
-    toast.success('Copied', 'API key copied to clipboard.')
-  }
-
-  return (
-    <div className="col gap16">
-      <Card>
-        <CardHead title="API access" sub="Use this key to authenticate server-side integrations" icon="key" />
-        <div className="col gap16" style={{ marginTop: 16 }}>
-          <Field label="Production API key" hint="Keep this secret. Treat it like a password.">
-            <div className="row ai-center gap8 wrap">
-              <Input
-                value={revealed ? apiKey : masked} readOnly icon="lock"
-                style={{ flex: 1, minWidth: 260, fontFamily: 'monospace' }}
-              />
-              <Btn variant="ghost" size="sm" icon={revealed ? 'lock' : 'eye'} onClick={() => setRevealed((v) => !v)}>
-                {revealed ? 'Hide' : 'Reveal'}
-              </Btn>
-              <Btn variant="secondary" size="sm" icon="clipboard" onClick={copy}>Copy</Btn>
-              <Btn variant="danger" size="sm" icon="refresh" onClick={regenerate}>Regenerate</Btn>
-            </div>
-          </Field>
-        </div>
-      </Card>
-
-      <Card>
-        <CardHead title="Webhooks" sub="Receive real-time event notifications" icon="zap" />
-        <div className="col gap16" style={{ marginTop: 16 }}>
-          <FormGrid>
-            <Field label="Endpoint URL">
-              <Input icon="globe" value={webhookUrl} onChange={(e) => setWebhookUrl(e.target.value)} />
-            </Field>
-            <Field label="Signing secret">
-              <Input icon="lock" value={secret} onChange={(e) => setSecret(e.target.value)} style={{ fontFamily: 'monospace' }} />
-            </Field>
-          </FormGrid>
-          <div>
-            <div className="sm-card-sub" style={{ marginBottom: 8, fontWeight: 600 }}>Subscribed events</div>
-            <div className="col gap12">
-              <Toggle checked={enrolEvt} onChange={() => setEnrolEvt((v) => !v)} label="student.enrolled" />
-              <Toggle checked={feeEvt} onChange={() => setFeeEvt((v) => !v)} label="fee.paid" />
-              <Toggle checked={attEvt} onChange={() => setAttEvt((v) => !v)} label="attendance.submitted" />
-            </div>
-          </div>
-        </div>
-        <div className="row gap8 jc-end" style={{ marginTop: 16 }}>
-          <Btn variant="ghost" icon="zap" onClick={() => toast.info('Test event sent', 'A sample payload was delivered to your endpoint.')}>Send test</Btn>
-          <Btn variant="primary" icon="check" onClick={() => toast.success('Webhooks saved', 'Endpoint configuration updated.')}>Save changes</Btn>
-        </div>
-      </Card>
-    </div>
-  )
-}
-
+/* ---------- Owner settings ---------- */
 function OwnerSettings() {
-  const [tab, setTab] = useState('company')
   return (
     <div>
-      <PageHead title="Owner settings" sub="Organisation-wide configuration for your SchoolMate account" />
-      <Tabs
-        value={tab} onChange={setTab}
-        tabs={[
-          { value: 'company', label: 'Company', icon: 'building' },
-          { value: 'branding', label: 'Branding', icon: 'sparkle' },
-          { value: 'policies', label: 'Default policies', icon: 'calendar' },
-          { value: 'api', label: 'API & webhooks', icon: 'key' },
-        ]}
-      />
+      <PageHead title="Owner Settings" sub="Organisation-wide configuration for your SchoolMate account" />
       <div style={{ marginTop: 16 }}>
-        {tab === 'company' && <CompanyTab />}
-        {tab === 'branding' && <BrandingTab />}
-        {tab === 'policies' && <PoliciesTab />}
-        {tab === 'api' && <ApiTab />}
+        <CompanyTab />
       </div>
     </div>
   )

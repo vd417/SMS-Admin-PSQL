@@ -18,13 +18,13 @@ const OWNER_NAV: NavGroup[] = [
     { label: 'Schools', view: 'owner.schools', icon: 'building' },
   ] },
   { label: 'Insights', items: [
-    { label: 'Cross-school reports', view: 'owner.reports', icon: 'trend' },
-    { label: 'Fee collection', view: 'owner.revenue', icon: 'rupee' },
-    { label: 'Subscriptions & billing', view: 'owner.billing', icon: 'wallet' },
+    { label: 'Cross-School Reports', view: 'owner.reports', icon: 'trend' },
+    { label: 'Fee Collection', view: 'owner.revenue', icon: 'rupee' },
+    { label: 'Subscriptions & Billing', view: 'owner.billing', icon: 'wallet' },
   ] },
   { label: 'Workspace', items: [
-    { label: 'Users & roles', view: 'owner.users', icon: 'users' },
-    { label: 'Owner settings', view: 'owner.settings', icon: 'settings' },
+    { label: 'Users & Roles', view: 'owner.users', icon: 'users' },
+    { label: 'Owner Settings', view: 'owner.settings', icon: 'settings' },
   ] },
 ]
 
@@ -37,7 +37,7 @@ function schoolNav(role: Role, approvalCount: number): NavGroup[] {
     { label: 'People', items: [
       { label: 'Students (SIS)', view: 'school.sis', icon: 'users' },
       { label: 'Teachers', view: 'school.teachers', icon: 'cap' },
-      { label: 'Staff & support', view: 'school.staff', icon: 'briefcase', lockFeature: 'staff_support' },
+      { label: 'Staff & Support', view: 'school.staff', icon: 'briefcase', lockFeature: 'staff_support' },
       { label: 'Parents', view: 'school.parents', icon: 'user' },
     ] },
     { label: 'Academic', items: [
@@ -45,19 +45,19 @@ function schoolNav(role: Role, approvalCount: number): NavGroup[] {
       { label: 'Calendar', view: 'school.calendar', icon: 'calendar' },
       { label: 'PTM', view: 'school.ptm', icon: 'users' },
       { label: 'Attendance', view: 'school.attendance', icon: 'checkCircle' },
-      { label: 'Exams & grading', view: 'school.exams', icon: 'clipboard' },
+      { label: 'Exams & Grading', view: 'school.exams', icon: 'clipboard' },
     ] },
     { label: 'Operations', items: [
       { label: 'Fees', view: 'school.fees', icon: 'rupee' },
       { label: 'HR & Payroll', view: 'school.hr', icon: 'wallet', lockFeature: 'hr_payroll' },
       { label: 'Communication', view: 'school.comm', icon: 'message' },
       { label: 'Transport', view: 'school.transport', icon: 'bus', lockFeature: 'operations' },
-      { label: 'Live bus tracking', view: 'school.gps', icon: 'zap', lockFeature: 'transport.gps' },
-      { label: 'Hostel & sports', view: 'school.ops', icon: 'box', lockFeature: 'operations' },
+      { label: 'Live Bus Tracking', view: 'school.gps', icon: 'zap', lockFeature: 'transport.gps' },
+      { label: 'Hostel & Sports', view: 'school.ops', icon: 'box', lockFeature: 'operations' },
     ] },
     { label: 'Administration', items: [
       { label: 'Reports', view: 'school.reports', icon: 'trend' },
-      { label: 'Identity & access', view: 'school.identity', icon: 'key', adminOnly: true },
+      { label: 'Identity & Access', view: 'school.identity', icon: 'key', adminOnly: true },
       { label: 'Settings', view: 'school.settings', icon: 'settings' },
     ].filter((i) => !i.adminOnly || gateRole(role) === 'admin') },
   ]

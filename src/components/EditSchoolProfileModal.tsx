@@ -5,6 +5,7 @@ import {
   Modal, Btn, Field, Input, FileUpload, Spinner,
 } from '@/components/ui'
 import { SchoolMark, SchoolPhoto } from '@/components/SchoolMark'
+import { BoardSelect } from '@/components/BoardSelect'
 import { compressImageFile } from '@/lib/compressImage'
 import { updateSchoolProfile } from '@/api/schoolProfile'
 import { clientToSchool, isValidSchoolId, normalizeSchoolId } from '@/api/ownerMap'
@@ -53,6 +54,7 @@ export function EditSchoolProfileModal({
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
   const [contactName, setContactName] = useState('')
+  const [board, setBoard] = useState('')
   const [logoUrl, setLogoUrl] = useState('')
   const [imageUrl, setImageUrl] = useState('')
   const [logoFile, setLogoFile] = useState<File | null>(null)
@@ -70,6 +72,7 @@ export function EditSchoolProfileModal({
     setEmail(client?.contact_email ?? '')
     setPhone(client?.contact_phone ?? '')
     setContactName(client?.contact_name ?? '')
+    setBoard(client?.board ?? '')
     setLogoUrl(school.logoUrl ?? client?.logo_url ?? '')
     setImageUrl(school.imageUrl ?? client?.image_url ?? '')
     setLogoFile(null)
@@ -139,6 +142,7 @@ export function EditSchoolProfileModal({
         contact_name: contactName.trim() || undefined,
         contact_email: email.trim() || undefined,
         contact_phone: phone.trim() || undefined,
+        board: board.trim() || undefined,
         set_logo: setLogo,
         set_image: setImage,
         logo_url: setLogo ? nextLogo : undefined,
@@ -221,6 +225,9 @@ export function EditSchoolProfileModal({
           </Field>
           <Field label="Contact phone">
             <Input icon="phone" digits={10} placeholder="10-digit mobile" value={phone} onChange={(e) => setPhone(e.target.value)} />
+          </Field>
+          <Field label="Board" hint="Education board this school follows.">
+            <BoardSelect value={board} onChange={setBoard} />
           </Field>
         </div>
 

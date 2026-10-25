@@ -18,6 +18,8 @@ export interface UpdateSchoolProfileBody {
   lng?: number
   geofence_radius_meters?: number
   set_geofence?: boolean
+  /** Education board: 'CBSE' | 'ICSE' | 'State Board' | a custom name. */
+  board?: string
 }
 
 /** School owner/admin — PATCH /me/schools/{id} */

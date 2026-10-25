@@ -779,7 +779,7 @@ function StaffRoster() {
   return (
     <div>
       <PageHead
-        title="Staff & support"
+        title="Staff & Support"
         sub={`${roster.length} non-teaching staff · ${app.school.name}`}
         actions={editable
           ? <Btn variant="primary" icon="plus" onClick={() => app.go('school.staff.add')}>Add staff</Btn>
@@ -835,7 +835,7 @@ function StaffRoster() {
 
 function StaffScreen() {
   return (
-    <TierGate feature="staff_support" title="Staff & support"
+    <TierGate feature="staff_support" title="Staff & Support"
       blurb="Manage non-teaching staff on the Platinum plan.">
       <StaffRoster />
     </TierGate>

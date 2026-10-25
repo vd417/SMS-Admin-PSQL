@@ -54,10 +54,10 @@ interface MetricMeta {
 const METRIC_META: Record<Metric, MetricMeta> = {
   enrolment: { label: 'Enrolment', short: 'students', sum: true, isFee: false, fmt: (v) => fmtNum(Math.round(v)) },
   staff: { label: 'Staff', short: 'staff', sum: true, isFee: false, fmt: (v) => fmtNum(Math.round(v)) },
-  subscription: { label: 'Subscription MRR', short: 'MRR', sum: true, isFee: false, fmt: (v) => compactMoney(Math.round(v)) },
+  subscription: { label: 'Monthly Bill', short: 'monthly bill', sum: true, isFee: false, fmt: (v) => compactMoney(Math.round(v)) },
   fees_collected: { label: 'Student fees collected', short: 'collected', sum: true, isFee: true, fmt: (v) => fmtMoney(Math.round(v)) },
   fees_outstanding: { label: 'Student fees outstanding', short: 'outstanding', sum: true, isFee: true, fmt: (v) => fmtMoney(Math.round(v)) },
-  fee_rate: { label: 'Fee collection rate', short: 'rate', sum: false, isFee: true, fmt: (v) => `${v.toFixed(1)}%` },
+  fee_rate: { label: 'Fee Collection rate', short: 'rate', sum: false, isFee: true, fmt: (v) => `${v.toFixed(1)}%` },
 }
 
 function feeRowForSchool(school: School, feeSchools: FeeSchoolSummary[]): FeeSchoolSummary | undefined {
@@ -135,7 +135,7 @@ function OwnerReports() {
   if (schools.length === 0) {
     return (
       <div>
-        <PageHead title="Cross-school reports" sub="Live portfolio data" />
+        <PageHead title="Cross-School Reports" sub="Live portfolio data" />
         <Card>
           <Empty icon="building" title="No schools yet" body="Create a school to compare enrolment, staff, MRR, and health across your portfolio." />
         </Card>
@@ -146,7 +146,7 @@ function OwnerReports() {
   return (
     <div>
       <PageHead
-        title="Cross-school reports"
+        title="Cross-School Reports"
         sub={meta.isFee && feePeriod
           ? `Comparing ${schools.length} schools · ${meta.label} · ${feePeriod.from} → ${feePeriod.to}`
           : `Comparing ${schools.length} ${schools.length === 1 ? 'school' : 'schools'} · ${meta.label} · live portfolio`}
@@ -159,7 +159,7 @@ function OwnerReports() {
           options={(Object.keys(METRIC_META) as Metric[]).map((m) => ({ value: m, label: METRIC_META[m].label }))}
         />
         {meta.isFee && (
-          <Btn size="sm" icon="rupee" onClick={() => app.go('owner.revenue')}>Fee collection</Btn>
+          <Btn size="sm" icon="rupee" onClick={() => app.go('owner.revenue')}>Fee Collection</Btn>
         )}
       </Card>
 
@@ -611,13 +611,13 @@ function RevenueTab({ schools }: { schools: School[] }) {
   )
 
   if (schools.length === 0) {
-    return <Card><Empty icon="trend" title="No revenue yet" body="MRR appears when your schools have an active or trial plan with billing." /></Card>
+    return <Card><Empty icon="trend" title="No billing yet" body="Billing appears when your schools have an active or trial plan." /></Card>
   }
 
   return (
     <div className="sm-grid-2">
       <Card>
-        <CardHead title="Subscription MRR by school" sub="Software plan billing — not student fees" icon="trend" />
+        <CardHead title="Monthly Bill by school" sub="Software plan billing — not student fees" icon="trend" />
         <div style={{ marginTop: 12 }}>
           <HBars
             data={bySchool}
@@ -626,12 +626,12 @@ function RevenueTab({ schools }: { schools: School[] }) {
         </div>
       </Card>
       <Card>
-        <CardHead title="Revenue by plan" sub="Share of current MRR" icon="layers" />
+        <CardHead title="Billing by plan" sub="Share of monthly bill" icon="layers" />
         <div className="row ai-center gap20 wrap" style={{ marginTop: 12 }}>
           <Donut
             segments={byPlan.map((p) => ({ value: p.value, color: p.color, label: TIER_META[p.tier].label }))}
             size={150} thickness={20}
-            center={<div style={{ textAlign: 'center' }}><div className="fw7" style={{ fontSize: 18 }}>{compactMoney(totalMrr)}</div><div className="t-xs muted">MRR</div></div>}
+            center={<div style={{ textAlign: 'center' }}><div className="fw7" style={{ fontSize: 18 }}>{compactMoney(totalMrr)}</div><div className="t-xs muted">/mo</div></div>}
           />
           <div className="col gap10">
             {byPlan.map((p) => (
@@ -793,25 +793,25 @@ function OwnerBilling() {
   return (
     <div>
       <PageHead
-        title="Subscriptions & billing"
+        title="Subscriptions & Billing"
         sub={`${schools.length} ${schools.length === 1 ? 'school' : 'schools'} · live portfolio data`}
       />
 
       <div className="sm-kpi-grid" style={{ marginBottom: 16 }}>
-        <Kpi icon="rupee" iconBg="var(--brand-50)" iconColor="var(--brand-600)" label="Subscription MRR" value={fmtMoney(kpis.mrr)} foot="What schools pay for SchoolMate software" />
-        <Kpi icon="trend" iconBg="var(--success-bg)" iconColor="var(--success)" label="Subscription ARR" value={fmtMoney(kpis.arr)} foot="Annual run-rate (MRR × 12)" />
-        <Kpi icon="building" iconBg="var(--info-bg)" iconColor="var(--info)" label="Paying / billed" value={fmtNum(kpis.paying)} foot={`of ${schools.length} schools`} />
-        <Kpi icon="alert" iconBg="var(--danger-bg)" iconColor="var(--danger)" label="Overdue amount" value={fmtMoney(kpis.overdue)} foot="Past-due accounts" />
+        <Kpi icon="rupee" iconBg="var(--brand-50)" iconColor="var(--brand-600)" label="Monthly Bill" value={fmtMoney(kpis.mrr)} foot="MRR — what schools pay for SchoolMate" />
+        <Kpi icon="trend" iconBg="var(--success-bg)" iconColor="var(--success)" label="Yearly Bill" value={fmtMoney(kpis.arr)} foot="ARR — yearly run-rate (MRR × 12)" />
+        <Kpi icon="building" iconBg="var(--info-bg)" iconColor="var(--info)" label="Paying / Billed" value={fmtNum(kpis.paying)} foot={`of ${schools.length} schools`} />
+        <Kpi icon="alert" iconBg="var(--danger-bg)" iconColor="var(--danger)" label="Overdue Amount" value={fmtMoney(kpis.overdue)} foot="Past-due accounts" />
       </div>
 
       <Tabs
         value={tab} onChange={setTab}
         tabs={[
           { value: 'subs', label: 'Subscriptions', icon: 'list' },
-          { value: 'upgrades', label: 'Upgrade requests', icon: 'sparkle' },
+          { value: 'upgrades', label: 'Upgrade Requests', icon: 'sparkle' },
           { value: 'invoices', label: 'Invoices', icon: 'doc' },
           { value: 'revenue', label: 'Bill', icon: 'trend' },
-          { value: 'plans', label: 'Plans & pricing', icon: 'layers' },
+          { value: 'plans', label: 'Plans & Pricing', icon: 'layers' },
         ]}
       />
 

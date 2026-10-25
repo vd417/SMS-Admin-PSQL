@@ -7,11 +7,11 @@ import { Fragment, createContext, useContext, useEffect, useMemo, useRef, useSta
 import { useApp, useToast } from '@/lib/hooks'
 import { can } from '@/lib/gating'
 import {
-  PageHead, Tabs, Segmented, Card, CardHead, Btn, Badge, Select, Field, Input,
+  PageHead, Tabs, Segmented, Card, CardHead, Btn, IconBtn, Badge, Select, Field, Input,
   Modal, Icon, Empty, DataTable, Checkbox, type Column, type BadgeTone,
 } from '@/components/ui'
 import type { Teacher } from '@/types'
-import { useClasses, useClassNames, useCreateClass, useUpdateClass, useEnsureDefaultClasses } from '@/api/hooks/useClasses'
+import { useClasses, useClassNames, useCreateClass, useUpdateClass, useDeleteClass, useEnsureDefaultClasses } from '@/api/hooks/useClasses'
 import { useTeachers } from '@/api/hooks/useTeachers'
 import { useUpdateTeacher } from '@/api/hooks/useTeacherMutations'
 import { useSubjects, useCreateSubject, useUpdateSubject, useDeleteSubject, useEnsureDefaultSubjects, useSubjectNames } from '@/api/hooks/useSubjects'
@@ -83,6 +83,7 @@ function ClassesTab({ editable }: { editable: boolean }) {
   const updateTeacher = useUpdateTeacher()
   const createClass = useCreateClass()
   const updateClassMut = useUpdateClass()
+  const deleteClassMut = useDeleteClass()
   const seedDefaults = useEnsureDefaultClasses()
   const [pick, setPick] = useState<ClassRow | null>(null)
   const [pickSel, setPickSel] = useState('')
@@ -91,10 +92,13 @@ function ClassesTab({ editable }: { editable: boolean }) {
   const [aSec, setASec] = useState('')
   const [aRoom, setARoom] = useState('')
   const [aSubjects, setASubjects] = useState<string[]>([])
-  // "Add defaults" picker: choose which grades + which section set to create at once.
+  // "Add defaults" picker: choose which grades + which sections to create at once.
   const [defaultsOpen, setDefaultsOpen] = useState(false)
   const [defGrades, setDefGrades] = useState<Set<string>>(() => new Set(DEFAULT_GRADES))
-  const [defSection, setDefSection] = useState<'abc' | 'abcd' | 'none'>('abc')
+  // Sections to create for each checked grade. Empty set = one section-less class per grade ("any").
+  const [defSections, setDefSections] = useState<Set<string>>(() => new Set(DEFAULT_SECTIONS))
+  // Class to delete (confirm step); delete is only offered for classes with no students.
+  const [delRow, setDelRow] = useState<ClassRow | null>(null)
   const [editRow, setEditRow] = useState<ClassRow | null>(null)
   const [eGrade, setEGrade] = useState('')
   const [eSec, setESec] = useState('')
@@ -221,24 +225,28 @@ function ClassesTab({ editable }: { editable: boolean }) {
     return [...new Set([...DEFAULT_SECTIONS, ...fromLive])]
   }, [rows])
 
-  const SECTION_SETS: Record<'abc' | 'abcd' | 'none', readonly string[]> = {
-    abc: DEFAULT_SECTIONS,          // A, B, C
-    abcd: ['A', 'B', 'C', 'D'],
-    none: [],                       // one section-less class per grade
-  }
+  // Sections offered in the "Add defaults" picker — toggle any of A–D, or pick none ("any").
+  const SECTION_CHOICES = ['A', 'B', 'C', 'D'] as const
   const toggleDefGrade = (g: string) =>
     setDefGrades((prev) => {
       const next = new Set(prev)
       if (next.has(g)) next.delete(g); else next.add(g)
       return next
     })
+  const toggleDefSection = (s: string) =>
+    setDefSections((prev) => {
+      const next = new Set(prev)
+      if (next.has(s)) next.delete(s); else next.add(s)
+      return next
+    })
+  const selectedDefSections = SECTION_CHOICES.filter((s) => defSections.has(s))
   const allDefGradesOn = defGrades.size === DEFAULT_GRADES.length
 
   const applyDefaults = () => {
     if (seedDefaults.isPending) return
     const grades = DEFAULT_GRADES.filter((g) => defGrades.has(g))
     if (grades.length === 0) { toast.danger('Pick grades', 'Check at least one class to create.'); return }
-    const sections = SECTION_SETS[defSection]
+    const sections = selectedDefSections
     const secLabel = sections.length ? `sections ${sections.join(', ')}` : 'no sections'
     seedDefaults.mutate(
       { existing: classesData, grades, sections },
@@ -328,6 +336,27 @@ function ClassesTab({ editable }: { editable: boolean }) {
     )
   }
 
+  const doDelete = () => {
+    if (!delRow?.id) {
+      toast.danger('Cannot delete', 'This class has no id yet — refresh and try again.')
+      return
+    }
+    if (delRow.students > 0) {
+      toast.danger('Class has students', 'Remove or move the students in this class before deleting it.')
+      return
+    }
+    const name = delRow.name
+    deleteClassMut.mutate(delRow.id, {
+      onSuccess: () => {
+        toast.success('Class deleted', `${name} was removed.`)
+        setDelRow(null)
+      },
+      onError: (err) => {
+        toast.danger('Could not delete class', err instanceof Error ? err.message : 'Please try again.')
+      },
+    })
+  }
+
   const toggleSubject = (list: string[], name: string, set: (next: string[]) => void) => {
     const next = new Set(list)
     if (next.has(name)) next.delete(name)
@@ -378,6 +407,14 @@ function ClassesTab({ editable }: { editable: boolean }) {
         <div className="row ai-center gap6 jc-end">
           <Btn size="sm" variant="secondary" icon="edit" onClick={() => openEdit(r)}>Edit</Btn>
           <Btn size="sm" variant="ghost" icon="user" onClick={() => openPicker(r)}>Class teacher</Btn>
+          <IconBtn
+            icon="trash"
+            size={16}
+            disabled={r.students > 0}
+            aria-label="Delete class"
+            title={r.students > 0 ? 'Remove the students in this class before deleting it' : 'Delete this class'}
+            onClick={() => setDelRow(r)}
+          />
         </div>
       )
       : null },
@@ -426,7 +463,29 @@ function ClassesTab({ editable }: { editable: boolean }) {
           : <Field label="Teacher" hint="Same as Class field on Add / Edit teacher"><Select options={liveTeacherOpts} value={pickSel} onChange={(e) => setPickSel(e.target.value)} /></Field>}
       </Modal>
 
-      {/* add defaults — pick grades (check) + a section set, then create in bulk */}
+      {/* delete class — only reachable for a class with no students */}
+      <Modal
+        open={!!delRow}
+        onClose={() => setDelRow(null)}
+        icon="trash"
+        title="Delete class"
+        sub={delRow ? delRow.name : ''}
+        footer={(
+          <div className="row gap8 jc-end">
+            <Btn variant="ghost" onClick={() => setDelRow(null)}>Cancel</Btn>
+            <Btn variant="danger" icon="trash" onClick={doDelete} disabled={deleteClassMut.isPending}>
+              {deleteClassMut.isPending ? 'Deleting…' : 'Delete class'}
+            </Btn>
+          </div>
+        )}
+      >
+        <div className="t-sm">
+          Delete <span className="fw6">{delRow?.name}</span>? This also clears its subject map, period
+          override and timetable slots. This cannot be undone.
+        </div>
+      </Modal>
+
+      {/* add defaults — pick grades (check) + sections, then create in bulk */}
       <Modal open={defaultsOpen} onClose={() => setDefaultsOpen(false)} icon="sparkle" title="Add default classes"
         sub="Check the classes and choose sections to create them all at once"
         footer={<div className="row gap8 jc-end">
@@ -467,20 +526,31 @@ function ClassesTab({ editable }: { editable: boolean }) {
             </div>
           </div>
         </Field>
-        <Field label="Sections" hint="Each checked class gets these sections — or pick No sections">
-          <Segmented
-            value={defSection}
-            onChange={(v) => setDefSection(v as 'abc' | 'abcd' | 'none')}
-            options={[
-              { value: 'abc', label: 'A–C' },
-              { value: 'abcd', label: 'A–D' },
-              { value: 'none', label: 'No sections' },
-            ]}
-          />
+        <Field label="Sections" hint="Pick the sections each checked class gets — or none for one section-less class per grade">
+          <div className="col gap8">
+            <div className="sm-exam-class-grid" role="group" aria-label="Select sections">
+              {SECTION_CHOICES.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  className={`sm-exam-class-chip${defSections.has(s) ? ' on' : ''}`}
+                  aria-pressed={defSections.has(s)}
+                  onClick={() => toggleDefSection(s)}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+            <span className="t-xs muted">
+              {selectedDefSections.length
+                ? `Sections ${selectedDefSections.join(', ')}`
+                : 'No sections — one section-less class per grade'}
+            </span>
+          </div>
         </Field>
         <div className="t-xs muted" style={{ marginTop: 4 }}>
-          Will create up to <span className="fw6">{defGrades.size * (SECTION_SETS[defSection].length || 1)}</span> class
-          {defGrades.size * (SECTION_SETS[defSection].length || 1) === 1 ? '' : 'es'} · classes that already exist are skipped.
+          Will create up to <span className="fw6">{defGrades.size * (selectedDefSections.length || 1)}</span> class
+          {defGrades.size * (selectedDefSections.length || 1) === 1 ? '' : 'es'} · classes that already exist are skipped.
         </div>
       </Modal>
 
@@ -1395,7 +1465,7 @@ function TimetableTab({ editable }: { editable: boolean }) {
       <Card>
         <div className="row ai-center jc-between gap12 wrap">
           <Segmented value={view} onChange={(v) => setView(v as 'class' | 'teacher' | 'subject' | 'overview')}
-            options={[{ value: 'class', label: 'Class' }, { value: 'teacher', label: 'Teacher' }, { value: 'subject', label: 'Subject' }, { value: 'overview', label: 'All classes' }]} />
+            options={[{ value: 'class', label: 'Class' }, { value: 'teacher', label: 'Teacher' }, { value: 'subject', label: 'Subject' }, { value: 'overview', label: 'All Classes' }]} />
           <div className="row ai-center gap8">
             <div className="col gap2 ai-end">
               <Badge tone={statusTone(status)}>{statusLabel(status)}</Badge>

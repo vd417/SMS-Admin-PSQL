@@ -54,7 +54,7 @@ describe('Timetable teacher/subject views', () => {
   it('All classes overview shows the empty state with nothing built', async () => {
     const { container, clickTab, seg } = renderScreen()
     clickTab('Timetable')
-    fireEvent.click(seg().getByText('All classes'))
+    fireEvent.click(seg().getByText('All Classes'))
     expect(await within(container).findByText(/class-wise overview/i)).toBeInTheDocument()
   })
 

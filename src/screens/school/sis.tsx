@@ -1184,8 +1184,8 @@ function ToppersView({ students, onPick }: { students: Student[]; onPick: (id: s
     [students, cat, scoreOpts],
   )
   const catTabs = [
-    { value: 'exam', label: 'Exam toppers', icon: 'cap' },
-    { value: 'attendance', label: 'Attendance toppers', icon: 'calendar' },
+    { value: 'exam', label: 'Exam Toppers', icon: 'cap' },
+    { value: 'attendance', label: 'Attendance Toppers', icon: 'calendar' },
   ]
   const examLoading = cat === 'exam' && (examsQ.isLoading || marksQ.isLoading || papersQ.isLoading)
   const noLiveExam = cat === 'exam' && !examLoading && overall.length === 0
@@ -1414,7 +1414,7 @@ function StudentsScreen() {
           value={view}
           onChange={(v) => setView(v as 'list' | 'toppers')}
           tabs={[
-            { value: 'list', label: 'All students', icon: 'users' },
+            { value: 'list', label: 'All Students', icon: 'users' },
             { value: 'toppers', label: 'Toppers', icon: 'cap' },
           ]}
         />

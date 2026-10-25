@@ -504,7 +504,7 @@ function StaffFormScreen({ mode }: { mode: 'add' | 'edit' }) {
       </div>
 
       <PageHead
-        title={mode === 'edit' ? 'Edit staff' : 'Onboard staff'}
+        title={mode === 'edit' ? 'Edit Staff' : 'Onboard Staff'}
         sub={`${mode === 'edit' ? 'Update profile' : 'Name, address & documents'} · ${app.school.name} — not a CRM login invite`}
       />
 
@@ -707,7 +707,7 @@ function StaffFormScreen({ mode }: { mode: 'add' | 'edit' }) {
 
 function AddStaffScreen() {
   return (
-    <TierGate feature="staff_support" title="Staff & support"
+    <TierGate feature="staff_support" title="Staff & Support"
       blurb="Onboard non-teaching staff on the Platinum plan.">
       <StaffFormScreen mode="add" />
     </TierGate>
@@ -716,7 +716,7 @@ function AddStaffScreen() {
 
 function EditStaffScreen() {
   return (
-    <TierGate feature="staff_support" title="Staff & support"
+    <TierGate feature="staff_support" title="Staff & Support"
       blurb="Edit non-teaching staff on the Platinum plan.">
       <StaffFormScreen mode="edit" />
     </TierGate>

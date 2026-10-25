@@ -1008,7 +1008,7 @@ describe('Fee structure', () => {
       expect(within(container).getByText(/Draft saved/i)).toBeInTheDocument()
     })
 
-    clickTab('Saved versions')
+    clickTab('Saved Versions')
     await waitFor(() => {
       expect(within(container).getAllByRole('button', { name: /view/i }).length).toBeGreaterThan(0)
     })
@@ -1047,7 +1047,7 @@ describe('Fee structure', () => {
       expect(putCalls.length).toBeGreaterThanOrEqual(2)
     })
 
-    clickTab('Saved versions')
+    clickTab('Saved Versions')
     await waitFor(() => {
       expect(within(container).getAllByRole('button', { name: /view/i }).length).toBe(2)
     })
@@ -1065,7 +1065,7 @@ describe('Fee structure', () => {
     fireEvent.click(within(container).getByText('Save only'))
     await waitFor(() => expect(within(container).getByText(/Draft saved/i)).toBeInTheDocument())
 
-    clickTab('Saved versions')
+    clickTab('Saved Versions')
     await waitFor(() => expect(within(container).getByText('Draft')).toBeInTheDocument())
     expect(within(container).getByRole('button', { name: /^edit$/i })).toBeInTheDocument()
     expect(within(container).getByRole('button', { name: /^publish$/i })).toBeInTheDocument()
@@ -1084,7 +1084,7 @@ describe('Fee structure', () => {
     fireEvent.click(within(container).getByText('Save only'))
     await waitFor(() => expect(within(container).getByText(/Draft saved/i)).toBeInTheDocument())
 
-    clickTab('Saved versions')
+    clickTab('Saved Versions')
     await waitFor(() => expect(within(container).getByRole('button', { name: /^publish$/i })).toBeInTheDocument())
     fireEvent.click(within(container).getByRole('button', { name: /^publish$/i }))
 
@@ -1108,7 +1108,7 @@ describe('Fee structure', () => {
     fireEvent.click(within(container).getByText('Save only'))
     await waitFor(() => expect(within(container).getByText(/Draft saved/i)).toBeInTheDocument())
 
-    clickTab('Saved versions')
+    clickTab('Saved Versions')
     await waitFor(() => expect(within(container).getByRole('button', { name: /^publish$/i })).toBeInTheDocument())
     fireEvent.click(within(container).getByRole('button', { name: /^publish$/i }))
 
@@ -1146,7 +1146,7 @@ describe('Fee structure', () => {
     fireEvent.click(within(container).getByText('Save only'))
     await waitFor(() => expect(within(container).getByText(/Draft saved/i)).toBeInTheDocument())
 
-    clickTab('Saved versions')
+    clickTab('Saved Versions')
     await waitFor(() => expect(within(container).getAllByRole('button', { name: /view/i }).length).toBe(2))
     expect(within(container).getAllByRole('button', { name: /^delete$/i }).length).toBe(1)
 
@@ -1175,7 +1175,7 @@ describe('Fee structure', () => {
     fireEvent.click(within(container).getByText('Save only'))
     await waitFor(() => expect(within(container).getByText(/Draft saved/i)).toBeInTheDocument())
 
-    clickTab('Saved versions')
+    clickTab('Saved Versions')
     await waitFor(() => expect(within(container).getAllByText(/4,200|4200/).length).toBeGreaterThan(0))
     expect(within(container).getByText(/Academic.*4,200|Academic.*4200/)).toBeInTheDocument()
   })
@@ -1218,7 +1218,7 @@ describe('Fee structure', () => {
     fireEvent.click(within(container).getByText('Save only'))
     await waitFor(() => expect(within(container).getByText(/Draft saved/i)).toBeInTheDocument())
 
-    clickTab('Saved versions')
+    clickTab('Saved Versions')
     await waitFor(() => expect(within(container).getAllByText(/19,500|19500/).length).toBeGreaterThan(0))
     expect(within(container).getByText(/Academic.*6,500\/student.*Total.*19,500/)).toBeInTheDocument()
   })

@@ -12,6 +12,7 @@ import {
 } from '@/components/ui'
 import { SchoolCover, SchoolMark } from '@/components/SchoolMark'
 import { EditSchoolProfileModal } from '@/components/EditSchoolProfileModal'
+import { BoardSelect } from '@/components/BoardSelect'
 import { compressImageFile } from '@/lib/compressImage'
 import type { Client } from '@/api/ownerTypes'
 import { TIERS, TIER_META } from '@/data/mockDb'
@@ -148,11 +149,11 @@ function OwnerDashboard() {
   return (
     <div className="col gap20">
       <PageHead
-        title="Portfolio overview"
+        title="Portfolio Overview"
         sub={app.isPlatform ? 'All schools on the platform' : 'School fee revenue across your schools'}
         actions={
           <div className="row gap8">
-            <Btn icon="rupee" onClick={() => app.go('owner.revenue')}>Fee collection</Btn>
+            <Btn icon="rupee" onClick={() => app.go('owner.revenue')}>Fee Collection</Btn>
             <Btn icon="building" onClick={() => app.go('owner.schools')}>All schools</Btn>
             <Btn variant="primary" icon="plus" onClick={() => app.go('owner.create')}>Add school branch</Btn>
           </div>
@@ -201,7 +202,7 @@ function OwnerDashboard() {
         <Card>
           <CardHead title="Fee collected share" sub="Pie by school (cash this period)" icon="layers"
             iconBg="var(--platinum-bg)" iconColor="var(--platinum)"
-            action={<Btn size="sm" onClick={() => app.go('owner.revenue')}>Fee collection</Btn>} />
+            action={<Btn size="sm" onClick={() => app.go('owner.revenue')}>Fee Collection</Btn>} />
           <div className="row ai-center jc-between gap16 wrap" style={{ marginTop: 12 }}>
             {feeQ.isLoading ? (
               <div className="col ai-center gap8" style={{ minHeight: 148 }}><Spinner size={24} /></div>
@@ -232,7 +233,7 @@ function OwnerDashboard() {
         <Card>
           <CardHead title="Outstanding by school" sub="Open student fee invoices" icon="alert"
             iconBg="var(--warning-bg)" iconColor="var(--warning)"
-            action={<Btn size="sm" onClick={() => app.go('owner.revenue')}>Fee collection</Btn>} />
+            action={<Btn size="sm" onClick={() => app.go('owner.revenue')}>Fee Collection</Btn>} />
           <div style={{ marginTop: 12 }}>
             {feeQ.isLoading ? (
               <div className="col ai-center gap8" style={{ minHeight: 160 }}><Spinner size={24} /></div>
@@ -445,7 +446,7 @@ function OwnerSchools() {
         sub={`${schoolsList.length} ${schoolsList.length === 1 ? 'school' : 'schools'} in your portfolio · Click a school row to open it · Delete only when empty (0 students & 0 staff)`}
         actions={
           <div className="row gap8">
-            <Btn icon="rupee" onClick={() => app.go('owner.revenue')}>Fee collection</Btn>
+            <Btn icon="rupee" onClick={() => app.go('owner.revenue')}>Fee Collection</Btn>
             <Btn variant="primary" icon="plus" onClick={() => app.go('owner.create')}>Add school branch</Btn>
           </div>
         }
@@ -613,7 +614,7 @@ function AccountReportModal({ school, fee, onClose }: {
     { label: 'Fees outstanding', value: fmtMoney(outstanding, s.currency) },
   ]
   const details: { label: string; value: string }[] = [
-    { label: 'Fee collection rate', value: `${feeRate}%` },
+    { label: 'Fee Collection rate', value: `${feeRate}%` },
     { label: 'Open invoices', value: fmtNum(fee?.invoice_count ?? 0) },
     { label: 'Payments (period)', value: fmtNum(fee?.payment_count ?? 0) },
     { label: 'Support tier', value: s.plan === 'platinum' ? 'Dedicated' : s.plan === 'gold' ? 'Priority' : 'Standard' },
@@ -733,11 +734,11 @@ const MODULE_OPTIONS: { key: string; label: string; desc: string; tier: Tier }[]
   { key: 'fees', label: 'Fees & collection', desc: 'Invoicing, receipts', tier: 'silver' },
   { key: 'communication', label: 'Communication', desc: 'SMS, push, messenger', tier: 'silver' },
   { key: 'operations', label: 'Operations', desc: 'Transport, hostel & sports', tier: 'platinum' },
-  { key: 'staff_support', label: 'Staff & support', desc: 'Non-teaching staff roster', tier: 'platinum' },
+  { key: 'staff_support', label: 'Staff & Support', desc: 'Non-teaching staff roster', tier: 'platinum' },
   { key: 'hr_payroll', label: 'HR & payroll', desc: 'Staff salary runs', tier: 'platinum' },
   { key: 'analytics', label: 'Advanced analytics', desc: 'Weak-student insights', tier: 'gold' },
   { key: 'attendance.geofence', label: 'Geo-fenced attendance', desc: 'GPS check-in / check-out for teachers & staff', tier: 'platinum' },
-  { key: 'transport.gps', label: 'Transport GPS', desc: 'Live bus tracking', tier: 'platinum' },
+  { key: 'transport.gps', label: 'Transport GPS', desc: 'Live Bus Tracking', tier: 'platinum' },
 ]
 
 type BillingCycle = 'monthly' | 'quarterly' | 'yearly'
@@ -779,6 +780,8 @@ interface WizardData {
   adminName: string
   adminEmail: string
   adminPhone: string
+  /** Education board: 'CBSE' | 'ICSE' | 'State Board' | a custom name. */
+  board: string
   strength: number
   tier: Tier
   planId: string
@@ -837,6 +840,7 @@ function CreateSchoolWizard() {
     tz: 'Asia/Kolkata',
     logoUrl: '', logoFile: null, imageUrl: '', imageFile: null,
     adminName: app.user?.name ?? '', adminEmail: app.user?.email ?? '', adminPhone: '',
+    board: '',
     strength: 800, tier: 'gold', planId: '', cycle: 'yearly', payChoice: 'offline',
     modules: new Set(['sis', 'attendance', 'exams', 'fees', 'communication']),
     geofenceLat: '', geofenceLng: '', geofenceRadius: '250',
@@ -1050,6 +1054,7 @@ function CreateSchoolWizard() {
           trial_days: 0,
           students_count: studentsCount,
           billing_cycle: billingCycle,
+          board: data.board.trim() || undefined,
         })
         : await createMut.mutateAsync({
           name: data.name.trim(),
@@ -1064,6 +1069,7 @@ function CreateSchoolWizard() {
           trial_days: 0,
           students_count: studentsCount,
           billing_cycle: billingCycle,
+          board: data.board.trim() || undefined,
         })
 
       const planLabel = selectedPlan?.name ?? TIER_META[data.tier].label
@@ -1117,7 +1123,7 @@ function CreateSchoolWizard() {
   return (
     <div className="col gap20">
       <PageHead
-        title="Create school branch"
+        title="Create School Branch"
         sub="Add a new tenant to your portfolio"
         actions={<Btn icon="arrowLeft" onClick={() => app.go('owner.schools')}>Back to schools</Btn>}
       />
@@ -1178,6 +1184,9 @@ function CreateSchoolWizard() {
                   set('schoolId', next)
                 }}
               />
+            </Field>
+            <Field label="Board" hint="Education board this school follows (CBSE / ICSE / State Board, or add your own).">
+              <BoardSelect value={data.board} onChange={(v) => set('board', v)} />
             </Field>
             <Field label="Street address" required hint="Building, street, area — used on invoices & reports.">
               <Input icon="pin" value={data.address} placeholder="e.g. 4th Floor, Prestige Tech Park" onChange={(e) => set('address', e.target.value)} />
@@ -1650,6 +1659,7 @@ function ReviewStep({ data, plan }: { data: WizardData; plan: import('@/api/owne
   const rows: { label: string; value: React.ReactNode }[] = [
     { label: 'School name', value: data.name || '—' },
     { label: 'School ID', value: data.schoolId ? normalizeSchoolId(data.schoolId) : '—' },
+    { label: 'Board', value: data.board.trim() || '—' },
     { label: 'Street address', value: data.address || '—' },
     { label: 'District', value: data.district || '—' },
     { label: 'City', value: data.city || '—' },

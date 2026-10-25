@@ -167,7 +167,7 @@ describe('Exam lifecycle', () => {
 
   it('renders an exam selector on the Marks entry tab', async () => {
     const { root, clickTab } = renderScreen()
-    clickTab('Marks entry')
+    clickTab('Marks Entry')
     await root.findByText('Save & notify parents')
     // Exam / Class / Paper selectors (marks themselves are number inputs, not selects).
     expect(root.getAllByRole('combobox').length).toBeGreaterThanOrEqual(3)
@@ -175,7 +175,7 @@ describe('Exam lifecycle', () => {
 
   it('toggles and saves exam attendance', async () => {
     const { container, root, clickTab } = renderScreen()
-    clickTab('Exam attendance')
+    clickTab('Exam Attendance')
     await root.findByText('Save attendance')
     fireEvent.click(root.getAllByText('Absent')[0])
     fireEvent.click(root.getByText('Save attendance'))

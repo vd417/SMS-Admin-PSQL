@@ -483,7 +483,7 @@ function TransportRoutesBody() {
 
 function TransportRoutes() {
   return (
-    <TierGate feature="operations" title="Transport routes" blurb="Route management requires the Platinum Operations module.">
+    <TierGate feature="operations" title="Transport Routes" blurb="Route management requires the Platinum Operations module.">
       <TransportRoutesBody />
     </TierGate>
   )
@@ -844,7 +844,7 @@ function TransportBuses() {
 
 function TransportStudents() {
   return (
-    <TierGate feature="operations" title="Transport students" blurb="Student mapping status requires the Platinum Operations module.">
+    <TierGate feature="operations" title="Transport Students" blurb="Student mapping status requires the Platinum Operations module.">
       <TransportStudentsScreen />
     </TierGate>
   )

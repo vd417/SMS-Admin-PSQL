@@ -2377,7 +2377,7 @@ function FeesScreen() {
   return (
     <div>
       <PageHead
-        title="Fees collection"
+        title="Fees Collection"
         sub={`${app.school.name} · ${summary?.pct ?? 0}% of term billed collected`}
         actions={
           canRecord ? (
@@ -2393,10 +2393,10 @@ function FeesScreen() {
       <div style={{ marginBottom: 16 }}>
         <Tabs value={tab} onChange={setTab} tabs={[
           { value: 'collection', label: 'Collection', icon: 'wallet' },
-          { value: 'pay', label: 'Pay fees', icon: 'rupee' },
+          { value: 'pay', label: 'Pay Fees', icon: 'rupee' },
           { value: 'history', label: 'History', icon: 'clock' },
           { value: 'structure', label: 'Structure', icon: 'rupee' },
-          { value: 'structure-versions', label: 'Saved versions', icon: 'doc' },
+          { value: 'structure-versions', label: 'Saved Versions', icon: 'doc' },
         ]} />
       </div>
 
@@ -2585,8 +2585,8 @@ function PayrollBody() {
           value={tab}
           onChange={(v) => setTab(v as 'run' | 'structure')}
           tabs={[
-            { value: 'run', label: 'Payroll run', icon: 'wallet' },
-            { value: 'structure', label: 'Salary structure', icon: 'rupee' },
+            { value: 'run', label: 'Payroll Run', icon: 'wallet' },
+            { value: 'structure', label: 'Salary Structure', icon: 'rupee' },
           ]}
         />
       </div>
@@ -2655,7 +2655,7 @@ function PayrollRunTab() {
   const runPayrollNow = () => {
     runMut.mutate(period, {
       onSuccess: () => toast.success(
-        'Payroll run',
+        'Payroll Run',
         canApprove
           ? 'Prepared. You can approve it now for disbursal.'
           : 'Prepared by Admin office. Sent to the Principal for approval.',

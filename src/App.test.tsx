@@ -47,7 +47,7 @@ describe('App (smoke)', () => {
     mockAuth(['admin'], null, true)
     render(<App />)
     signIn('anil@schoolmate.io')
-    expect(await screen.findByText('Portfolio overview')).toBeInTheDocument()
+    expect(await screen.findByText('Portfolio Overview')).toBeInTheDocument()
     const sidebar = document.querySelector('.sm-sidebar') as HTMLElement
     expect(within(sidebar).getByText('Schools')).toBeInTheDocument()
   })

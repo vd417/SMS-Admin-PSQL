@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { listClasses, createClass } from './classes'
+import { listClasses, createClass, deleteClass } from './classes'
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -47,5 +47,16 @@ describe('createClass', () => {
     const body = JSON.parse((init as RequestInit).body as string)
     expect(body.class_teacher_id).toBeNull()
     expect(body.teacher_id).toBeUndefined()
+  })
+})
+
+describe('deleteClass', () => {
+  it('DELETEs /classes/:id', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetchMock)
+    await deleteClass('c9')
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toContain('/classes/c9')
+    expect((init as RequestInit).method).toBe('DELETE')
   })
 })

@@ -2478,7 +2478,7 @@ function GpsScreenBody() {
 
   return (
     <div>
-      <PageHead title="Live bus tracking"
+      <PageHead title="Live Bus Tracking"
         sub="GPS fleet monitoring · live speed & next stop"
         actions={
           <div className="row gap8" style={{ alignItems: 'center' }}>
