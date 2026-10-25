@@ -163,29 +163,29 @@ function OwnerDashboard() {
       <div className="sm-kpi-grid">
         <Kpi
           icon="building" iconBg="var(--brand-50)" iconColor="var(--brand-600)"
-          label="Total schools" value={fmtNum(schools.length)}
+          label="Total Schools" value={fmtNum(schools.length)}
           foot={`${planCounts.platinum} Platinum · ${planCounts.gold} Gold · ${planCounts.silver} Silver`}
         />
         <Kpi
           icon="cap" iconBg="var(--info-bg)" iconColor="var(--info)"
-          label="Total students" value={fmtNum(totals.students)}
+          label="Total Students" value={fmtNum(totals.students)}
           foot={`${fmtNum(totals.staff)} staff across portfolio`}
         />
         <Kpi
           icon="rupee" iconBg="var(--success-bg)" iconColor="var(--success)"
-          label="School fee revenue" value={feeQ.isLoading ? '…' : fmtMoney(feeCollected)}
+          label="School Fee Revenue" value={feeQ.isLoading ? '…' : fmtMoney(feeCollected)}
           foot={feeQ.isError ? 'Could not load fees' : `${fmtNum(schoolsWithCash)} schools with cash this period`}
         />
         <Kpi
           icon="alert" iconBg="var(--warning-bg)" iconColor="var(--warning)"
-          label="Fees outstanding" value={feeQ.isLoading ? '…' : fmtMoney(feeOutstanding)}
+          label="Fees Outstanding" value={feeQ.isLoading ? '…' : fmtMoney(feeOutstanding)}
           foot={feeQ.isError ? '—' : `${feeRate}% collection rate`}
         />
       </div>
 
       <div className="sm-grid-2">
         <Card>
-          <CardHead title="School revenue by school" sub="Student fees collected this period" icon="trend"
+          <CardHead title="School Revenue By School" sub="Student fees collected this period" icon="trend"
             iconBg="var(--success-bg)" iconColor="var(--success)"
             action={<Btn size="sm" onClick={() => app.go('owner.revenue')}>Details</Btn>} />
           <div style={{ marginTop: 12 }}>
@@ -200,7 +200,7 @@ function OwnerDashboard() {
         </Card>
 
         <Card>
-          <CardHead title="Fee collected share" sub="Pie by school (cash this period)" icon="layers"
+          <CardHead title="Fee Collected Share" sub="Pie by school (cash this period)" icon="layers"
             iconBg="var(--platinum-bg)" iconColor="var(--platinum)"
             action={<Btn size="sm" onClick={() => app.go('owner.revenue')}>Fee Collection</Btn>} />
           <div className="row ai-center jc-between gap16 wrap" style={{ marginTop: 12 }}>
@@ -231,7 +231,7 @@ function OwnerDashboard() {
 
       <div className="sm-grid-2">
         <Card>
-          <CardHead title="Outstanding by school" sub="Open student fee invoices" icon="alert"
+          <CardHead title="Outstanding By School" sub="Open student fee invoices" icon="alert"
             iconBg="var(--warning-bg)" iconColor="var(--warning)"
             action={<Btn size="sm" onClick={() => app.go('owner.revenue')}>Fee Collection</Btn>} />
           <div style={{ marginTop: 12 }}>
@@ -246,7 +246,7 @@ function OwnerDashboard() {
         </Card>
 
         <Card>
-          <CardHead title="Attention needed" sub="Low school fee collection" icon="alert"
+          <CardHead title="Attention Needed" sub="Low school fee collection" icon="alert"
             iconBg="var(--danger-bg)" iconColor="var(--danger)"
             action={<Badge tone="warning">{alerts.length}</Badge>} />
           {alerts.length === 0 ? (
