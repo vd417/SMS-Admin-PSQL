@@ -11,7 +11,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useApp, useToast } from '@/lib/hooks'
 import {
   PageHead, Tabs, Card, CardHead, Btn, Badge, Avatar, Search, Select, Field, Input, Textarea,
-  Modal, Toggle, Icon, Empty, DataTable, Spinner,
+  Modal, Icon, Empty, DataTable, Spinner,
   type Column, type BadgeTone,
 } from '@/components/ui'
 import { SchoolPhoto } from '@/components/SchoolMark'
@@ -1345,18 +1345,6 @@ function OwnerUsers() {
 /* ============================================================
    Owner settings
    ============================================================ */
-function FormGrid({ children }: { children: ReactNode }) {
-  return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 16 }}>{children}</div>
-}
-
-function SaveBar({ onSave }: { onSave: () => void }) {
-  return (
-    <div className="row gap8 jc-end" style={{ marginTop: 16 }}>
-      <Btn variant="primary" icon="check" onClick={onSave}>Save changes</Btn>
-    </div>
-  )
-}
-
 /* ---------- Company ---------- */
 function CompanyTab() {
   const app = useApp()
