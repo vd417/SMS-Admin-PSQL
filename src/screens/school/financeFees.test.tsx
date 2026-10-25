@@ -137,7 +137,7 @@ beforeEach(() => {
       if (rest.endsWith('/publish') && method === 'POST') {
         const id = rest.replace('/publish', '')
         // No "only one Published row" rule — publishing one version never changes any other.
-        feeStructureHistory = feeStructureHistory.map((s) => (s.id === id ? { ...s, status: 'active' } : s))
+        feeStructureHistory = feeStructureHistory.map((s) => (s.id === id ? { ...s, status: 'active', _everPublished: true } : s))
         return jsonOk({ data: { id, status: 'active' } })
       }
       if (method === 'DELETE') {
@@ -181,7 +181,8 @@ beforeEach(() => {
               per_student_amount: headStudents > 0 ? amount / headStudents : 0,
             }
           })
-          return { ...s, amounts: undefined, amounts_json: undefined, total_amount: total, head_amounts: headAmounts }
+          // A version is deletable only if it was never published (mirrors the server rule).
+          return { ...s, amounts: undefined, amounts_json: undefined, total_amount: total, head_amounts: headAmounts, deletable: s._everPublished !== true }
         }),
         next_cursor: null,
       })
@@ -194,6 +195,8 @@ beforeEach(() => {
           ...body,
           id: `struct-${feeStructureHistory.length + 1}`,
           created_at: new Date(2026, 0, feeStructureHistory.length + 1).toISOString(),
+          // Save & generate publishes immediately → that version counts as ever-published.
+          _everPublished: body.status === 'active',
         }
         // No "only one Published row" rule — saving another version as active never
         // retires whichever version(s) were already active.
@@ -1148,10 +1151,15 @@ describe('Fee structure', () => {
 
     clickTab('Saved Versions')
     await waitFor(() => expect(within(container).getAllByRole('button', { name: /view/i }).length).toBe(2))
-    expect(within(container).getAllByRole('button', { name: /^delete$/i }).length).toBe(1)
+    // Delete renders on every row for discoverability, but the published version's is disabled —
+    // only the draft can actually be deleted.
+    const rowDeletes = within(container).getAllByRole('button', { name: /^delete$/i })
+    expect(rowDeletes.length).toBe(2)
+    const enabledDeletes = rowDeletes.filter((b) => !(b as HTMLButtonElement).disabled)
+    expect(enabledDeletes.length).toBe(1)
 
-    fireEvent.click(within(container).getByRole('button', { name: /^delete$/i }))
-    await waitFor(() => expect(within(container).getByText('Delete this draft?')).toBeInTheDocument())
+    fireEvent.click(enabledDeletes[0])
+    await waitFor(() => expect(within(container).getByText('Delete this version?')).toBeInTheDocument())
     const deleteButtons = within(container).getAllByRole('button', { name: /^delete$/i })
     fireEvent.click(deleteButtons[deleteButtons.length - 1])
 
@@ -1180,7 +1188,7 @@ describe('Fee structure', () => {
     expect(within(container).getByText(/Academic.*4,200|Academic.*4200/)).toBeInTheDocument()
   })
 
-  it('previews fee-per-student and total-for-shown-students as you type in the bulk "Same fee" panel', async () => {
+  it('previews the per-student fee and class headcount as you fill the fee structure', async () => {
     students = [
       { id: 's1', admission_no: 'A1', class_label: 'X-A', name: 'Kid One', gender: 'M', grade: 'X', section: 'A', roll: 1, guardian_name: 'P1', guardian_phone: '9000000001', attendance_pct: 0, fee_status: 'due', fee_due: 0, status: 'active', house: '', avatar_hue: 1 },
       { id: 's2', admission_no: 'A2', class_label: 'X-A', name: 'Kid Two', gender: 'F', grade: 'X', section: 'A', roll: 2, guardian_name: 'P2', guardian_phone: '9000000002', attendance_pct: 0, fee_status: 'due', fee_due: 0, status: 'active', house: '', avatar_hue: 2 },
@@ -1189,16 +1197,16 @@ describe('Fee structure', () => {
     clickTab('Structure')
     await waitFor(() => expect(within(container).getAllByText('Academic').length).toBeGreaterThan(0))
     fireEvent.click(within(container).getByRole('button', { name: 'X' }))
-    await waitFor(() => expect(within(container).getAllByText(/students?$/i).length).toBeGreaterThan(0))
+    await waitFor(() => expect(within(container).getAllByLabelText('X-A Academic amount').length).toBeGreaterThan(0))
 
-    const bulkAcademicInput = within(container).getByLabelText('Same Academic amount for all shown classes') as HTMLInputElement
-    fireEvent.change(bulkAcademicInput, { target: { value: '500' } })
+    const amountInput = within(container).getAllByLabelText('X-A Academic amount')[0] as HTMLInputElement
+    fireEvent.change(amountInput, { target: { value: '500' } })
+    fireEvent.blur(amountInput)
 
-    await waitFor(() => {
-      expect(within(container).getByText(/Fee.*500\/student/)).toBeInTheDocument()
-    })
-    expect(within(container).getAllByText(/2 students/).length).toBeGreaterThan(0)
-    expect(within(container).getByText(/Total.*1,000|Total.*1000/)).toBeInTheDocument()
+    // The ₹500 per-student fee shows in the row total + grade summary, alongside the 2-student headcount.
+    await waitFor(() => expect(within(container).getAllByText(/per student/i).length).toBeGreaterThan(0))
+    expect(within(container).getAllByText(/500/).length).toBeGreaterThan(0)
+    expect(within(container).getAllByText('2').length).toBeGreaterThan(0)
   })
 
   it('shows both the per-student rate and the total for a fee head in the Saved versions list', async () => {

@@ -41,6 +41,12 @@ vi.mock('@/api/hooks/useStudents', () => ({
   ] }),
 }))
 
+// PtmScreen reads useClasses() for grade/section options; mock it so the test needs no
+// QueryClientProvider (the real hook calls useQuery).
+vi.mock('@/api/hooks/useClasses', () => ({
+  useClasses: () => ({ data: [] }),
+}))
+
 vi.mock('@/lib/hooks', () => ({
   useApp: () => ({ role: 'admin', school: { name: 'Greenwood', city: 'Mumbai' } }),
   useToast: () => ({ success: vi.fn(), danger: vi.fn(), info: vi.fn() }),
@@ -88,7 +94,7 @@ describe('PtmScreen', () => {
     setText('Subject', 'Science')
     setDate('Date', '2026-11-01')
     setTime('Time', '09:15')
-    setSelect('Mode', 'Video call')
+    setSelect('Mode', 'In person')
 
     fireEvent.click(screen.getByRole('button', { name: /^schedule$/i }))
 
@@ -100,7 +106,7 @@ describe('PtmScreen', () => {
       subject: 'Science',
       date: '2026-11-01',
       time: '09:15',
-      mode: 'Video call',
+      mode: 'In person',
     })
   })
 
