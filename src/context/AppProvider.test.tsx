@@ -105,6 +105,32 @@ describe('AppProvider auth', () => {
     expect(result.current.school.name).toBe('Silver High')
   })
 
+  it('shows the real name/email from /auth/me, not the email prefix', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ data: { access_token: 'a', refresh_token: 'r' } }))
+      .mockResolvedValueOnce(jsonResponse({ data: {
+        id: 'u1', tenant_id: 't1', roles: ['admin'], is_platform: false,
+        name: 'Ravi Menon', email: 'admin@greenwood.edu',
+      } }))
+      .mockResolvedValueOnce(jsonResponse({ data: [] })))
+    const { result } = renderHook(() => useApp(), { wrapper })
+    await act(async () => { await result.current.loginWithPassword('admin@greenwood.edu', 'pw') })
+    await waitFor(() => expect(result.current.loggedIn).toBe(true))
+    expect(result.current.user?.name).toBe('Ravi Menon')
+    expect(result.current.user?.email).toBe('admin@greenwood.edu')
+  })
+
+  it('falls back to the email prefix when /auth/me returns no name', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ data: { access_token: 'a', refresh_token: 'r' } }))
+      .mockResolvedValueOnce(jsonResponse({ data: { id: 'u1', tenant_id: 't1', roles: ['admin'], is_platform: false } }))
+      .mockResolvedValueOnce(jsonResponse({ data: [] })))
+    const { result } = renderHook(() => useApp(), { wrapper })
+    await act(async () => { await result.current.loginWithPassword('admin@greenwood.edu', 'pw') })
+    await waitFor(() => expect(result.current.loggedIn).toBe(true))
+    expect(result.current.user?.name).toBe('admin')
+  })
+
   it('logout clears the session and returns to the login screen', async () => {
     vi.stubGlobal('fetch', vi.fn()
       .mockResolvedValueOnce(jsonResponse({ data: { access_token: 'a', refresh_token: 'r' } }))

@@ -610,8 +610,8 @@ function TeacherFormScreen({ mode }: { mode: 'add' | 'edit' }) {
             {txt('dob', 'Date of birth', { type: 'date' })}
             {sel('bloodGroup', 'Blood group', BLOOD_GROUPS)}
             {sel('maritalStatus', 'Marital status', MARITAL)}
-            {txt('phone', 'Primary contact number', { required: true, icon: 'phone', ph: '+91 9XXXXXXXXX' })}
-            {txt('altPhone', 'Alternate contact number', { icon: 'phone' })}
+            {txt('phone', 'Primary contact number', { required: true, icon: 'phone', ph: '10-digit mobile', digits: 10 })}
+            {txt('altPhone', 'Alternate contact number', { icon: 'phone', ph: '10-digit mobile', digits: 10 })}
             {txt('email', 'Email address', { required: true, ph: 'teacher@school.edu' })}
             {txt('fatherName', "Father's name", { case: 'name' })}
             {txt('motherName', "Mother's name", { case: 'name' })}
@@ -693,7 +693,7 @@ function TeacherFormScreen({ mode }: { mode: 'add' | 'edit' }) {
               <div className="sm-form-panel__body">
                 <div className="sm-grid-2 gap14">
                   {txt('prevSchool', 'School name', { ph: 'e.g. Delhi Public School', case: 'name' })}
-                  {txt('prevSchoolPhone', 'School phone', { icon: 'phone' })}
+                  {txt('prevSchoolPhone', 'School phone', { icon: 'phone', ph: '10-digit mobile', digits: 10 })}
                 </div>
                 {area('prevSchoolAddress', 'School address')}
               </div>
@@ -779,7 +779,7 @@ function TeacherFormScreen({ mode }: { mode: 'add' | 'edit' }) {
             <div style={{ marginTop: 12 }}>{fieldGrid(<>
               {txt('emPerson', 'Contact person', { icon: 'user', case: 'name' })}
               {txt('emRelationship', 'Relationship')}
-              {txt('emPhone', 'Contact number', { icon: 'phone' })}
+              {txt('emPhone', 'Contact number', { icon: 'phone', ph: '10-digit mobile', digits: 10 })}
             </>)}</div>
           </Card>
         </div>

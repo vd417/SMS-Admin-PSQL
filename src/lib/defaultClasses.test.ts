@@ -1,12 +1,34 @@
 import { describe, it, expect } from 'vitest'
 import {
   compareClassesAscending,
+  defaultClassSpecs,
   formatExamGradesLabel,
   formatSelectedGrades,
   parseExamGrades,
   gradeRank,
   DEFAULT_GRADES,
 } from './defaultClasses'
+
+describe('defaultClassSpecs', () => {
+  it('defaults to Nursery–XII × A/B/C', () => {
+    const specs = defaultClassSpecs()
+    expect(specs).toHaveLength(DEFAULT_GRADES.length * 3)
+    expect(specs[0]).toMatchObject({ name: 'Nursery-A', grade: 'Nursery', section: 'A' })
+  })
+
+  it('creates only the chosen grades and section set', () => {
+    const specs = defaultClassSpecs({ grades: ['I', 'II'], sections: ['A', 'B', 'C', 'D'] })
+    expect(specs.map((s) => s.name)).toEqual([
+      'I-A', 'I-B', 'I-C', 'I-D', 'II-A', 'II-B', 'II-C', 'II-D',
+    ])
+  })
+
+  it('creates section-less classes when sections is empty', () => {
+    const specs = defaultClassSpecs({ grades: ['Nursery', 'I'], sections: [] })
+    expect(specs.map((s) => s.name)).toEqual(['Nursery', 'I'])
+    expect(specs.every((s) => s.section === '')).toBe(true)
+  })
+})
 
 describe('gradeRank', () => {
   it('orders Nursery → XII ascending toward 12', () => {

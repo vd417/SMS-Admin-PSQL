@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   required, validateAadhaar, validateFile, validateEmail, validatePhone, MAX_FILE_MB,
   validatePAN, validateIFSC, validateURL, passwordsMatch, validatePassword,
-  validateMinAge, normalizePhoneDigits, normalizeEmailKey, isDuplicateValue,
+  validateMinAge, normalizePhoneDigits, normalizeEmailKey, isDuplicateValue, clampPhoneInput,
 } from './validation'
 
 describe('validateMinAge', () => {
@@ -96,17 +96,41 @@ describe('validateEmail', () => {
 })
 
 describe('validatePhone', () => {
-  it('accepts 10-digit numbers', () => {
+  it('accepts exactly 10 digits', () => {
     expect(validatePhone('9876543210')).toBeNull()
   })
-  it('accepts +91 prefixed numbers', () => {
-    expect(validatePhone('+91 98765 43210')).toBeNull()
+  it('accepts 10 digits with spaces', () => {
+    expect(validatePhone('98765 43210')).toBeNull()
   })
   it('treats empty as valid', () => {
     expect(validatePhone('')).toBeNull()
   })
   it('rejects too-short numbers', () => {
     expect(validatePhone('12345')).not.toBeNull()
+  })
+  it('rejects more than 10 digits (incl. +91 country code)', () => {
+    expect(validatePhone('+91 98765 43210')).not.toBeNull()
+    expect(validatePhone('919876543210')).not.toBeNull()
+    expect(validatePhone('98765432101')).not.toBeNull()
+  })
+  it('rejects non-digit characters', () => {
+    expect(validatePhone('98765-43210')).not.toBeNull()
+    expect(validatePhone('98765abcde')).not.toBeNull()
+  })
+})
+
+describe('clampPhoneInput', () => {
+  it('strips non-digits and caps at 10 by default', () => {
+    expect(clampPhoneInput('98765-43210')).toBe('9876543210')
+    expect(clampPhoneInput('98765432109999')).toBe('9876543210')
+    // Only digits survive, and at most 10 — so a pasted country code is truncated, not cleaned up.
+    expect(clampPhoneInput('919876543210')).toBe('9198765432')
+  })
+  it('honours a custom cap', () => {
+    expect(clampPhoneInput('123456', 4)).toBe('1234')
+  })
+  it('returns empty for blank input', () => {
+    expect(clampPhoneInput('')).toBe('')
   })
 })
 

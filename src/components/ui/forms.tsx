@@ -2,10 +2,10 @@
    SchoolMate — Form controls: Field, Input, Textarea, Select,
    Toggle, Checkbox, Search
    ============================================================ */
-import type { InputHTMLAttributes, TextareaHTMLAttributes, SelectHTMLAttributes, ReactNode, Ref } from 'react'
+import type { InputHTMLAttributes, TextareaHTMLAttributes, SelectHTMLAttributes, ReactNode, Ref, ChangeEvent } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { Icon } from './Icon'
-import { validateFile } from '@/lib/validation'
+import { validateFile, clampPhoneInput } from '@/lib/validation'
 
 export function Field({ label, required, hint, error, children }: {
   label?: ReactNode; required?: boolean; hint?: ReactNode; error?: ReactNode; children: ReactNode
@@ -22,13 +22,30 @@ export function Field({ label, required, hint, error, children }: {
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   icon?: string
   error?: boolean
+  /** When set, restricts entry to digits only, capped at this many characters
+   *  (e.g. 10 for a mobile number). Also hints a numeric keypad. */
+  digits?: number
   ref?: Ref<HTMLInputElement>
 }
-export function Input({ icon, error, className, ref, ...rest }: InputProps) {
+export function Input({ icon, error, className, ref, digits, onChange, inputMode, maxLength, ...rest }: InputProps) {
+  const handleChange = digits
+    ? (ev: ChangeEvent<HTMLInputElement>) => {
+      const clamped = clampPhoneInput(ev.target.value, digits)
+      if (clamped !== ev.target.value) ev.target.value = clamped
+      onChange?.(ev)
+    }
+    : onChange
   return (
     <div className={['sm-input-wrap', icon && 'has-icon', error && 'is-error'].filter(Boolean).join(' ')}>
       {icon && <span className="sm-input-ic"><Icon name={icon} size={16} /></span>}
-      <input ref={ref} className={['sm-input', className].filter(Boolean).join(' ')} {...rest} />
+      <input
+        ref={ref}
+        className={['sm-input', className].filter(Boolean).join(' ')}
+        inputMode={digits ? 'numeric' : inputMode}
+        maxLength={digits ?? maxLength}
+        onChange={handleChange}
+        {...rest}
+      />
     </div>
   )
 }

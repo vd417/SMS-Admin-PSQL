@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { fmtMoney, fmtNum, gradeFor, gpaFor, reportFor, classRank, overallToppers, classToppers } from './format'
+import { fmtMoney, fmtNum, gradeFor, gpaFor, reportFor, classRank, overallToppers, classToppers, feeStatusForBalance } from './format'
 import { students } from '@/data/mockDb'
 import type { Student } from '@/types'
 
@@ -10,6 +10,23 @@ describe('format', () => {
   })
   it('formats numbers in en-IN', () => {
     expect(fmtNum(2500000)).toBe('25,00,000')
+  })
+  describe('feeStatusForBalance', () => {
+    it('reads a zero balance as Paid, whatever the reported status', () => {
+      expect(feeStatusForBalance(0, 'due')).toBe('paid')
+      expect(feeStatusForBalance(0, 'partial')).toBe('paid')
+      expect(feeStatusForBalance(0, 'paid')).toBe('paid')
+    })
+    it('reads an overpaid / negative balance as Paid', () => {
+      expect(feeStatusForBalance(-500, 'due')).toBe('paid')
+    })
+    it('keeps the reported status when a balance is still owed', () => {
+      expect(feeStatusForBalance(1200, 'due')).toBe('due')
+      expect(feeStatusForBalance(1200, 'partial')).toBe('partial')
+    })
+    it('treats a non-finite balance as unknown and keeps the reported status', () => {
+      expect(feeStatusForBalance(NaN, 'due')).toBe('due')
+    })
   })
   it('grades by percentage band', () => {
     expect(gradeFor(95)).toBe('A1')

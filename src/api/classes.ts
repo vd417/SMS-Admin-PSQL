@@ -103,15 +103,18 @@ export async function updateClass(id: string, patch: UpdateClassPatch): Promise<
 }
 
 /**
- * Ensure Nursery–XII · A/B/C exist for the school. Skips names already present.
- * Returns how many classes were newly created.
+ * Ensure the chosen default classes exist for the school (defaults to Nursery–XII · A/B/C
+ * when no opts are given). Skips names already present. Returns how many were newly created.
  */
-export async function ensureDefaultClasses(existing?: SchoolClass[]): Promise<number> {
+export async function ensureDefaultClasses(
+  existing?: SchoolClass[],
+  opts?: { grades?: readonly string[]; sections?: readonly string[] },
+): Promise<number> {
   const current = existing ?? await listClasses()
   const have = new Set(
     current.map((c) => (c.name || `${c.grade}-${c.section}`).trim().toLowerCase()).filter(Boolean),
   )
-  const missing = defaultClassSpecs().filter((c) => !have.has(c.name.toLowerCase()))
+  const missing = defaultClassSpecs(opts).filter((c) => !have.has(c.name.toLowerCase()))
   let created = 0
   for (const c of missing) {
     await createClass(c)

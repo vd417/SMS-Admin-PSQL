@@ -19,6 +19,7 @@ import { fmtMoney, fmtNum } from '@/lib/format'
 import type { School, Tier } from '@/types'
 import { usePortfolioSchools, useOwnerPlans, useCreateSchool, useOwnerFeeSummary, useDeleteSchool } from '@/api/hooks/useOwner'
 import { clientToSchool, isValidSchoolId, normalizeSchoolId } from '@/api/ownerMap'
+import { validateEmail, validatePhone } from '@/lib/validation'
 import type { FeeSchoolSummary } from '@/api/ownerTypes'
 import { ApiError } from '@/api/client'
 import { UpgradePlanModal } from '@/screens/owner/UpgradePlanModal'
@@ -153,7 +154,7 @@ function OwnerDashboard() {
           <div className="row gap8">
             <Btn icon="rupee" onClick={() => app.go('owner.revenue')}>Fee collection</Btn>
             <Btn icon="building" onClick={() => app.go('owner.schools')}>All schools</Btn>
-            <Btn variant="primary" icon="plus" onClick={() => app.go('owner.create')}>Create school</Btn>
+            <Btn variant="primary" icon="plus" onClick={() => app.go('owner.create')}>Add school branch</Btn>
           </div>
         }
       />
@@ -445,7 +446,7 @@ function OwnerSchools() {
         actions={
           <div className="row gap8">
             <Btn icon="rupee" onClick={() => app.go('owner.revenue')}>Fee collection</Btn>
-            <Btn variant="primary" icon="plus" onClick={() => app.go('owner.create')}>Create school</Btn>
+            <Btn variant="primary" icon="plus" onClick={() => app.go('owner.create')}>Add school branch</Btn>
           </div>
         }
       />
@@ -1001,6 +1002,16 @@ function CreateSchoolWizard() {
         toast.danger('Invalid school ID', 'Use 3–40 characters: letters, numbers, hyphens (e.g. scc or riverdale-blr).')
         return
       }
+      const adminEmailErr = validateEmail(data.adminEmail)
+      if (adminEmailErr) {
+        toast.danger('Invalid admin email', adminEmailErr)
+        return
+      }
+      const adminPhoneErr = validatePhone(data.adminPhone)
+      if (adminPhoneErr) {
+        toast.danger('Invalid admin phone', adminPhoneErr)
+        return
+      }
       let logoUrl = data.logoUrl.trim() || undefined
       if (data.logoFile) {
         try {
@@ -1106,7 +1117,7 @@ function CreateSchoolWizard() {
   return (
     <div className="col gap20">
       <PageHead
-        title="Create school"
+        title="Create school branch"
         sub="Add a new tenant to your portfolio"
         actions={<Btn icon="arrowLeft" onClick={() => app.go('owner.schools')}>Back to schools</Btn>}
       />
@@ -1298,7 +1309,7 @@ function CreateSchoolWizard() {
                 <Input icon="message" type="email" value={data.adminEmail} placeholder="admin@school.edu" onChange={(e) => set('adminEmail', e.target.value)} />
               </Field>
               <Field label="Phone">
-                <Input icon="phone" value={data.adminPhone} placeholder="+91 90000 00000" onChange={(e) => set('adminPhone', e.target.value)} />
+                <Input icon="phone" digits={10} value={data.adminPhone} placeholder="10-digit mobile" onChange={(e) => set('adminPhone', e.target.value)} />
               </Field>
             </div>
           </div>
@@ -1495,7 +1506,7 @@ function PlanStep({
       <Empty
         icon="alert"
         title="Could not load plans"
-        body="Check your connection, then reopen Create school. School owners need GET /me/plans."
+        body="Check your connection, then reopen Create school branch. School owners need GET /me/plans."
       />
     )
   }

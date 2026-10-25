@@ -16,7 +16,7 @@ const VIEWS: Record<string, ViewMeta> = {
   // Owner console (Phase 4)
   'owner.dashboard': { title: 'Portfolio overview', sub: 'All schools at a glance', phase: 4 },
   'owner.schools': { title: 'Schools', sub: 'Your tenants', phase: 4 },
-  'owner.create': { title: 'Create school', sub: 'Onboard a new tenant', phase: 4 },
+  'owner.create': { title: 'Create school branch', sub: 'Onboard a new tenant', phase: 4 },
   'owner.reports': { title: 'Cross-school reports', sub: 'Compare across tenants', phase: 4 },
   'owner.revenue': { title: 'Fee collection', sub: 'School-wise student fee cash', phase: 4 },
   'owner.billing': { title: 'Subscriptions & billing', sub: 'Plans, invoices & SaaS revenue', phase: 4 },
@@ -25,7 +25,7 @@ const VIEWS: Record<string, ViewMeta> = {
 
   // School console — flagship (Phase 1)
   'school.dashboard': { title: 'Dashboard', phase: 1 },
-  'school.approvals': { title: 'Approvals', sub: 'Pending your action', phase: 1 },
+  'school.approvals': { title: 'Leave Requests', sub: 'Pending your action', phase: 1 },
   'school.sis': { title: 'Students (SIS)', phase: 1 },
   'school.sis.add': { title: 'Add student', phase: 1 },
   'school.sis.edit': { title: 'Edit student', phase: 1 },

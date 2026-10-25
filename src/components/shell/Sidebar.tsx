@@ -32,7 +32,7 @@ function schoolNav(role: Role, approvalCount: number): NavGroup[] {
   return [
     { items: [
       { label: 'Dashboard', view: 'school.dashboard', icon: 'grid' },
-      { label: 'Approvals', view: 'school.approvals', icon: 'inbox', badge: approvalCount || undefined },
+      { label: 'Leave Requests', view: 'school.approvals', icon: 'inbox', badge: approvalCount || undefined },
     ] },
     { label: 'People', items: [
       { label: 'Students (SIS)', view: 'school.sis', icon: 'users' },

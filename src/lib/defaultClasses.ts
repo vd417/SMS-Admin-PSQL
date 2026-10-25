@@ -15,17 +15,24 @@ export interface DefaultClassSpec {
   room: string
 }
 
-export function defaultClassSpecs(): DefaultClassSpec[] {
-  return DEFAULT_GRADES.flatMap((grade) =>
-    DEFAULT_SECTIONS.map((section) => ({
-      name: `${grade}-${section}`,
-      grade,
-      section,
-      teacherId: '',
-      students: 0,
-      room: '—',
-    })),
-  )
+/** Build the default class specs for the chosen grades and sections.
+ *  Defaults to Nursery–XII · A/B/C. Pass an empty `sections` array to create
+ *  section-less classes (one row per grade, name = grade). */
+export function defaultClassSpecs(
+  opts?: { grades?: readonly string[]; sections?: readonly string[] },
+): DefaultClassSpec[] {
+  const grades = (opts?.grades ?? DEFAULT_GRADES).map((g) => String(g).trim()).filter(Boolean)
+  const sections = (opts?.sections ?? DEFAULT_SECTIONS).map((s) => String(s).trim()).filter(Boolean)
+  const row = (grade: string, section: string): DefaultClassSpec => ({
+    name: section ? `${grade}-${section}` : grade,
+    grade,
+    section,
+    teacherId: '',
+    students: 0,
+    room: '—',
+  })
+  if (sections.length === 0) return grades.map((grade) => row(grade, ''))
+  return grades.flatMap((grade) => sections.map((section) => row(grade, section)))
 }
 
 /** Nursery–XII · A/B/C names for dropdowns. */

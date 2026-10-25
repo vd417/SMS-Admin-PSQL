@@ -38,6 +38,17 @@ const HOUSE_FIXTURES = ['Ruby', 'Emerald']
 const ROUTE_FIXTURES = [{ id: 'route-north-id', name: 'North Line', stops: 2 }]
 const STOP_FIXTURES = [{ id: 'stop-park-id', route_id: 'route-north-id', name: 'Park Gate', sequence: 1 }]
 const FEE_HEAD_FIXTURES = [{ id: 'fh-transport-id', name: 'Transport Fee', active: true, is_transport_fee_head: true }]
+// The list sorts by name asc and shows 25 per page, so target the student whose name
+// sorts first — guaranteed to be on page 1 — with one partial invoice. That lets the
+// Fees column prove it shows Paid/Due from the live ledger, not the per-student fee_due.
+const LEDGER_STUDENT = [...seed].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))[0]
+const FEE_INVOICE_FIXTURES = [
+  {
+    id: 'inv-sis-1', student_id: LEDGER_STUDENT.id, student_adm: LEDGER_STUDENT.adm,
+    cls: LEDGER_STUDENT.cls, grade: LEDGER_STUDENT.grade, term: 'Term 1', academic_year: '2026-27',
+    total: 8000, paid: 5000, due: 3000, status: 'partial',
+  },
+]
 
 beforeEach(() => {
   localStorage.clear()
@@ -59,6 +70,7 @@ function defaultFetch(url: string): Promise<Response> {
   if (url.includes('/stops')) return Promise.resolve(jsonResponse({ data: STOP_FIXTURES }))
   if (url.includes('/transport/routes')) return Promise.resolve(jsonResponse({ data: ROUTE_FIXTURES }))
   if (url.includes('/fees/heads')) return Promise.resolve(jsonResponse({ data: FEE_HEAD_FIXTURES, next_cursor: null }))
+  if (url.includes('/fees/invoices')) return Promise.resolve(jsonResponse({ data: FEE_INVOICE_FIXTURES, next_cursor: null }))
   return Promise.resolve(jsonResponse({ data: seed.map(toWire), next_cursor: null }))
 }
 
@@ -74,6 +86,16 @@ function renderSisScreen() {
     </QueryClientProvider>,
   )
 }
+
+describe('Fees column — live invoice ledger', () => {
+  it('shows Paid and Due from the student invoice ledger, not just the stale fee_due', async () => {
+    renderSisScreen()
+    // The 5,000 paid / 3,000 due figures come only from the invoice fixture for the first
+    // seed student, so this string is unique to that row's Fees cell.
+    expect(await screen.findByText(/Paid ₹ 5,000 · Due ₹ 3,000/, {}, { timeout: 5000 }))
+      .toBeInTheDocument()
+  })
+})
 
 describe('Add Student entry point', () => {
   it('shows Add Student and Bulk Import as separate top-level buttons, next to Promote class', () => {
@@ -1132,10 +1154,15 @@ describe('bulkImportTemplateXlsx', () => {
     const headers = (sheet.getRow(1).values as unknown[]).slice(1).map((v) => String(v))
     expect(headers).toContain('First Name')
     expect(headers).toContain('Class + Section')
-    expect(headers).toContain('Pickup Stop')
     expect(headers).not.toContain('Status') // not a mappable column any more
     expect(headers).not.toContain('Roll Number')
     expect(headers).not.toContain('Student ID') // server auto-generates it, same as Roll Number
+    // Transport is assigned per student in the app, not in the import file — so no transport
+    // column appears in the template (though a school's own file can still map them in the wizard).
+    expect(headers).not.toContain('Uses School Transport')
+    expect(headers).not.toContain('Transport Route')
+    expect(headers).not.toContain('Pickup Stop')
+    expect(headers).not.toContain('Transport Fee Head')
     // A file built from this template auto-maps with zero manual column matching.
     const suggested = suggestColumnMapping(headers)
     expect(Object.values(suggested).every((v) => v !== null)).toBe(true)
@@ -1148,13 +1175,6 @@ describe('bulkImportTemplateXlsx', () => {
     }
     expect(rowByHeader('First Name')).toBeTruthy()
     expect(rowByHeader('Class + Section')).toBeTruthy()
-
-    // The example demonstrates the optional-transport path: opted out, every transport
-    // column left blank rather than a guessed/fake route, stop or fee head.
-    expect(rowByHeader('Uses School Transport')).toBe('No')
-    expect(rowByHeader('Transport Fee Head') ?? '').toBe('')
-    expect(rowByHeader('Transport Route') ?? '').toBe('')
-    expect(rowByHeader('Pickup Stop') ?? '').toBe('')
   })
 })
 

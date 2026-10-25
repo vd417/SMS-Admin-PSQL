@@ -41,11 +41,17 @@ export function useUpdateClass(): UseMutationResult<SchoolClass, Error, { id: st
   })
 }
 
-/** Seed Nursery–XII · A/B/C (skips any that already exist). */
-export function useEnsureDefaultClasses(): UseMutationResult<number, Error, SchoolClass[] | undefined> {
+/** Seed chosen default classes (defaults to Nursery–XII · A/B/C); skips any that exist. */
+export interface EnsureDefaultClassesVars {
+  existing?: SchoolClass[]
+  grades?: readonly string[]
+  sections?: readonly string[]
+}
+export function useEnsureDefaultClasses(): UseMutationResult<number, Error, EnsureDefaultClassesVars | undefined> {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (existing?: SchoolClass[]) => ensureDefaultClasses(existing),
+    mutationFn: (vars?: EnsureDefaultClassesVars) =>
+      ensureDefaultClasses(vars?.existing, { grades: vars?.grades, sections: vars?.sections }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.classes.all }) },
   })
 }

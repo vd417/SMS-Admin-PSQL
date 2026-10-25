@@ -18,7 +18,7 @@ import { useSubjects, useCreateSubject, useUpdateSubject, useDeleteSubject, useE
 import { addSchoolHouse, listSchoolHouses, removeSchoolHouse, renameSchoolHouse } from '@/api/schoolHouses'
 import { getClassSubjects, saveClassSubjects, teachingPeriodCount, subjectsMatchPeriodsHint, effectiveClassPeriods, periodChoicesForSchool, suggestedClassPeriods } from '@/api/classSubjects'
 import { useClassSubjects, useClassSubjectsMap, useClassPeriodOverrides, useListClassSubjects, useSaveClassPeriodOverride } from '@/api/hooks/useClassSubjects'
-import { DEFAULT_GRADES, DEFAULT_SECTIONS } from '@/lib/defaultClasses'
+import { DEFAULT_GRADES, DEFAULT_SECTIONS, formatSelectedGrades, gradeRank } from '@/lib/defaultClasses'
 import { cellKey, clashingClass, clashingClasses, pickTeacher, conflictsFor, teacherLoads, clashingTeachers, teacherSchedule, subjectSchedule, planTimetableSync, bellTimesFromPeriodRows, gridsFromRemoteSlots, hasFilledGrid, generateAutoTimetableGrid, classTimetableMode, subjectsInGrids, clipGridToPeriods, DEFAULT_CLASS_BELL_TIMES, type Cell, type Grid } from '@/lib/timetable'
 import { exportTimetablePdf, hasPrintableTimetable, type TimetablePrintView } from '@/lib/timetablePrint'
 import { listTimetable, listTimetableHistory, replaceTimetableSlots, type TimetableHistoryEntry } from '@/api/timetable'
@@ -91,6 +91,10 @@ function ClassesTab({ editable }: { editable: boolean }) {
   const [aSec, setASec] = useState('')
   const [aRoom, setARoom] = useState('')
   const [aSubjects, setASubjects] = useState<string[]>([])
+  // "Add defaults" picker: choose which grades + which section set to create at once.
+  const [defaultsOpen, setDefaultsOpen] = useState(false)
+  const [defGrades, setDefGrades] = useState<Set<string>>(() => new Set(DEFAULT_GRADES))
+  const [defSection, setDefSection] = useState<'abc' | 'abcd' | 'none'>('abc')
   const [editRow, setEditRow] = useState<ClassRow | null>(null)
   const [eGrade, setEGrade] = useState('')
   const [eSec, setESec] = useState('')
@@ -217,17 +221,38 @@ function ClassesTab({ editable }: { editable: boolean }) {
     return [...new Set([...DEFAULT_SECTIONS, ...fromLive])]
   }, [rows])
 
-  const runSeedDefaults = () => {
-    if (seedDefaults.isPending) return
-    seedDefaults.mutate(classesData, {
-      onSuccess: (n) => {
-        if (n === 0) toast.info('Already complete', 'Nursery–XII · A/B/C are already present.')
-        else toast.success('Default classes added', `${n} classes · Nursery–XII · sections A, B, C.`)
-      },
-      onError: (err) => {
-        toast.danger('Could not add defaults', err instanceof Error ? err.message : 'Please try again.')
-      },
+  const SECTION_SETS: Record<'abc' | 'abcd' | 'none', readonly string[]> = {
+    abc: DEFAULT_SECTIONS,          // A, B, C
+    abcd: ['A', 'B', 'C', 'D'],
+    none: [],                       // one section-less class per grade
+  }
+  const toggleDefGrade = (g: string) =>
+    setDefGrades((prev) => {
+      const next = new Set(prev)
+      if (next.has(g)) next.delete(g); else next.add(g)
+      return next
     })
+  const allDefGradesOn = defGrades.size === DEFAULT_GRADES.length
+
+  const applyDefaults = () => {
+    if (seedDefaults.isPending) return
+    const grades = DEFAULT_GRADES.filter((g) => defGrades.has(g))
+    if (grades.length === 0) { toast.danger('Pick grades', 'Check at least one class to create.'); return }
+    const sections = SECTION_SETS[defSection]
+    const secLabel = sections.length ? `sections ${sections.join(', ')}` : 'no sections'
+    seedDefaults.mutate(
+      { existing: classesData, grades, sections },
+      {
+        onSuccess: (n) => {
+          if (n === 0) toast.info('Already present', `${formatSelectedGrades(grades)} · ${secLabel} already exist.`)
+          else toast.success('Classes added', `${n} class${n === 1 ? '' : 'es'} · ${formatSelectedGrades(grades)} · ${secLabel}.`)
+          setDefaultsOpen(false)
+        },
+        onError: (err) => {
+          toast.danger('Could not add classes', err instanceof Error ? err.message : 'Please try again.')
+        },
+      },
+    )
   }
 
   /* Defaults are opt-in via “Add defaults” — so a single added class shows clearly. */
@@ -310,8 +335,14 @@ function ClassesTab({ editable }: { editable: boolean }) {
     set([...next])
   }
 
+  // Nursery→XII ascending and numeric-aware (1, 2, 10 — not 1, 10, 2), then by section.
+  // DataTable compares sortValue with </>, so encode the grade rank as a zero-padded
+  // string (shift +100 so Nursery's negative rank still pads positive) + the section.
+  const classSortKey = (r: ClassRow) =>
+    `${String(gradeRank(r.grade) + 100).padStart(5, '0')}|${String(r.section ?? '').toLowerCase()}`
+
   const cols: Column<ClassRow>[] = [
-    { key: 'name', label: 'Class', sortValue: (r) => r.name, render: (r) => (
+    { key: 'name', label: 'Class', sortValue: (r) => classSortKey(r), render: (r) => (
       <div className="row ai-center gap10">
         <span className="sm-card-ic"><Icon name="grid" size={15} /></span>
         <div><div className="fw6">{r.name}</div><div className="t-xs muted">Grade {r.grade}{r.section ? ` · Sec ${r.section}` : ''} · {effectiveClassPeriods(periodTarget, r.id ? periodOverrides[r.id] : null)} periods{r.id && periodOverrides[r.id] != null ? ' · override' : ''}</div></div>
@@ -369,7 +400,7 @@ function ClassesTab({ editable }: { editable: boolean }) {
               variant="secondary"
               icon="sparkle"
               disabled={seedDefaults.isPending}
-              onClick={runSeedDefaults}
+              onClick={() => setDefaultsOpen(true)}
             >
               {seedDefaults.isPending ? 'Adding…' : 'Add defaults'}
             </Btn>
@@ -393,6 +424,64 @@ function ClassesTab({ editable }: { editable: boolean }) {
         {liveTeacherOpts.length === 0
           ? <Empty icon="users" title="No teachers yet" body="Onboard a teacher first, then assign them as class teacher." />
           : <Field label="Teacher" hint="Same as Class field on Add / Edit teacher"><Select options={liveTeacherOpts} value={pickSel} onChange={(e) => setPickSel(e.target.value)} /></Field>}
+      </Modal>
+
+      {/* add defaults — pick grades (check) + a section set, then create in bulk */}
+      <Modal open={defaultsOpen} onClose={() => setDefaultsOpen(false)} icon="sparkle" title="Add default classes"
+        sub="Check the classes and choose sections to create them all at once"
+        footer={<div className="row gap8 jc-end">
+          <Btn variant="ghost" onClick={() => setDefaultsOpen(false)}>Cancel</Btn>
+          <Btn variant="primary" icon="check" disabled={seedDefaults.isPending} onClick={applyDefaults}>
+            {seedDefaults.isPending ? 'Creating…' : 'Apply & create'}
+          </Btn>
+        </div>}>
+        <Field label="Classes" hint="Nursery–XII — check the ones you need (e.g. just I–V, or all)">
+          <div className="col gap10">
+            <div className="row ai-center jc-between wrap gap8">
+              <span className="t-xs muted">
+                {defGrades.size
+                  ? `${defGrades.size} of ${DEFAULT_GRADES.length} · ${formatSelectedGrades([...defGrades])}`
+                  : 'No classes selected'}
+              </span>
+              <Btn
+                size="sm"
+                variant={allDefGradesOn ? 'primary' : 'secondary'}
+                icon={allDefGradesOn ? 'check' : 'layers'}
+                onClick={() => setDefGrades(allDefGradesOn ? new Set() : new Set(DEFAULT_GRADES))}
+              >
+                {allDefGradesOn ? 'Clear all' : 'Select all Nursery–XII'}
+              </Btn>
+            </div>
+            <div className="sm-exam-class-grid" role="group" aria-label="Select classes">
+              {DEFAULT_GRADES.map((g) => (
+                <button
+                  key={g}
+                  type="button"
+                  className={`sm-exam-class-chip${defGrades.has(g) ? ' on' : ''}`}
+                  aria-pressed={defGrades.has(g)}
+                  onClick={() => toggleDefGrade(g)}
+                >
+                  {g}
+                </button>
+              ))}
+            </div>
+          </div>
+        </Field>
+        <Field label="Sections" hint="Each checked class gets these sections — or pick No sections">
+          <Segmented
+            value={defSection}
+            onChange={(v) => setDefSection(v as 'abc' | 'abcd' | 'none')}
+            options={[
+              { value: 'abc', label: 'A–C' },
+              { value: 'abcd', label: 'A–D' },
+              { value: 'none', label: 'No sections' },
+            ]}
+          />
+        </Field>
+        <div className="t-xs muted" style={{ marginTop: 4 }}>
+          Will create up to <span className="fw6">{defGrades.size * (SECTION_SETS[defSection].length || 1)}</span> class
+          {defGrades.size * (SECTION_SETS[defSection].length || 1) === 1 ? '' : 'es'} · classes that already exist are skipped.
+        </div>
       </Modal>
 
       {/* add class — grade & section are free text (custom) with suggestions */}

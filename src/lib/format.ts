@@ -2,7 +2,7 @@
    SchoolMate — Formatting + deterministic academic math
    Ported from data.jsx.
    ============================================================ */
-import type { Student, Report, RankInfo, MonthValue } from '@/types'
+import type { Student, Report, RankInfo, MonthValue, FeeStatus } from '@/types'
 import { students, subjects } from '@/data/mockDb'
 
 export const fmtMoney = (n: number, cur = '₹'): string => cur + ' ' + Number(n).toLocaleString('en-IN')
@@ -15,6 +15,15 @@ export function fmtDate(raw?: string): string {
   const d = new Date(s)
   if (Number.isNaN(d.getTime())) return s.slice(0, 10)
   return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })
+}
+
+/** Reconcile a reported fee status against the real outstanding balance so the
+ *  UI never shows "Due"/"Partial" when nothing is actually owed. A zero (or
+ *  overpaid/negative) balance always reads as Paid; a positive balance keeps the
+ *  reported status. A non-finite balance is treated as unknown — keep reported. */
+export function feeStatusForBalance(balance: number, reported: FeeStatus): FeeStatus {
+  if (!Number.isFinite(balance)) return reported
+  return balance > 0 ? reported : 'paid'
 }
 
 /** Human-friendly, stable invoice number from a UUID + date: INV/YYYYMMDD/XXXXXX.

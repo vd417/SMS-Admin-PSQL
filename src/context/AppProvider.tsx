@@ -243,10 +243,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     role: Role,
     isPlatformUser: boolean,
     opts?: { restoreUi?: boolean },
+    identity?: { name?: string | null; email?: string | null },
   ) => {
     const ownerConsole = isPlatformUser || role === 'owner'
     const saved = opts?.restoreUi ? tokenStore.getUi() : null
-    setUser({ name: email.split('@')[0], email, role, hue: isPlatformUser ? 250 : 210 })
+    // Prefer the real name/email from /auth/me; only fall back to the email prefix
+    // when the backend sends no name (e.g. a bare login identifier).
+    const displayName = identity?.name?.trim() || email.split('@')[0]
+    const displayEmail = identity?.email?.trim() || email
+    setUser({ name: displayName, email: displayEmail, role, hue: isPlatformUser ? 250 : 210 })
     setIsPlatform(isPlatformUser)
     setRole(role)
     setLoggedIn(true)
@@ -286,7 +291,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const mapped = (profile.roles ?? []).map((r) => ROLE_MAP[r]).filter(Boolean) as Role[]
     const role = ROLE_PRIORITY.find((r) => mapped.includes(r)) ?? 'admin'
     const platform = profile.is_platform === true
-    applySession(email, role, platform, opts)
+    applySession(email, role, platform, opts, { name: profile.name, email: profile.email })
     // Load real tenant plan so school console gates match silver/gold/platinum.
     if (!platform) {
       await hydrateLiveSchools()

@@ -872,7 +872,7 @@ function ApprovalsInbox() {
 
   return (
     <div className="col gap20">
-      <PageHead title="Approvals" sub={meta.sub} />
+      <PageHead title="Leave Requests" sub={meta.sub} />
 
       <Segmented
         value={tab}

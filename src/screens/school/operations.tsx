@@ -37,6 +37,7 @@ import { fromApiRole, leadershipRoleLabel } from '@/api/users'
 import { collectAudienceContacts } from '@/lib/collectAudienceEmails'
 import { gradeRank } from '@/lib/defaultClasses'
 import { shouldPublishGps } from '@/lib/gpsThrottle'
+import { validatePhone } from '@/lib/validation'
 import { groupStudentsByStop } from '@/lib/transportStops'
 import {
   useTransportSummary, useTransportFleet,
@@ -1998,6 +1999,8 @@ function TransportManageModal({ open, onClose }: { open: boolean; onClose: () =>
 
   const submit = () => {
     if (mode === 'bus') {
+      const phoneErr = validatePhone(driverPhone)
+      if (phoneErr) { toast.danger('Invalid driver phone', phoneErr); return }
       createBusMut.mutate({ busNo, routeName: routeName || null, driver: driver || null, driverPhone: driverPhone || null }, {
         onSuccess: (b) => { toast.success('Bus added', `Bus ${b.busNo} registered.`); onClose() },
         onError: (e) => toast.danger('Could not add bus', errMsg(e)),
@@ -2034,7 +2037,7 @@ function TransportManageModal({ open, onClose }: { open: boolean; onClose: () =>
           </div>
           <div className="sm-grid-2 gap16">
             <Field label="Driver"><Input placeholder="Driver name (optional)" value={driver} onChange={(e) => setDriver(e.target.value)} /></Field>
-            <Field label="Driver phone"><Input type="tel" placeholder="+91 9999999999" value={driverPhone} onChange={(e) => setDriverPhone(e.target.value)} /></Field>
+            <Field label="Driver phone"><Input type="tel" digits={10} placeholder="10-digit mobile" value={driverPhone} onChange={(e) => setDriverPhone(e.target.value)} /></Field>
           </div>
         </div>
       )}

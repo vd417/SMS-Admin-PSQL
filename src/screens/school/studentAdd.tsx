@@ -592,7 +592,7 @@ function StudentFormScreen({ mode }: { mode: 'add' | 'edit' }) {
               {sel('bloodGroup', 'Blood group', BLOOD_GROUPS)}
               {sel('religion', 'Religion', RELIGIONS)}
               {sel('category', 'Category', CATEGORIES)}
-              {txt('phone', 'Primary contact number', { required: true, icon: 'phone', ph: '+91 9XXXXXXXXX' })}
+              {txt('phone', 'Primary contact number', { required: true, icon: 'phone', ph: '10-digit mobile', digits: 10 })}
               {txt('email', 'Email address', { required: true, ph: 'student@example.com' })}
               {txt('caste', 'Caste')}
               {txt('motherTongue', 'Mother tongue', { ph: 'e.g. Hindi' })}
@@ -633,7 +633,7 @@ function StudentFormScreen({ mode }: { mode: 'add' | 'edit' }) {
               {fieldGrid(<>
                 {txt('fatherName', 'Father name', { icon: 'user', ph: 'Full name', required: true, case: 'name' })}
                 {txt('fatherEmail', 'Father email', { ph: 'father@example.com' })}
-                {txt('fatherPhone', 'Father phone number', { icon: 'phone', ph: '+91 9XXXXXXXXX' })}
+                {txt('fatherPhone', 'Father phone number', { icon: 'phone', ph: '10-digit mobile', digits: 10 })}
                 {txt('fatherOccupation', 'Father occupation')}
               </>)}
               <div className="sm-photo-id">
@@ -654,7 +654,7 @@ function StudentFormScreen({ mode }: { mode: 'add' | 'edit' }) {
               {fieldGrid(<>
                 {txt('motherName', 'Mother name', { icon: 'user', ph: 'Full name', case: 'name' })}
                 {txt('motherEmail', 'Mother email', { ph: 'mother@example.com' })}
-                {txt('motherPhone', 'Mother phone number', { icon: 'phone', ph: '+91 9XXXXXXXXX' })}
+                {txt('motherPhone', 'Mother phone number', { icon: 'phone', ph: '10-digit mobile', digits: 10 })}
                 {txt('motherOccupation', 'Mother occupation')}
               </>)}
               <div style={{ marginTop: 14, maxWidth: 240 }}>

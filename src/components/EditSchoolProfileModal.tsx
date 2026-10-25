@@ -8,6 +8,7 @@ import { SchoolMark, SchoolPhoto } from '@/components/SchoolMark'
 import { compressImageFile } from '@/lib/compressImage'
 import { updateSchoolProfile } from '@/api/schoolProfile'
 import { clientToSchool, isValidSchoolId, normalizeSchoolId } from '@/api/ownerMap'
+import { validateEmail, validatePhone } from '@/lib/validation'
 import { ApiError } from '@/api/client'
 import type { Client } from '@/api/ownerTypes'
 import type { School } from '@/types'
@@ -94,6 +95,16 @@ export function EditSchoolProfileModal({
     }
     if (!isValidSchoolId(schoolId)) {
       toast.danger('Invalid school ID', 'Use 3–40 characters: letters, numbers, hyphens (e.g. scc or riverdale-blr).')
+      return
+    }
+    const emailErr = validateEmail(email)
+    if (emailErr) {
+      toast.danger('Invalid contact email', emailErr)
+      return
+    }
+    const phoneErr = validatePhone(phone)
+    if (phoneErr) {
+      toast.danger('Invalid contact phone', phoneErr)
       return
     }
     setBusy(true)
@@ -209,7 +220,7 @@ export function EditSchoolProfileModal({
             <Input icon="message" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
           </Field>
           <Field label="Contact phone">
-            <Input icon="phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
+            <Input icon="phone" digits={10} placeholder="10-digit mobile" value={phone} onChange={(e) => setPhone(e.target.value)} />
           </Field>
         </div>
 

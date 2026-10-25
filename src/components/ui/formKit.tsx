@@ -31,6 +31,8 @@ export interface TxtOpts {
   case?: 'name' | 'place'
   /** Locks the field against typing — for an auto-generated value the user shouldn't edit. */
   readOnly?: boolean
+  /** Restrict entry to this many digits (e.g. 10 for a mobile number). */
+  digits?: number
 }
 
 export function useFormKit(
@@ -47,6 +49,7 @@ export function useFormKit(
     <Field label={label} required={opts.required} error={errors[key]}>
       <Input
         icon={opts.icon} type={opts.type}
+        digits={opts.digits}
         value={opts.type === 'date' ? toDateInputValue(f[key]) : f[key]}
         placeholder={opts.ph}
         error={!!errors[key]}

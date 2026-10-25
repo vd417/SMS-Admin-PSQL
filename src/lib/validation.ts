@@ -59,11 +59,18 @@ export function validateEmail(value: string | null | undefined): string | null {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((value as string).trim()) ? null : 'Enter a valid email address'
 }
 
-/** Basic phone: 10–13 digits after stripping non-digits. Empty is allowed. */
+/** Mobile number: exactly 10 digits (spaces ignored). No country code or
+ *  other punctuation — "10 digits only". Empty is allowed. */
 export function validatePhone(value: string | null | undefined): string | null {
   if (isBlank(value)) return null
-  const digits = (value as string).replace(/\D/g, '')
-  return digits.length >= 10 && digits.length <= 13 ? null : 'Enter a valid phone number'
+  const digits = (value as string).replace(/\s+/g, '')
+  return /^\d{10}$/.test(digits) ? null : 'Enter a valid 10-digit mobile number'
+}
+
+/** Keep only digits, capped at `max` — for live-restricting a mobile-number
+ *  input so it can hold at most 10 digits and nothing but digits. */
+export function clampPhoneInput(value: string, max = 10): string {
+  return value.replace(/\D/g, '').slice(0, max)
 }
 
 /** PAN: 5 letters, 4 digits, 1 letter (e.g. ABCDE1234F). Empty is allowed. */

@@ -23,7 +23,7 @@ import { markKey } from '@/lib/examData'
 import { properName, properPlace } from '@/lib/properCase'
 import { printReportCard } from '@/lib/reportCardPrint'
 import {
-  reportFor, classRank, fmtMoney, fmtDate, feeInvoiceNo,
+  reportFor, classRank, fmtMoney, fmtDate, feeInvoiceNo, feeStatusForBalance,
   overallToppers, classToppers,
   type TopperMetric, type ScoredStudent, type ClassTopperGroup, type TopperScoreOpts,
 } from '@/lib/format'
@@ -293,8 +293,15 @@ export function buildBulkPreview(
     // — never a sequential index over the already-header/blank-filtered rows, which would
     // point the admin's error report at the wrong line of their own spreadsheet (spec §9).
     const rowNumber = parsedRows[i].lineNumber
+    // Spreadsheets hold day-first ("23/04/2015") and Excel-serial dates, which validateMinAge's
+    // `new Date()` reads as Invalid. Feed the shared validator the PARSED ISO date so its age /
+    // future checks run on a real date — an unparseable cell falls back to the raw value and is
+    // flagged with the bulk wording below, not the single-form "Enter a valid date of birth".
+    const rawDob = (record.dob ?? '').trim()
+    const parsedDob = rawDob ? parseImportDate(rawDob) : ''
     const form: Record<string, string> = {
       ...record,
+      dob: parsedDob || rawDob,
       cls: record.section ?? '',
       transportOptedIn: normalizeBulkTransportOptedIn(record.transportOptedIn ?? ''),
     }
@@ -323,12 +330,10 @@ export function buildBulkPreview(
       errors.cls = `Class + Section "${sectionValue}" was not found — check spelling or add it in Academics first`
     }
 
-    // dob: `required()` alone only proves the cell is non-empty. Anything that does not
-    // actually parse becomes '' in toDateInputValue() downstream and is sent as dob: null,
-    // which the server then rejects — Preview would have said "Valid" and the final counts
-    // would not add up. Validate with the SAME parser the payload uses, so the two agree.
-    const dobValue = (record.dob ?? '').trim()
-    if (dobValue && !errors.dob && !parseImportDate(dobValue)) {
+    // dob: a non-empty cell that the payload parser can't read is sent as dob: null and
+    // rejected by the server, so flag it here with the bulk wording — overriding whatever the
+    // shared form validator said about the raw/blank value, since its message names no way out.
+    if (rawDob && !parsedDob) {
       errors.dob = 'Invalid date of birth — use a real date such as 23/04/2015 or 2015-04-23'
     }
 
@@ -445,9 +450,9 @@ export function buildBulkImportPayloads(validRows: BulkPreviewRow[], refs: BulkI
  *  convention (defaultClasses.ts), i.e. what a school gets from "Seed default classes" — so the
  *  example actually resolves out of the box for any school on the default class structure,
  *  rather than an arbitrary Arabic-numeral grade many schools never create.
- *  Uses School Transport is "No" with every transport column blank: Route / Stop / Fee Head are
- *  per-school foreign keys this template cannot safely guess, so leaving them blank both keeps
- *  the example truthful and demonstrates that transport is optional. */
+ *  The transport keys are still present here only to satisfy the full-field-shape type — the
+ *  template itself omits every transport column (see TEMPLATE_OMIT_KEYS), so these values are
+ *  never emitted; transport is assigned per student in the app instead. */
 const BULK_IMPORT_EXAMPLE_ROW: Record<(typeof BULK_IMPORT_FIELDS)[number]['key'], string> = {
   admissionNo: '',
   admissionDate: '2025-04-01',
@@ -483,16 +488,24 @@ const BULK_IMPORT_EXAMPLE_ROW: Record<(typeof BULK_IMPORT_FIELDS)[number]['key']
   transportStopId: '',
 }
 
+/** Columns left OUT of the downloadable template. Admission Number — like Roll Number — is
+ *  server-auto-generated, so a fresh template shouldn't invite filling it (it stays mappable for
+ *  schools migrating legacy data). The four transport columns are omitted too: transport is set
+ *  up per student in the app (Transport section), so the import stays focused on the core student
+ *  record and schools aren't asked to hand-enter route/stop/fee-head foreign keys in a sheet. A
+ *  school whose own file still carries transport columns can map them manually in the wizard. */
+const TEMPLATE_OMIT_KEYS: ReadonlySet<string> = new Set([
+  'admissionNo', 'transportOptedIn', 'transportRouteId', 'transportStopId', 'transportFeeHeadId',
+])
+
 /** Downloadable starter workbook: a bold, frozen header row matching the wizard's own mappable
  *  column labels (so a file built from it auto-maps end to end), plus exactly ONE example
- *  student row showing the expected format. Omits Admission Number — like Roll Number, it's
- *  server-auto-generated; the column stays mappable for schools migrating legacy data with
- *  existing admission numbers, but a fresh template shouldn't invite filling it. A cell note on
- *  the header row spells out that the example must be replaced, and that Class + Section /
- *  House / Route / Stop / Fee Head must match records that already exist for the school — this
- *  template never invents a real database value. */
+ *  student row showing the expected format. Transport and the auto-generated Admission Number are
+ *  omitted (see TEMPLATE_OMIT_KEYS). A cell note on the header row spells out that the example
+ *  must be replaced, and that Class + Section / House must match records that already exist for
+ *  the school — this template never invents a real database value. */
 export async function bulkImportTemplateXlsx(refs: BulkImportRefs = EMPTY_BULK_IMPORT_REFS): Promise<ArrayBuffer> {
-  const fields = BULK_IMPORT_FIELDS.filter((f) => f.key !== 'admissionNo')
+  const fields = BULK_IMPORT_FIELDS.filter((f) => !TEMPLATE_OMIT_KEYS.has(f.key))
   const wb = new ExcelJS.Workbook()
   const ws = wb.addWorksheet('Students')
   ws.views = [{ state: 'frozen', ySplit: 1 }]
@@ -515,9 +528,9 @@ export async function bulkImportTemplateXlsx(refs: BulkImportRefs = EMPTY_BULK_I
   })
 
   ws.getCell(1, 1).note = 'Row 2 is ONE example student, for format only — replace it with your '
-    + 'own data. Class + Section, House, Transport Route, Pickup Stop and Transport Fee Head '
-    + "must match records that already exist in this school's Academics / Transport / Finance. "
-    + 'See the "Valid values" sheet for the exact list this school accepts.'
+    + 'own data. Class + Section and House must match records that already exist in this '
+    + "school's Academics. See the \"Valid values\" sheet for the exact list this school accepts. "
+    + 'Transport (route, stop and fee) is assigned per student later in the app, not in this file.'
 
   ws.getCell(1, fields.findIndex((f) => f.key === 'section') + 1).note =
     'Grades are Roman here (I, II, III … X, XI, XII) to match how the classes in this school '
@@ -1237,6 +1250,10 @@ function StudentsScreen() {
   const editable = canEdit(app.role)
   const bulkImportable = canBulkImport(app.role)
   const classesQ = useClasses()
+  // Live fee ledger (all invoices) so the list can show Paid and a due that matches
+  // the student detail view, instead of the possibly-stale per-student fee_due. Same
+  // query the Fees screen and the student detail already use, so it's a shared cache.
+  const invoicesQ = useFeeInvoices()
 
   useEffect(() => {
     const t = window.setTimeout(() => setQDebounced(q), 300)
@@ -1275,6 +1292,34 @@ function StudentsScreen() {
   }, [classesQ.data])
 
   const rows = students
+
+  // Aggregate each student's invoices into total / paid / due, keyed by both id and
+  // admission no (the detail view matches on either). Amounts are coerced so phantom
+  // or partial records never produce NaN in the table.
+  const feeLedger = useMemo(() => {
+    const byId = new Map<string, { total: number; paid: number; due: number }>()
+    const byAdm = new Map<string, { total: number; paid: number; due: number }>()
+    const add = (m: Map<string, { total: number; paid: number; due: number }>, key: string | undefined, inv: { total: number; paid: number; due: number }) => {
+      if (!key) return
+      const e = m.get(key) ?? { total: 0, paid: 0, due: 0 }
+      e.total += inv.total || 0
+      e.paid += inv.paid || 0
+      e.due += inv.due || 0
+      m.set(key, e)
+    }
+    for (const inv of invoicesQ.data ?? []) {
+      add(byId, inv.studentId, inv)
+      add(byAdm, inv.studentAdm, inv)
+    }
+    return { byId, byAdm }
+  }, [invoicesQ.data])
+
+  /** This student's fee figures from the live ledger; falls back to the per-student
+   *  fee_due when no invoices have been generated yet. */
+  const feeFor = (s: Student): { total: number | null; paid: number; due: number } =>
+    feeLedger.byId.get(s.id)
+    ?? (s.adm ? feeLedger.byAdm.get(s.adm) : undefined)
+    ?? { total: null, paid: 0, due: s.feeDue }
 
   const columns: Column<Student>[] = [
     {
@@ -1322,13 +1367,19 @@ function StudentsScreen() {
       },
     },
     {
-      key: 'fee', label: 'Fees', sortValue: (s) => s.feeDue,
-      render: (s) => (
-        <div className="row ai-center gap8">
-          <Badge tone={feeTone[s.feeStatus]} dot>{feeLabel[s.feeStatus]}</Badge>
-          {s.feeDue > 0 && <span className="t-xs muted">{fmtMoney(s.feeDue)}</span>}
-        </div>
-      ),
+      key: 'fee', label: 'Fees', sortValue: (s) => feeFor(s).due,
+      render: (s) => {
+        const f = feeFor(s)
+        const fs = feeStatusForBalance(f.due, s.feeStatus)
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
+            <Badge tone={feeTone[fs]} dot>{feeLabel[fs]}</Badge>
+            <span className="t-xs muted">
+              Paid {fmtMoney(f.paid)}{f.due > 0 ? ` · Due ${fmtMoney(f.due)}` : ''}
+            </span>
+          </div>
+        )
+      },
     },
     {
       key: 'status', label: 'Status', align: 'center', sortValue: (s) => s.status,
@@ -1623,6 +1674,10 @@ function Student360() {
   const ledgerOutstanding = studentInvoices.length
     ? studentInvoices.reduce((s, inv) => s + (inv.due || 0), 0)
     : stu.feeDue
+  const ledgerPaid = studentInvoices.reduce((s, inv) => s + (inv.paid || 0), 0)
+  const ledgerTotal = studentInvoices.reduce((s, inv) => s + (inv.total || 0), 0)
+  // Badge/label from the real outstanding balance, so a settled account never reads "Due".
+  const feeStatusView = feeStatusForBalance(ledgerOutstanding, stu.feeStatus)
 
   const timeline = buildStudentTimeline({
     student: stu,
@@ -1674,7 +1729,7 @@ function Student360() {
               value={hasLiveMarks ? `${report.pct}%` : '—'}
               color="var(--brand-600)"
             />
-            <StatTile icon="rupee" label="Fee status" value={feeLabel[stu.feeStatus]} color={`var(--${feeTone[stu.feeStatus] === 'success' ? 'success' : feeTone[stu.feeStatus] === 'warning' ? 'warning' : 'danger'})`} />
+            <StatTile icon="rupee" label="Fee status" value={feeLabel[feeStatusView]} color={`var(--${feeTone[feeStatusView] === 'success' ? 'success' : feeTone[feeStatusView] === 'warning' ? 'warning' : 'danger'})`} />
             {editable && (
               <Btn variant="primary" icon="edit" onClick={() => app.go('school.sis.edit', { focus: stu.id })}>Edit</Btn>
             )}
@@ -1771,7 +1826,9 @@ function Student360() {
             <Card>
               <CardHead title="Fees & status" icon="rupee" />
               <div style={{ marginTop: 4 }}>
-                <DetailRow label="Fee status" value={feeLabel[stu.feeStatus]} />
+                <DetailRow label="Fee status" value={feeLabel[feeStatusView]} />
+                {ledgerTotal > 0 && <DetailRow label="Total invoiced" value={fmtMoney(ledgerTotal)} />}
+                <DetailRow label="Paid" value={fmtMoney(ledgerPaid)} />
                 <DetailRow label="Outstanding" value={fmtMoney(ledgerOutstanding)} />
                 <DetailRow label="Attendance" value={attPctLabel} />
                 <DetailRow label="Status" value={stu.status} />
@@ -1808,6 +1865,7 @@ function Student360() {
                   ? <Spark data={months.map((m) => m.value)} w={120} color={attColor(attPct ?? 0)} />
                   : <span className="fw7 t-sm muted">{attPctLabel}</span>}
               </div>
+              <div className="row ai-center jc-between"><span className="muted t-sm">Fees paid</span><span className="fw7">{fmtMoney(ledgerPaid)}</span></div>
               <div className="row ai-center jc-between"><span className="muted t-sm">Outstanding fees</span><span className="fw7">{fmtMoney(ledgerOutstanding)}</span></div>
             </div>
           </Card>
@@ -1991,7 +2049,7 @@ function Student360() {
                   ? 'Loading invoices…'
                   : `Outstanding ${fmtMoney(ledgerOutstanding)} · ${ledger.length} invoice${ledger.length === 1 ? '' : 's'}`}
                 icon="rupee"
-                action={<Badge tone={feeTone[stu.feeStatus]} dot>{feeLabel[stu.feeStatus]}</Badge>}
+                action={<Badge tone={feeTone[feeStatusView]} dot>{feeLabel[feeStatusView]}</Badge>}
               />
             </div>
             {invoicesQ.isLoading ? (
