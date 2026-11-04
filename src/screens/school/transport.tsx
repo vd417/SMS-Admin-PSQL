@@ -62,7 +62,7 @@ function TransportDashboardBody() {
   const fleet = fleetQ.data ?? []
   const routes = routesQ.data ?? []
   const buses = busesQ.data ?? []
-  const active = fleet.filter((b) => b.status === 'on_route' || b.status === 'delayed' || b.status === 'at_stop').length
+  const active = fleet.filter((b) => b.status === 'on_route' || b.status === 'delayed' || b.status === 'at_stop' || b.status === 'running').length
   const gpsLive = fleet.filter((b) => b.lat != null && b.lng != null).length
   const [routeModalOpen, setRouteModalOpen] = useState(false)
   const [busModalOpen, setBusModalOpen] = useState(false)

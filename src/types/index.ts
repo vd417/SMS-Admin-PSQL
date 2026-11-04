@@ -143,7 +143,7 @@ export interface SchoolIntegrations {
   razorpay: SchoolRazorpaySettings
 }
 export type ActiveStatus = 'active' | 'inactive'
-export type BusStatus = 'on_route' | 'at_stop' | 'delayed' | 'idle' | 'maintenance'
+export type BusStatus = 'on_route' | 'at_stop' | 'delayed' | 'idle' | 'running' | 'maintenance'
 
 export interface TierMeta { label: string; color: string; bg: string }
 export interface RoleMeta { label: string; short: string; desc: string }

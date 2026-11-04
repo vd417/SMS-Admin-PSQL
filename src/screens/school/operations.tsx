@@ -108,11 +108,16 @@ const CONTACT_GROUPS: { kind: ContactKind; label: string; icon: string }[] = [
 ]
 
 const BUS_META: Record<Bus['status'], { tone: BadgeTone; label: string }> = {
-  on_route: { tone: 'success', label: 'On route' },
-  at_stop: { tone: 'info', label: 'At stop' },
+  on_route: { tone: 'success', label: 'LIVE' },
+  at_stop: { tone: 'info', label: 'LIVE' },
   delayed: { tone: 'danger', label: 'Delayed' },
   idle: { tone: 'neutral', label: 'Idle' },
+  running: { tone: 'success', label: 'RUNNING' },
   maintenance: { tone: 'warning', label: 'Maintenance' },
+}
+
+function isFreshGps(status: string): boolean {
+  return status === 'on_route' || status === 'at_stop';
 }
 
 /** Stable colour per vehicle from its number plate (backend has no colour column). */
@@ -1536,7 +1541,7 @@ function BusFleet({ fleet: fleetProp, loading: loadingProp, error: errorProp }: 
   const [ridersFor, setRidersFor] = useState<FleetBus | null>(null)
   const [notifyFor, setNotifyFor] = useState<FleetBus | null>(null)
 
-  const active = fleet.filter((b) => b.status === 'on_route' || b.status === 'at_stop' || b.status === 'delayed').length
+  const active = fleet.filter((b) => b.status === 'on_route' || b.status === 'at_stop' || b.status === 'delayed' || b.status === 'running').length
 
   const cols: Column<FleetBus>[] = [
     {
@@ -2463,10 +2468,15 @@ function GpsScreenBody() {
   const [viewBusId, setViewBusId] = useState<string | null>(null)
   const viewBus = viewBusId ? fleet.find((b) => b.busId === viewBusId) ?? null : null
 
-  const onRoute = fleet.filter((b) => b.status === 'on_route').length
+  const onRoute = fleet.filter((b) => isFreshGps(b.status)).length
   const delayed = fleet.filter((b) => b.status === 'delayed').length
   const riding = fleet.reduce((n, b) => n + b.studentsRiding, 0)
-  const located = fleet.filter((b) => b.lat != null && b.lng != null)
+  const mapFleet = fleet.map((b) => {
+    const zero = b.lat === 0 && b.lng === 0
+    if (!isFreshGps(b.status) || zero) return { ...b, lat: null, lng: null }
+    return b
+  })
+  const located = mapFleet.filter((b) => b.lat != null && b.lng != null)
 
   const highlightStop = (() => {
     const stu = mapped.find((s) => s.studentId === highlightStudentId)
@@ -2522,7 +2532,7 @@ function GpsScreenBody() {
               </div>
             } />
           <FleetLiveMap
-            fleet={fleet}
+            fleet={mapFleet}
             routeStopsByRouteId={routeStopsByRouteId}
             highlightStop={highlightStop}
             routeGeometryByRouteId={routeGeometryByRouteId}

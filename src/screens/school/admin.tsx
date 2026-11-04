@@ -79,7 +79,7 @@ interface RptCat { value: string; label: string; icon: string; reports: RptRow[]
 const PERIODS = ['Term 1 · 2026', 'Term 2 · 2026', 'Mid-Term · 2026', 'Full Year · 2025-26']
 
 const FLEET_STATUS: Record<string, string> = {
-  on_route: 'On route', at_stop: 'At stop', delayed: 'Delayed', idle: 'Idle', maintenance: 'Maintenance',
+  on_route: 'LIVE', at_stop: 'LIVE', delayed: 'Delayed', idle: 'Idle', running: 'RUNNING', maintenance: 'Maintenance',
 }
 
 const avgOf = (ns: number[]): number => (ns.length ? Math.round(ns.reduce((a, b) => a + b, 0) / ns.length) : 0)
