@@ -7,6 +7,7 @@ import { config } from '../config'
 import { tokenStore } from '../auth/tokenStore'
 import { snakeToCamel } from '../mapper'
 import { queryKeys } from '../queryKeys'
+import { useToast } from '@/lib/hooks'
 
 export function bumpThreadsLiveQueries(qc: QueryClient): void {
   void qc.invalidateQueries({ queryKey: queryKeys.threads.all })
@@ -21,12 +22,73 @@ function isChatLiveEvent(wire: unknown): boolean {
   return String(msg.type ?? '') === 'chat'
 }
 
+export interface LiveNotice {
+  id: string
+  userId: string | null
+  title: string
+  body: string
+  tone: string
+  icon: string
+}
+
+const seenNoticeIds = new Set<string>()
+
+export function currentUserId(): string | null {
+  const token = tokenStore.getAccess()
+  if (!token) return null
+  const part = token.split('.')[1]
+  if (!part) return null
+  try {
+    const json = atob(part.replace(/-/g, '+').replace(/_/g, '/'))
+    const payload = JSON.parse(json) as { sub?: unknown }
+    return typeof payload.sub === 'string' ? payload.sub : null
+  } catch {
+    return null
+  }
+}
+
+/** A notification live event. Null when the message is a different event. */
+export function noticeFromLiveEvent(wire: unknown): LiveNotice | null {
+  if (!wire || typeof wire !== 'object') return null
+  const msg = snakeToCamel<Record<string, unknown>>(wire as Record<string, unknown>)
+  if (String(msg.type ?? '') !== 'notification') return null
+  const raw = msg.data
+  const data = raw && typeof raw === 'object'
+    ? snakeToCamel<Record<string, unknown>>(raw as Record<string, unknown>)
+    : {}
+  return {
+    id: data.id == null ? '' : String(data.id),
+    userId: data.userId == null || data.userId === '' ? null : String(data.userId),
+    title: data.title == null ? '' : String(data.title),
+    body: data.body == null ? '' : String(data.body),
+    tone: data.tone == null ? '' : String(data.tone),
+    icon: data.icon == null ? '' : String(data.icon),
+  }
+}
+
+export function noticeIsForCurrentUser(notice: LiveNotice, userId = currentUserId()): boolean {
+  if (!notice.userId) return true
+  return !!userId && notice.userId.toLowerCase() === userId.toLowerCase()
+}
+
+export function destinationForNotice(tone: string, icon: string): string | null {
+  const t = tone.toLowerCase()
+  const i = icon.toLowerCase()
+  if (t === 'chat' || i.includes('chat')) return 'school.comm'
+  if (i.includes('calendar')) return 'school.calendar'
+  if (t === 'bus' || i === 'bus') return 'school.transport'
+  return null
+}
+
 /**
  * Subscribe to LiveHub. On a chat `live_event`, refresh the conversation list and open
  * thread without a manual refresh. Polls every 20s while the socket is down.
  */
 export function useThreadsLiveSocket(enabled = true): { connected: boolean } {
   const qc = useQueryClient()
+  const toast = useToast()
+  const toastRef = useRef(toast)
+  toastRef.current = toast
   const [connected, setConnected] = useState(false)
   const connRef = useRef<signalR.HubConnection | null>(null)
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -69,6 +131,19 @@ export function useThreadsLiveSocket(enabled = true): { connected: boolean } {
 
       connection.on('live_event', (wire: unknown) => {
         if (isChatLiveEvent(wire)) bump()
+        const notice = noticeFromLiveEvent(wire)
+        if (!notice) return
+        void qc.invalidateQueries({ queryKey: queryKeys.notifications.all })
+        if (!notice.title || !noticeIsForCurrentUser(notice)) return
+        if (notice.id) {
+          if (seenNoticeIds.has(notice.id)) return
+          seenNoticeIds.add(notice.id)
+          if (seenNoticeIds.size > 200) {
+            const oldest = seenNoticeIds.values().next().value
+            if (oldest) seenNoticeIds.delete(oldest)
+          }
+        }
+        toastRef.current.info(notice.title, notice.body || undefined)
       })
       connection.onreconnected(() => {
         setConnected(true)

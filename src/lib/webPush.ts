@@ -33,10 +33,8 @@ async function register(): Promise<void> {
     const token = await getToken(messaging, { vapidKey, serviceWorkerRegistration: registration })
     if (!token) return
     await request<unknown>('/push-devices', { method: 'POST', body: { token, platform: 'web', app: 'crm' } })
-    onMessage(messaging, (payload) => {
-      const title = payload.notification?.title || 'SchoolMate'
-      const body = payload.notification?.body || ''
-      new Notification(title, { body })
+    onMessage(messaging, () => {
+      /* Foreground popup is the in-app toast. A browser Notification here would show twice. */
     })
   } catch {
     /* a blocked permission or an unsupported browser leaves the in-app bell working */

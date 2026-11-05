@@ -7,7 +7,8 @@ import { useApp, useTheme, useToast } from '@/lib/hooks'
 import { Icon, IconBtn, Avatar, Badge, Popover, MenuItem, MenuSep, MenuLabel, TierPill } from '@/components/ui'
 import { SchoolMark } from '@/components/SchoolMark'
 import { ROLE_META } from '@/data/mockDb'
-import { useNotifications } from '@/api/hooks/useNotifications'
+import { useNotifications, useMarkNotificationsRead } from '@/api/hooks/useNotifications'
+import { destinationForNotice } from '@/api/hooks/useThreadsLive'
 import { useApprovals } from '@/api/hooks/useApprovals'
 import { approvalsForRole } from '@/api/approvals'
 
@@ -18,8 +19,14 @@ export function Topbar() {
   const [q, setQ] = useState('')
   const isOwner = app.consoleKind === 'owner'
   const { data: notifData } = useNotifications()
+  const markRead = useMarkNotificationsRead()
   const notifications = notifData ?? []
   const unread = notifications.filter((n) => n.unread).length
+  const openNotice = (n: (typeof notifications)[number]) => {
+    const dest = destinationForNotice(n.tone || '', n.icon || '')
+    if (n.unread) markRead.mutate()
+    if (dest) app.go(dest)
+  }
   const { data: approvalsData } = useApprovals({ status: 'pending', enabled: !isOwner })
   const pendingApprovals = isOwner ? 0 : approvalsForRole(approvalsData ?? [], app.role).length
 
@@ -80,21 +87,22 @@ export function Topbar() {
 
       <Popover trigger={(open, toggle) => (
         <span style={{ position: 'relative' }}>
-          <IconBtn icon="bell" active={open} onClick={toggle} aria-label="Notifications" />
+          <IconBtn icon="bell" active={open} onClick={() => { if (!open && unread > 0) markRead.mutate(); toggle() }} aria-label="Notifications" />
           {unread > 0 && <span style={{ position: 'absolute', top: 4, right: 4, width: 8, height: 8, borderRadius: 99, background: 'var(--danger)' }} />}
         </span>
       )}>
         <MenuLabel>Notifications</MenuLabel>
         <div style={{ width: 320, maxHeight: 360, overflow: 'auto' }}>
+          {notifications.length === 0 && <div className="t-xs muted" style={{ padding: '10px 11px' }}>You're all caught up.</div>}
           {notifications.map((n) => (
-            <div key={n.id} className="row gap10" style={{ padding: '10px 11px', alignItems: 'flex-start' }}>
+            <button key={n.id} type="button" onClick={() => openNotice(n)} className="row gap10" style={{ width: '100%', textAlign: 'left', border: 'none', background: n.unread ? 'var(--surface-2, transparent)' : 'transparent', cursor: 'pointer', padding: '10px 11px', alignItems: 'flex-start' }}>
               <span className="sm-card-ic" style={{ flex: '0 0 auto' }}><Icon name={n.icon} size={15} /></span>
               <div className="flex1">
                 <div className="t-sm fw6">{n.title}</div>
                 <div className="t-xs muted">{n.body}</div>
               </div>
               <span className="t-xs muted3">{n.time}</span>
-            </div>
+            </button>
           ))}
         </div>
       </Popover>

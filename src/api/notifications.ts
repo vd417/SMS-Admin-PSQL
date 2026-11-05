@@ -9,6 +9,11 @@ export async function listNotifications(): Promise<AppNotification[]> {
   return env.data.map((n) => snakeToCamel<AppNotification>(n))
 }
 
+/** POST /v1/notifications/read — marks the signed-in user's notices read. */
+export async function markNotificationsRead(): Promise<void> {
+  await request<unknown>('/notifications/read', { method: 'POST' })
+}
+
 export interface CreateNotificationInput {
   title: string
   body?: string
