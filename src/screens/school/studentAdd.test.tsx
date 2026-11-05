@@ -72,8 +72,8 @@ function fillRequired() {
   // Admission number is auto-generated and read-only — not set here (see the dedicated test below).
   fireEvent.change(within(screen.getByText('First name').closest('.sm-field') as HTMLElement).getByRole('textbox'), { target: { value: 'Test' } })
   fireEvent.change(within(screen.getByText('Last name').closest('.sm-field') as HTMLElement).getByRole('textbox'), { target: { value: 'Student' } })
-  // Deliberately different from STUDENT_ROW's guardian_phone (an existing roster row in these
-  // tests) — phone numbers must now be unique across students, so reusing it would be rejected.
+  // Different from STUDENT_ROW's guardian phone so this single-child save does not
+  // open the sibling-link confirmation.
   fireEvent.change(within(screen.getByText('Primary contact number').closest('.sm-field') as HTMLElement).getByRole('textbox'), { target: { value: '9998887770' } })
   fireEvent.change(within(screen.getByText('Email address').closest('.sm-field') as HTMLElement).getByRole('textbox'), { target: { value: 'test.student@school.edu' } })
   fireEvent.change(within(screen.getByText('Father name').closest('.sm-field') as HTMLElement).getByRole('textbox'), { target: { value: 'Test Father' } })
@@ -166,6 +166,120 @@ describe('Add Student form', () => {
 
     vi.unstubAllGlobals()
   }, 20000)
+})
+
+describe('Add student — link an existing parent', () => {
+  const sibling = {
+    id: 'anaya', admission_no: 'A9', class_label: 'V-A', name: 'Anaya',
+    gender: 'F', grade: 'V', section: 'A', roll: 1,
+    guardian_name: 'Ravi Kumar', guardian_phone: '9000001111',
+    guardian_email: 'ravi@home.test', email: 'anaya@school.test',
+    attendance_pct: 0, fee_status: 'due', fee_due: 100,
+    status: 'active', house: 'Ruby', avatar_hue: 1,
+  }
+
+  beforeEach(() => {
+    localStorage.clear()
+    sessionStorage.clear()
+    clearPersonExtrasMemory()
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: unknown, init?: { method?: string }) => {
+      const u = String(url)
+      const method = (init?.method ?? 'GET').toUpperCase()
+      if (u.includes('/classes')) {
+        return Promise.resolve(jsonResponse({
+          data: [
+            { id: 'c1', name: 'VIII-A', grade: 'VIII', section: 'A', room: null, class_teacher_id: null, student_count: 0 },
+            { id: 'c2', name: 'V-A', grade: 'V', section: 'A', room: null, class_teacher_id: null, student_count: 1 },
+          ],
+          next_cursor: null,
+        }))
+      }
+      if (u.includes('/extras')) {
+        return Promise.resolve(jsonResponse({
+          data: {
+            extras_json: JSON.stringify({
+              father: { name: 'Ravi Kumar', email: 'ravi@home.test', phone: '9000001111' },
+              mother: { name: 'Meera Kumar', email: 'meera@home.test', phone: '9000002222' },
+            }),
+          },
+        }))
+      }
+      if (u.includes('/students') && method === 'GET') {
+        return Promise.resolve(jsonResponse({ data: [sibling], next_cursor: null }))
+      }
+      return Promise.resolve(jsonResponse({
+        data: { ...sibling, id: 'new-kid', name: 'Test Student', class_label: 'VIII-A', email: 'test.student@school.edu' },
+      }))
+    }))
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  async function chooseClass() {
+    await waitFor(() =>
+      expect(Array.from(classCombo().querySelectorAll('option')).some(
+        (o) => (o as HTMLOptionElement).value === 'VIII-A',
+      )).toBe(true),
+    )
+    fireEvent.change(classCombo(), { target: { value: 'VIII-A' } })
+  }
+
+  it('asks before linking when the father email matches, then copies parent details only', async () => {
+    renderForm()
+    await chooseClass()
+    fillRequired()
+    fireEvent.change(within(screen.getByText('Father email').closest('.sm-field') as HTMLElement).getByRole('textbox'), {
+      target: { value: 'ravi@home.test' },
+    })
+
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent('Ravi Kumar already has 1 ward: Anaya (V-A). Do you want to link this student?')
+    fireEvent.click(screen.getByText('Link student'))
+
+    await waitFor(() => {
+      expect(within(screen.getByText('Father name').closest('.sm-field') as HTMLElement).getByRole('textbox')).toHaveValue('Ravi Kumar')
+    })
+    expect(within(screen.getByText('Mother name').closest('.sm-field') as HTMLElement).getByRole('textbox')).toHaveValue('Meera Kumar')
+    expect(within(screen.getByText('Email address').closest('.sm-field') as HTMLElement).getByRole('textbox')).toHaveValue('test.student@school.edu')
+    expect(classCombo()).toHaveValue('VIII-A')
+
+    fireEvent.click(screen.getByText('Save student'))
+    await waitFor(() => expect(probe().split('|')[1]).toBe('school.student'), { timeout: 10000 })
+
+    const post = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c) => String(c[0]).includes('/students') && (c[1]?.method ?? 'GET').toUpperCase() === 'POST',
+    )
+    const body = JSON.parse(String(post?.[1]?.body ?? '{}'))
+    expect(body.email).toBe('test.student@school.edu')
+    expect(body.guardian_name).toBe('Ravi Kumar')
+    expect(body.guardian_email).toBe('ravi@home.test')
+    expect(body.class_label ?? body.grade).toBeTruthy()
+  }, 20000)
+
+  it('8. Don\'t link preserves the entered details and does not save yet', async () => {
+    renderForm()
+    fillRequired()
+    fireEvent.change(within(screen.getByText('Father email').closest('.sm-field') as HTMLElement).getByRole('textbox'), {
+      target: { value: 'ravi@home.test' },
+    })
+    await screen.findByRole('dialog')
+    fireEvent.click(screen.getByText("Don't link"))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(within(screen.getByText('Father name').closest('.sm-field') as HTMLElement).getByRole('textbox')).toHaveValue('Test Father')
+    expect(probe().split('|')[1]).not.toBe('school.student')
+  })
+
+  it('asks to link when the phone matches, even if the guardian name is different', async () => {
+    renderForm()
+    fillRequired()
+    fireEvent.change(within(screen.getByText('Father phone number').closest('.sm-field') as HTMLElement).getByRole('textbox'), {
+      target: { value: '9000001111' },
+    })
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent('Ravi Kumar already has 1 ward: Anaya (V-A). Do you want to link this student?')
+  })
 })
 
 describe('studentToForm parent email', () => {

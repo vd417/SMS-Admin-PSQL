@@ -1,6 +1,6 @@
 import {
   required, validateAadhaar, validateEmail, validatePhone, validateFile,
-  validateMinAge, isDuplicateValue, normalizePhoneDigits, normalizeEmailKey, type FileLike,
+  validateMinAge, isDuplicateValue, normalizeEmailKey, type FileLike,
 } from './validation'
 
 export const MIN_STUDENT_AGE_YEARS = 3
@@ -39,9 +39,8 @@ export function validateStudentForm(input: StudentValidationInput): Record<strin
         ? 'Another student already uses this email' : null)],
     ['fatherEmail', validateEmail(f.fatherEmail)],
     ['motherEmail', validateEmail(f.motherEmail)],
-    ['phone', e.phone ? null : validatePhone(f.phone)
-      || (isDuplicateValue(f.phone, roster.map((s) => ({ id: s.id, value: s.phone })), normalizePhoneDigits, existingId)
-        ? 'Another student already uses this phone number' : null)],
+    /* Primary contact is the parent mobile (guardian_phone). Siblings may share it. */
+    ['phone', e.phone ? null : validatePhone(f.phone)],
     ['fatherPhone', validatePhone(f.fatherPhone)],
     ['motherPhone', validatePhone(f.motherPhone)],
   ]

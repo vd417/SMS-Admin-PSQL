@@ -31,12 +31,23 @@ describe('validateStudentForm', () => {
     expect(errors.fatherName).toBe('Enter father or mother name')
   })
 
-  it('flags a phone already used by another student in the roster', () => {
+  it('allows the same primary phone on another student (shared parent mobile)', () => {
     const errors = validateStudentForm({
       form: baseForm, files: {}, transportEnabled: false,
       roster: [{ id: 'other-1', phone: '9876543210', email: 'someone-else@example.com' }],
     })
-    expect(errors.phone).toBe('Another student already uses this phone number')
+    expect(errors.phone).toBeUndefined()
+  })
+
+  it('allows the same father email and father phone on another student', () => {
+    const errors = validateStudentForm({
+      form: { ...baseForm, fatherEmail: 'dad@home.test', fatherPhone: '9000011111' },
+      files: {}, transportEnabled: false,
+      roster: [{ id: 'other-1', phone: '9000011111', email: 'other-child@school.test' }],
+    })
+    expect(errors.fatherEmail).toBeUndefined()
+    expect(errors.fatherPhone).toBeUndefined()
+    expect(errors.phone).toBeUndefined()
   })
 
   it('flags an email already used by another student, case-insensitively', () => {

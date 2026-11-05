@@ -15,14 +15,16 @@ import {
   type StoredDoc,
 } from '@/api/studentExtras'
 import { parentMailFromStudent } from '@/api/students'
+import { tokenStore } from '@/api/auth/tokenStore'
 import { ApiError } from '@/api/ApiError'
-import { PageHead, Card, CardHead, Btn, Badge, Icon, useFormKit, Spinner, Empty, Field, Input, Select, Checkbox } from '@/components/ui'
+import { PageHead, Card, CardHead, Btn, Badge, Icon, useFormKit, Spinner, Empty, Field, Input, Select, Checkbox, Modal } from '@/components/ui'
 import { useClasses, useClassNames } from '@/api/hooks/useClasses'
 import type { SchoolClass } from '@/api/classes'
 import { listSchoolHouses } from '@/api/schoolHouses'
 import { useTransportRoutes, useRouteStops, useStudentTransport, useSetStudentTransport } from '@/api/hooks/useOperations'
 import { useFeeHeads } from '@/api/hooks/useFeeHeads'
 import { validateStudentForm, MIN_STUDENT_AGE_YEARS } from '@/lib/studentValidation'
+import { applyLinkedParent, findParentProbe, type ParentLinkMatch } from '@/lib/parentLink'
 import { validateMinAge } from '@/lib/validation'
 import { properName, properPlace } from '@/lib/properCase'
 import { toDateInputValue } from '@/lib/dateInput'
@@ -219,6 +221,9 @@ function StudentFormScreen({ mode }: { mode: 'add' | 'edit' }) {
   const [files, setFiles] = useState<Files>(INITIAL_FILES)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [hydrated, setHydrated] = useState(mode === 'add')
+  const [linkPrompt, setLinkPrompt] = useState<ParentLinkMatch | null>(null)
+  const [linkDecisionKey, setLinkDecisionKey] = useState('')
+  const [linkSavePending, setLinkSavePending] = useState(false)
   const [saving, setSaving] = useState(false)
   /** Saved photo previews (data URLs) so edit form can show + Replace. */
   const [savedUrls, setSavedUrls] = useState<Partial<Record<keyof typeof INITIAL_FILES, string>>>({})
@@ -231,6 +236,11 @@ function StudentFormScreen({ mode }: { mode: 'add' | 'edit' }) {
   const existingQ = useStudent(mode === 'edit' ? app.focus : null)
   const existing = existingQ.data
   const rosterQ = useStudents()
+  const organizationId = tokenStore.getTenantId() || undefined
+  const parentProbe = useMemo(
+    () => (mode === 'add' ? findParentProbe(f, rosterQ.data ?? [], undefined, organizationId) : null),
+    [mode, f, rosterQ.data, organizationId],
+  )
   const classesQ = useClasses()
   const liveClasses = classesQ.data ?? []
   const classNames = useClassNames()
@@ -415,24 +425,40 @@ function StudentFormScreen({ mode }: { mode: 'add' | 'edit' }) {
     return [{ value: '', label: houses.length ? 'Select house…' : 'No houses — add in Academics' }, ...opts]
   }, [houses, f.house])
 
-  const validate = (): Record<string, string> =>
+  useEffect(() => {
+    if (mode !== 'add') return
+    if (parentProbe?.type !== 'link') return
+    if (parentProbe.key === linkDecisionKey) return
+    setLinkPrompt(parentProbe)
+  }, [mode, parentProbe, linkDecisionKey])
+
+  const validate = (form: Form = f): Record<string, string> =>
     validateStudentForm({
-      form: f,
+      form,
       files,
       roster: (rosterQ.data ?? []).map((s) => ({ id: s.id, email: s.email, phone: s.phone })),
       existingId: existing?.id,
       transportEnabled: opsEnabled,
     })
 
-  const save = async () => {
-    const e = validate()
+  const save = async (formOverride?: Form, opts?: { skipLinkCheck?: boolean }) => {
+    const form = formOverride ?? f
+    if (mode === 'add' && !opts?.skipLinkCheck) {
+      const probe = findParentProbe(form, rosterQ.data ?? [], undefined, organizationId)
+      if (probe?.type === 'link' && probe.key !== linkDecisionKey) {
+        setLinkPrompt(probe)
+        setLinkSavePending(true)
+        return
+      }
+    }
+    const e = validate(form)
     setErrors(e)
     if (Object.keys(e).length) {
       toast.danger('Check the form', 'Some fields need your attention before saving.')
       return
     }
 
-    const student = buildStudent(f, files, selectedClass, existing)
+    const student = buildStudent(form, files, selectedClass, existing)
     setSaving(true)
 
     const afterOk = async (saved: Student) => {
@@ -520,6 +546,32 @@ function StudentFormScreen({ mode }: { mode: 'add' | 'edit' }) {
         toast.danger('Could not save', err instanceof Error ? err.message : 'Please try again.')
       },
     })
+  }
+
+  const confirmParentLink = async () => {
+    if (!linkPrompt) return
+    const source = (rosterQ.data ?? []).find((s) => s.id === linkPrompt.sourceId)
+    const formNow = f
+    const shouldSave = linkSavePending
+    setLinkDecisionKey(linkPrompt.key)
+    setLinkPrompt(null)
+    setLinkSavePending(false)
+    let next = formNow
+    if (source) {
+      const extras = await fetchStudentExtras(source.id).catch(() => null)
+      next = applyLinkedParent(formNow, source, extras)
+      setForm(next)
+    }
+    if (shouldSave) await save(next, { skipLinkCheck: true })
+  }
+
+  const declineParentLink = () => {
+    if (linkPrompt) setLinkDecisionKey(linkPrompt.key)
+    const shouldSave = linkSavePending
+    const formNow = f
+    setLinkPrompt(null)
+    setLinkSavePending(false)
+    if (shouldSave) void save(formNow, { skipLinkCheck: true })
   }
 
   if (mode === 'edit' && existingQ.isLoading) {
@@ -739,6 +791,22 @@ function StudentFormScreen({ mode }: { mode: 'add' | 'edit' }) {
               : mode === 'edit' ? 'Save changes' : 'Save student'}
         </Btn>
       </div>
+
+      <Modal
+        open={!!linkPrompt}
+        onClose={declineParentLink}
+        size="sm"
+        icon="users"
+        title="Link existing parent?"
+        footer={(
+          <div className="row ai-center jc-end gap8">
+            <Btn variant="ghost" onClick={declineParentLink}>Don't link</Btn>
+            <Btn variant="primary" onClick={() => { void confirmParentLink() }}>Link student</Btn>
+          </div>
+        )}
+      >
+        <p className="t-sm" style={{ margin: 0 }}>{linkPrompt?.message}</p>
+      </Modal>
     </div>
   )
 }

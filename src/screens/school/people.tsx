@@ -22,7 +22,8 @@ import { normalizeSubjects } from '@/api/teachers'
 import { useStaff } from '@/api/hooks/useStaff'
 import { useTransportBuses } from '@/api/hooks/useOperations'
 import { useStudents } from '@/api/hooks/useStudents'
-import { studentParentLabel, parentMailFromStudent } from '@/api/students'
+import { tokenStore } from '@/api/auth/tokenStore'
+import { groupStudentsByParent, wardClassSection } from '@/lib/parentLink'
 import {
   listPeopleDocs, resolvePeoplePhoto, openStoredDoc, downloadStoredDoc, isStoredImage,
 } from '@/api/peopleExtras'
@@ -843,9 +844,10 @@ function StaffScreen() {
 }
 
 /* ============================================================
-   ParentsScreen — derived from students (grouped by guardian)
+   ParentsScreen — one row per shared parent contact, wards underneath.
+   Grouped from /students. No separate parent record.
    ============================================================ */
-interface Ward { id: string; name: string; cls: string }
+interface Ward { id: string; name: string; cls: string; section: string }
 interface Parent {
   id: string
   name: string
@@ -882,33 +884,11 @@ function ParentsScreen() {
     }
   }
 
-  const parents = useMemo<Parent[]>(() => {
-    const map = new Map<string, Parent>()
-    students.forEach((s) => {
-      const name = studentParentLabel(s)
-      const phone = (s.phone || s.father?.phone || s.mother?.phone || '').trim()
-      const email = parentMailFromStudent(s)
-      const key = `${name.toLowerCase()}|${phone}`
-      const ward: Ward = { id: s.id, name: s.name, cls: s.cls }
-      const existing = map.get(key)
-      if (existing) {
-        existing.wards.push(ward)
-        existing.due += s.feeDue
-        if (!existing.email && email) existing.email = email
-      } else {
-        map.set(key, {
-          id: 'PAR-' + s.id,
-          name,
-          phone,
-          email,
-          hue: s.avatarHue,
-          wards: [ward],
-          due: s.feeDue,
-        })
-      }
-    })
-    return Array.from(map.values())
-  }, [students])
+  const organizationId = tokenStore.getTenantId() || undefined
+  const parents = useMemo<Parent[]>(
+    () => groupStudentsByParent(students, organizationId),
+    [students, organizationId],
+  )
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase()
@@ -948,7 +928,7 @@ function ParentsScreen() {
               title="Open student profile"
             >
               <span className="fw6" style={{ color: 'var(--brand-600)', textDecoration: 'underline' }}>{w.name}</span>
-              <Badge tone="neutral">{w.cls}</Badge>
+              <Badge tone="neutral">{wardClassSection(w)}</Badge>
             </button>
           ))}
         </div>
