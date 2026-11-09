@@ -24,6 +24,12 @@ export interface FeeNotifyInput {
   phones?: string[]
   /** When set, attaches a downloadable receipt for email + parent/student app. */
   receipt?: FeeReceiptData
+  /** Targets the in-app notice at this login. Without it, the app channel is a school-wide push. */
+  userId?: string
+  /** Replaces the generated title (class-teacher and principal summaries). */
+  titleText?: string
+  /** Replaces the generated body. */
+  bodyText?: string
   /** 'invoice_created': how many invoices were just generated, for which period.
    *  'reminder' with no studentName (bulk send): how many invoices this reaches — amount
    *  is then read as the combined outstanding total, not one student's due. */
@@ -58,19 +64,19 @@ export async function notifyFeeAudience(input: FeeNotifyInput): Promise<FeeNotif
 
   const amount = fmtMoney(input.amount ?? 0, input.currency)
   const isBulkReminder = input.kind === 'reminder' && !input.studentName
-  const title = input.kind === 'receipt'
+  const title = input.titleText?.trim() || (input.kind === 'receipt'
     ? `Payment received — ${input.studentName}`
     : input.kind === 'reminder'
       ? (isBulkReminder ? 'Fee reminder' : `Fee reminder — ${input.studentName}`)
-      : `New fee invoice${input.count && input.count > 1 ? 's' : ''} generated`
+      : `New fee invoice${input.count && input.count > 1 ? 's' : ''} generated`)
 
-  const body = input.kind === 'receipt'
+  const body = input.bodyText?.trim() || (input.kind === 'receipt'
     ? `${input.schoolName}: We received a payment of ${amount} for ${input.studentName}${input.mode ? ` via ${input.mode}` : ''}. Thank you. Download the attached fee receipt, or open it in the parent / student app.`
     : input.kind === 'reminder'
       ? (isBulkReminder
         ? `${input.schoolName}: You have ${input.count ?? 'an'} outstanding fee payment${input.count === 1 ? '' : 's'}${input.amount ? ` totaling ${amount}` : ''}. Please pay at the earliest to avoid late fees.`
         : `${input.schoolName}: A fee payment of ${amount} is due for ${input.studentName}${input.dueDate ? ` by ${input.dueDate}` : ''}. Please pay at the earliest to avoid late fees.`)
-      : `${input.schoolName}: A new fee has been published${input.period ? ` for ${input.period}` : ''}. Please check the parent app for your dues and pay at the earliest.`
+      : `${input.schoolName}: A new fee has been published${input.period ? ` for ${input.period}` : ''}. Please check the parent app for your dues and pay at the earliest.`)
 
   let attachmentBase64: string | undefined
   let attachmentFileName: string | undefined
@@ -98,6 +104,7 @@ export async function notifyFeeAudience(input: FeeNotifyInput): Promise<FeeNotif
     channels: channelList,
     schoolName: input.schoolName,
     eventKind,
+    userId: input.userId,
     attachmentBase64,
     attachmentFileName,
     attachmentContentType,

@@ -5,6 +5,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { ApiError, setOnAuthFailure } from '@/api/client'
 import { login as passwordLogin, me as fetchMe, logout as apiLogout, refresh as refreshSession } from '@/api/auth'
+import { unregisterWebPush } from '@/lib/webPush'
 import { listMySchools, switchSchool } from '@/api/mySchools'
 import { clientToSchool } from '@/api/ownerMap'
 import { tokenStore } from '@/api/auth/tokenStore'
@@ -335,6 +336,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     tokenStore.setSchoolBrand(null)
+    try { await unregisterWebPush() } catch { /* still sign out */ }
     try { await apiLogout() } finally {
       setLoggedIn(false)
       setUser(null)

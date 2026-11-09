@@ -11,7 +11,23 @@ const firebaseConfig = {
 
 const vapidKey = 'BDAfyo-3I8WvcjmPsZ8MS8Y_pr3qO9i9MgnEjAXO6Rhmyczk2UL5ssSEbxeIb9vV526mRhP2o90FNG6tgYuWl14'
 
+const PUSH_TOKEN_KEY = 'sms.crm.pushToken'
+
 let pending: Promise<void> | null = null
+
+/** Drop this browser's push token. Sign-out calls this so a logged-out CRM user stops receiving pushes. */
+export async function unregisterWebPush(): Promise<void> {
+  let token: string | null = null
+  try { token = sessionStorage.getItem(PUSH_TOKEN_KEY) } catch { /* ignore */ }
+  pending = null
+  if (!token) return
+  try {
+    await request<unknown>('/push-devices', { method: 'DELETE', body: { token, platform: 'web', app: 'crm' } })
+  } catch {
+    /* the session is ending either way */
+  }
+  try { sessionStorage.removeItem(PUSH_TOKEN_KEY) } catch { /* ignore */ }
+}
 
 /** Asks the browser once, then stores this browser's token for school alerts. */
 export function registerWebPush(): Promise<void> {
@@ -32,6 +48,7 @@ async function register(): Promise<void> {
     const messaging = getMessaging(initializeApp(firebaseConfig))
     const token = await getToken(messaging, { vapidKey, serviceWorkerRegistration: registration })
     if (!token) return
+    try { sessionStorage.setItem(PUSH_TOKEN_KEY, token) } catch { /* logout still clears a missing token */ }
     await request<unknown>('/push-devices', { method: 'POST', body: { token, platform: 'web', app: 'crm' } })
     onMessage(messaging, () => {
       /* Foreground popup is the in-app toast. A browser Notification here would show twice. */

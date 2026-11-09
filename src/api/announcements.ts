@@ -31,6 +31,8 @@ export interface CreateAnnouncementInput {
   attachmentBase64?: string | null
   attachmentFileName?: string | null
   attachmentContentType?: string | null
+  /** In-app notice for this login only. Omitted user id is a school-wide push. */
+  userId?: string | null
 }
 
 interface ListEnvelope { data: Record<string, unknown>[]; next_cursor: string | null }
@@ -86,6 +88,7 @@ export async function createAnnouncement(input: CreateAnnouncementInput): Promis
     attachmentBase64: input.attachmentBase64 || null,
     attachmentFileName: input.attachmentFileName?.trim() || null,
     attachmentContentType: input.attachmentContentType?.trim() || null,
+    userId: input.userId?.trim() || null,
   })
   const wire = await request<Record<string, unknown>>('/announcements', { method: 'POST', body: payload })
   return toAnnouncement(wire)

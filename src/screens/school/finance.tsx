@@ -29,7 +29,12 @@ import { payrollRunToCsv, payrollCsvFileName, downloadPayslip } from '@/lib/payr
 import { downloadFeeReceipt } from '@/lib/feeReceipt'
 import { studentPhotoUrl } from '@/api/studentExtras'
 import { notifyFeeAudience } from '@/lib/feeNotify'
-import { collectAudienceContacts, contactsByStudentId } from '@/lib/collectAudienceEmails'
+import { planUnpaidFeeNotices, type ClassTeacherLogin, type FeeDueStudent, type PrincipalLogin } from '@/lib/feeReminderPlan'
+import { collectAudienceContacts } from '@/lib/collectAudienceEmails'
+import { listStudents } from '@/api/students'
+import { listTeachers } from '@/api/teachers'
+import { listCrmPresence, type CrmPresence } from '@/api/crmPresence'
+import { fetchStudentExtras } from '@/api/studentExtras'
 import { openMailCompose, guardianEmailsFromStudent } from '@/lib/composeMail'
 import { can } from '@/lib/gating'
 import { newIdempotencyKey } from '@/lib/idempotencyKey'
@@ -1583,54 +1588,117 @@ function RemindersModal({ dueInvoices, allDueInvoices, defaultersCount, schoolNa
   const selectedIds = useMemo(() => targetInvoices.map((i) => i.id), [targetInvoices])
 
   const submit = async () => {
-    const channels = { email, sms, app: appCh }
     if (!email && !sms && !appCh) { toast.danger('Pick a channel', 'Enable Email, SMS, and/or App.'); return }
     if (!targetInvoices.length) { toast.danger('No invoices selected', 'No due/partial invoices match the current view.'); return }
     setSending(true)
     try {
-      // One reminder PER STUDENT, each with that student's own outstanding total (already
-      // transport-gated correctly by the backend invoice engine, never recomputed here) — never
-      // one blended amount broadcast to every parent, which would misstate everyone's due.
-      const byStudent = new Map<string, { name: string; due: number; dueDate?: string }>()
+      const byStudent = new Map<string, { name: string; cls: string; due: number; dueDate?: string }>()
       for (const inv of targetInvoices) {
-        const entry = byStudent.get(inv.studentId) ?? { name: inv.studentName, due: 0, dueDate: undefined }
+        const entry = byStudent.get(inv.studentId) ?? { name: inv.studentName, cls: inv.cls, due: 0, dueDate: undefined }
         entry.due += inv.due
+        if (inv.cls) entry.cls = inv.cls
         if (inv.dueDate && (!entry.dueDate || inv.dueDate < entry.dueDate)) entry.dueDate = inv.dueDate
         byStudent.set(inv.studentId, entry)
       }
-      const contactsById = await contactsByStudentId([...byStudent.keys()])
+
+      const [roster, teachers, presence] = await Promise.all([
+        listStudents().catch(() => []),
+        listTeachers().catch(() => []),
+        listCrmPresence().catch(() => [] as CrmPresence[]),
+      ])
+      const rosterById = new Map(roster.map((s) => [s.id, s]))
+      const extras = await Promise.all([...byStudent.keys()].map(async (id) => {
+        try { return [id, await fetchStudentExtras(id)] as const }
+        catch { return [id, null] as const }
+      }))
+      const extrasById = new Map(extras)
+
+      const loginFor = (userId?: string | null, email?: string | null) => {
+        const mail = (email ?? '').trim().toLowerCase()
+        return presence.find((p) => (userId && p.id === userId) || (mail && p.email.toLowerCase() === mail))
+      }
+      const isPrincipal = (roles: string[]) => roles.some((r) => r.toLowerCase().replace(/^school\./, '') === 'principal')
+
+      const students: FeeDueStudent[] = [...byStudent.entries()].map(([id, info]) => {
+        const row = rosterById.get(id)
+        const father = extrasById.get(id)?.father ?? row?.father
+        const studentLogin = loginFor(undefined, row?.email)
+        const fatherLogin = loginFor(undefined, father?.email)
+        const parentLogin = loginFor(undefined, row?.guardianEmail)
+        return {
+          id,
+          name: info.name,
+          cls: info.cls || row?.cls || '',
+          due: info.due,
+          dueDate: info.dueDate,
+          studentEmail: row?.email,
+          studentUserId: studentLogin?.id,
+          fatherEmail: father?.email,
+          fatherPhone: father?.phone,
+          fatherUserId: fatherLogin?.id,
+          parentEmail: row?.guardianEmail,
+          parentPhone: row?.phone,
+          parentUserId: parentLogin?.id,
+        }
+      })
+
+      const classTeachers: ClassTeacherLogin[] = []
+      for (const t of teachers) {
+        const label = (t.classTeacher ?? '').trim()
+        if (!label) continue
+        const login = loginFor(t.userId, t.email)
+        if (!login) continue
+        classTeachers.push({ name: t.name, classLabel: label, userId: login.id, loggedIn: login.online })
+      }
+      const principals: PrincipalLogin[] = presence
+        .filter((p) => isPrincipal(p.roles))
+        .map((p) => ({ name: p.email || 'Principal', userId: p.id, loggedIn: p.online }))
+
+      const plan = planUnpaidFeeNotices({ schoolName, currency, students, classTeachers, principals })
 
       let totalReach = 0
       let sentChannels: string[] = []
       let sentAny = false
-      for (const [studentId, info] of byStudent) {
-        if (info.due <= 0) continue
-        const contacts = contactsById[studentId]
-        if (!contacts || (!contacts.emails.length && !contacts.phones.length)) continue
+      let studentCount = 0
+      const seenStudents = new Set<string>()
+      for (const notice of plan) {
+        const crm = notice.appOnly
+        if (crm && !appCh) continue
+        const sendApp = appCh && !!notice.userId
+        const sendEmail = !crm && email && notice.emails.length > 0
+        const sendSms = !crm && sms && notice.phones.length > 0
+        if (!sendApp && !sendEmail && !sendSms) continue
         const res = await notifyFeeAudience({
           kind: 'reminder',
           schoolName,
           currency,
-          studentName: info.name,
-          amount: info.due,
-          dueDate: info.dueDate,
-          channels,
-          audience: 'parents',
-          emails: contacts.emails,
-          phones: contacts.phones,
+          studentName: notice.studentName,
+          amount: notice.amount,
+          dueDate: notice.dueDate,
+          channels: { email: sendEmail, sms: sendSms, app: sendApp },
+          audience: 'specific',
+          emails: sendEmail ? notice.emails : [],
+          phones: sendSms ? notice.phones : [],
+          userId: sendApp ? notice.userId : undefined,
+          titleText: notice.title,
+          bodyText: notice.body,
         })
         sentAny = true
         totalReach += res.reach
         sentChannels = res.channels
+        if (notice.studentName && !seenStudents.has(notice.studentName)) {
+          seenStudents.add(notice.studentName)
+          studentCount += 1
+        }
       }
 
       if (!sentAny) {
-        toast.danger('No contacts found', 'None of the targeted students have a guardian email or phone on file.')
+        toast.danger('No contacts found', 'No father, parent, or student contact is on file, and no class teacher or principal is logged in.')
         return
       }
       toast.success(
         'Reminders sent',
-        `Reached ${fmtNum(totalReach)} parent(s) across ${fmtNum(byStudent.size)} student(s) via ${sentChannels.join(' · ')}.`,
+        `Sent for ${fmtNum(studentCount || byStudent.size)} student(s) via ${sentChannels.join(' · ') || 'app'}. Class teachers and the principal are included only while they are logged in. Reach ${fmtNum(totalReach)}.`,
       )
       onClose()
     } catch (err) {
@@ -1655,7 +1723,7 @@ function RemindersModal({ dueInvoices, allDueInvoices, defaultersCount, schoolNa
       }
     >
       <div className="col gap16">
-        <Field label="Audience" hint="Pending dues is every due/partial invoice school-wide; Selected uses invoices matching the current search/status filters.">
+        <Field label="Audience" hint="Pending dues is every unpaid invoice. Selected uses the current list. Each father, parent, and student gets only their own amount. A logged-in class teacher gets only their class, and a logged-in principal gets every class. A signed-out CRM login is skipped.">
           <div className="row gap8 wrap">
             <Btn type="button" size="sm" variant={audience === 'defaulters' ? 'primary' : 'secondary'} onClick={() => setAudience('defaulters')}>Pending dues (all)</Btn>
             <Btn type="button" size="sm" variant={audience === 'selected' ? 'primary' : 'secondary'} onClick={() => setAudience('selected')}>Selected (current view)</Btn>

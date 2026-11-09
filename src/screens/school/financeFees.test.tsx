@@ -312,6 +312,7 @@ describe('Fee collection tab', () => {
       // across every defaulter, and no lingering "count" from the old bulk-message shape.
       expect(notifyFeeAudience).toHaveBeenCalledWith(expect.objectContaining({
         kind: 'reminder',
+        audience: 'specific',
         studentName: 'Asha Verma',
         amount: 36000,
         emails: ['asha.parent@x.com'],
