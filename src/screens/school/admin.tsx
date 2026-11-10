@@ -10,7 +10,7 @@
    - Identity & access is Admin-only (the router guards non-admins)
      and pairs a Users table with an interactive permission matrix.
    ============================================================ */
-import { useEffect, useMemo, useState, type ComponentType } from 'react
+import { useEffect, useMemo, useState, type ComponentType } from 'react';
 import { useApp, useToast, useTheme } from '@/lib/hooks'
 import { useInviteUser } from '@/api/hooks/useUserMutations'
 import { SchoolPhoto } from '@/components/SchoolMark'
