@@ -169,11 +169,20 @@ export function SchoolReportsScreen() {
       if (!raw) continue
       const value = key === 'gender' ? genderValue(raw) : raw
       if (key === 'class') q.className = value
+      else if (key === 'section') q.section = value
+      else if (key === 'student') q.student = value
+      else if (key === 'teacher') q.teacher = value
+      else if (key === 'employee') q.employee = value
+      else if (key === 'department') q.department = value
+      else if (key === 'designation') q.designation = value
+      else if (key === 'role') q.role = value
+      else if (key === 'gender') q.gender = value
       else if (key === 'feeHead') q.feeHead = value
       else if (key === 'paymentMode') q.paymentMode = value
       else if (key === 'paymentStatus') q.paymentStatus = value
       else if (key === 'attendanceStatus') q.attendanceStatus = value
-      else (q as Record<string, string>)[key] = value
+      else if (key === 'route') q.route = value
+      else if (key === 'vehicle') q.vehicle = value
     }
     return q
   }
