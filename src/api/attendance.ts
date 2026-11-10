@@ -39,7 +39,8 @@ export interface AttendanceRollCall {
  *  never be silently treated as "present". */
 function asStatus(v: unknown): AttendanceStatus | null {
   const s = String(v ?? '').trim().toLowerCase()
-  if (s === 'late' || s === 'absent' || s === 'present') return s
+  if (s === 'late' || s === 'absent' || s === 'present' || s === 'half_day') return s
+  if (s === 'half-day' || s === 'half day') return 'half_day'
   return null
 }
 

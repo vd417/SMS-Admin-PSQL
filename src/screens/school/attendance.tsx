@@ -38,8 +38,9 @@ import type { Teacher, Staff, Role } from '@/types'
 import { GeoFencePanel } from './geoFencePanel'
 import { AttendanceAdvanced } from './attendanceAdvanced'
 import { ClassAttendanceOverview } from './classAttendanceOverview'
+import { AttendanceRegister } from './attendanceRegister'
 
-type Group = 'students' | 'teachers' | 'staff' | 'geo' | 'advanced' | 'classAttendance'
+type Group = 'students' | 'teachers' | 'staff' | 'geo' | 'advanced' | 'classAttendance' | 'register'
 type AttStatus = AttendanceStatus
 
 /** Owner / Admin / Principal / VP — full school roll (students + teachers + staff). */
@@ -58,6 +59,7 @@ const GROUP_OPTS_ALL_BASE = [
   { value: 'teachers', label: 'Teachers' },
   { value: 'staff', label: 'Staff' },
   { value: 'classAttendance', label: 'Class Attendance' },
+  { value: 'register', label: 'Overview' },
   { value: 'advanced', label: 'Advanced' },
   { value: 'geo', label: 'Geo-fence' },
 ] as const
@@ -65,6 +67,7 @@ const GROUP_OPTS_ALL_BASE = [
 const GROUP_OPTS_TEACHER = [
   { value: 'students', label: 'Students' },
   { value: 'classAttendance', label: 'Class Attendance' },
+  { value: 'register', label: 'Overview' },
   { value: 'advanced', label: 'Advanced' },
 ]
 
@@ -670,6 +673,7 @@ function AttendanceScreen() {
 
       {group === 'students' && <ClassWiseStudents editable={editable} leadership={allPeople} />}
       {group === 'classAttendance' && <ClassAttendanceView />}
+      {group === 'register' && <AttendanceRegister canMark={editable} />}
       {group === 'advanced' && <AttendanceAdvanced />}
       {allPeople && (group === 'teachers' || group === 'staff') && <StaffRoster group={group} editable={editable} />}
       {allPeople && group === 'geo' && <GeoFencePanel />}

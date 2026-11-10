@@ -128,6 +128,10 @@ export interface SchoolReportFilters {
   attendanceStatus?: string
   route?: string
   vehicle?: string
+  fromDate?: string
+  toDate?: string
+  fromTime?: string
+  toTime?: string
 }
 
 function withOffset(query: SchoolReportQuery): SchoolReportQuery {

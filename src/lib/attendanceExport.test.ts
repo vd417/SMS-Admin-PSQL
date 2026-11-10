@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AttendanceRecord } from '@/api/attendance'
 import type { Student } from '@/types'
-import { buildStudentRegisterRows, registerToCsv } from './attendanceExport'
+import { buildStudentRegisterRows, overviewToCsv, registerToCsv } from './attendanceExport'
 
 function rec(studentId: string, date: string, status: AttendanceRecord['status']): AttendanceRecord {
   return { id: `${studentId}-${date}`, classId: 'c1', studentId, date, status }
@@ -35,5 +35,17 @@ describe('registerToCsv', () => {
     const [header, row] = csv.split('\n')
     expect(header).toBe('Name,Student ID,Class,Date,Status')
     expect(row).toBe('"Doe, John",A1,IV-B,2026-07-16,present')
+  })
+})
+
+describe('overviewToCsv', () => {
+  it('includes every filtered student, not a page', () => {
+    const csv = overviewToCsv([{
+      roll: '1', name: 'Aarav', studentId: 's1', adm: 'ADM1', cls: '12-A', section: 'A',
+      present: 5, absent: 1, late: 0, leave: 0, total: 6, pct: 83.3, status: 'Good',
+    }])
+    expect(csv.split('\n')[0]).toContain('Attendance %')
+    expect(csv).toContain('Aarav')
+    expect(csv).toContain('83.3')
   })
 })
