@@ -28,8 +28,8 @@ function buildUrl(path: string, query?: RequestOpts['query']): string {
 
 async function rawFetch(path: string, opts: RequestOpts, accessToken: string | null): Promise<Response> {
   const headers: Record<string, string> = {}
-  // Identifies this front-end to the API so it applies the web-admin session policy
-  // (short access token + 1h idle refresh window) instead of the long mobile-app session.
+  // Identifies this front-end. The API keeps the long session for sms-admin;
+  // only the CRM client is signed out after 2 hours of inactivity.
   headers['X-Client'] = 'sms-admin'
   if (opts.body !== undefined) headers['Content-Type'] = 'application/json'
   const useAuth = opts.auth !== false && !NO_AUTH.has(path)
