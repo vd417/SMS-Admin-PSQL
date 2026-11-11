@@ -33,9 +33,10 @@ const FILTER_LABEL: Record<string, string> = {
   department: 'Department', designation: 'Designation', role: 'Role', gender: 'Gender',
   feeHead: 'Fee head', paymentMode: 'Payment mode', paymentStatus: 'Payment status',
   attendanceStatus: 'Attendance', route: 'Route', vehicle: 'Vehicle',
+  session: 'Academic session', subject: 'Subject', period: 'Period',
 }
 
-const TEXT_FILTERS = new Set(['student', 'teacher', 'employee'])
+const TEXT_FILTERS = new Set(['student', 'teacher', 'employee', 'session', 'subject', 'period'])
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 type FilterState = Record<string, string>
@@ -50,14 +51,22 @@ function errText(e: unknown): string {
   return e instanceof Error ? e.message : 'Something went wrong'
 }
 
+const FREQUENCIES = [
+  { value: 'daily', label: 'Daily' },
+  { value: 'weekly', label: 'Weekly' },
+  { value: '15days', label: '15 days' },
+  { value: 'monthly', label: 'Monthly' },
+]
+
+function frequencyLabel(value: string): string {
+  return FREQUENCIES.find((item) => item.value === value)?.label ?? value
+}
+
 function scheduleScope(filtersJson: string): string {
   const saved = readSaved(filtersJson)
   const className = (saved.className || saved.class_name || '').trim() || 'All'
   const section = (saved.section || '').trim() || 'All'
-  const from = (saved.fromDate || saved.from_date || '').trim()
-  const to = (saved.toDate || saved.to_date || '').trim()
-  const dates = from && to ? `From ${from} to ${to} · ` : ''
-  return `${dates}Class: ${className} · Section: ${section}`
+  return `Class: ${className} · Section: ${section}`
 }
 
 function readSaved(filtersJson: string): Record<string, string> {
@@ -100,6 +109,28 @@ function optionList(key: string, options: SchoolReportOptions, classes: SchoolCl
   }
 }
 
+function attendanceChoices(values: string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const value of [...values, 'present', 'absent', 'late', 'leave', 'half_day', 'pending']) {
+    const key = value.trim().toLowerCase()
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    out.push(value.trim())
+  }
+  return out
+}
+
+function attendanceEmptyMessage(reportKey: string, student: string): string {
+  if (reportKey === 'student_attendance_history' && !student.trim())
+    return 'Search a student by name or admission number, then generate the report.'
+  if (reportKey === 'student_attendance_low')
+    return 'No students are below 75% attendance for these filters.'
+  if (reportKey === 'student_attendance_streak')
+    return 'No student was absent for 3 or more consecutive working days in this range.'
+  return 'No attendance for this session, date range, and filters.'
+}
+
 function genderValue(label: string): string {
   if (label === 'Male') return 'M'
   if (label === 'Female') return 'F'
@@ -118,6 +149,11 @@ const PIE_FIELDS: Record<string, string[]> = {
   fee_collection: ['Payment Mode', 'Class', 'Receipt Status'],
   fee_defaulters: ['Class', 'Defaulter Status'],
   student_attendance: ['Attendance Status', 'Class'],
+  student_attendance_summary: ['Class', 'Section'],
+  student_attendance_low: ['Class', 'Section'],
+  student_attendance_streak: ['Class', 'Section'],
+  student_attendance_class: ['Class', 'Section'],
+  student_attendance_history: ['Attendance Status', 'Subject'],
   staff_attendance: ['Attendance Status', 'Department'],
   transport: ['Route Name', 'Class'],
   academic: ['Subject', 'Class'],
@@ -358,6 +394,7 @@ export function SchoolReportsScreen() {
   const [editId, setEditId] = useState<string | undefined>()
   const [mailStatus, setMailStatus] = useState<string>('')
   const [sendingMail, setSendingMail] = useState(false)
+  const [mailOpen, setMailOpen] = useState(false)
   const [savingSchedule, setSavingSchedule] = useState(false)
   const [runningId, setRunningId] = useState<string | null>(null)
 
@@ -465,6 +502,9 @@ export function SchoolReportsScreen() {
       else if (key === 'attendanceStatus') q.attendanceStatus = value
       else if (key === 'route') q.route = value
       else if (key === 'vehicle') q.vehicle = value
+      else if (key === 'subject') q.subject = value
+      else if (key === 'period') q.period = value
+      else if (key === 'session') q.session = value
     }
     return q
   }
@@ -478,6 +518,17 @@ export function SchoolReportsScreen() {
       return q
     }
     return queryFor(report, summary, columns)
+  }
+
+  const downloadAttendance = (key: string, format?: 'xlsx' | 'pdf') => {
+    const item = catalog.find((entry) => entry.key === key)
+    if (!item) return
+    if (key === 'student_attendance_history' && !filters.student?.trim()) {
+      toast.danger('Choose a student', 'Individual student PDF needs a student name or admission number.')
+      return
+    }
+    void downloadSchoolReport({ ...queryFor(item, false), format, columns: undefined, summary: false })
+      .catch((e) => toast.danger(format === 'pdf' ? 'PDF failed' : 'Excel failed', errText(e)))
   }
 
   const pickedReports = catalog.filter((item) => pickedKeys.includes(item.key))
@@ -522,7 +573,7 @@ export function SchoolReportsScreen() {
     employee: q.employee, department: q.department, designation: q.designation, role: q.role,
     gender: q.gender, feeHead: q.feeHead, paymentMode: q.paymentMode, paymentStatus: q.paymentStatus,
     attendanceStatus: q.attendanceStatus, route: q.route, vehicle: q.vehicle,
-    fromDate: q.fromDate, toDate: q.toDate, fromTime: q.fromTime, toTime: q.toTime,
+    subject: q.subject, period: q.period, session: q.session,
   })
 
   const sendMail = async () => {
@@ -530,6 +581,10 @@ export function SchoolReportsScreen() {
     if (sendingMail) return
     if (!items.length) {
       toast.danger('Pick a report', 'Tick at least one report type.')
+      return
+    }
+    if (!emails.split(/[\s,;]+/).some((item) => item.trim())) {
+      toast.danger('Add an email', 'The mail box is used for Send now and for Schedule.')
       return
     }
     setSendingMail(true)
@@ -583,6 +638,10 @@ export function SchoolReportsScreen() {
     if (savingSchedule) return
     if (!items.length) {
       toast.danger('Pick a report', 'Tick at least one report type.')
+      return
+    }
+    if (!emails.split(/[\s,;]+/).some((item) => item.trim())) {
+      toast.danger('Add an email', 'The mail box is used for Send now and for Schedule.')
       return
     }
     setSavingSchedule(true)
@@ -669,22 +728,32 @@ export function SchoolReportsScreen() {
               />
             </Field>
           </div>
-          {(report?.filters ?? []).map((key) => (
+          {(report?.filters ?? []).map((key) => {
+            const choices = optionList(key, options, schoolClasses, filters.class ?? '')
+            const list = key === 'attendanceStatus' && (report?.key ?? '').startsWith('student_attendance')
+              ? attendanceChoices(choices)
+              : choices
+            const placeholder = key === 'session' ? 'Session name' : key === 'subject' ? 'Subject' : key === 'period' ? 'Period number' : key === 'student' ? 'Name or admission no.' : 'Search'
+            return (
             <Field key={key} label={FILTER_LABEL[key] ?? key}>
               {TEXT_FILTERS.has(key)
-                ? <Input value={filters[key] ?? ''} placeholder="Search" onChange={(e) => setFilters((f) => ({ ...f, [key]: e.target.value }))} style={{ width: 200 }} />
+                ? <Input value={filters[key] ?? ''} placeholder={placeholder} onChange={(e) => setFilters((f) => ({ ...f, [key]: e.target.value }))} style={{ width: 200 }} />
                 : <CompactSelect
                     value={filters[key] ?? ''}
                     onChange={(value) => setFilters((current) => ({ ...current, [key]: value }))}
-                    options={[{ value: '', label: 'All' }, ...optionList(key, options, schoolClasses, filters.class ?? '').map((item) => ({ value: item, label: item }))]}
+                    options={[{ value: '', label: 'All' }, ...list.map((item) => ({ value: item, label: item }))]}
                   />}
             </Field>
-          ))}
+            )
+          })}
           </>
           )}
         </div>
         {!attendanceScreen && (
         <div className="row gap8 jc-end" style={{ marginTop: 12 }}>
+          <Btn variant="primary" icon="message" onClick={() => setMailOpen((open) => !open)}>
+            {mailOpen ? 'Hide mail' : 'Mail / Schedule'}
+          </Btn>
           <Btn variant="secondary" onClick={() => {
             const range = rangeForPreset('month')
             setFromDate(range.from); setToDate(range.to); setFromTime(''); setToTime(''); setFilters({})
@@ -747,10 +816,22 @@ export function SchoolReportsScreen() {
               sub={`${result.schoolName} · ${result.fromDate} to ${result.toDate} · ${result.filters}`}
               action={
                 <div className="row gap8 wrap">
-                  <Btn size="sm" variant="secondary" icon="download" onClick={() => void downloadSchoolReport(queryOf(false, visibleColumns)).catch((e) => toast.danger('Excel failed', errText(e)))}>Excel detailed</Btn>
-                  <Btn size="sm" variant="secondary" icon="download" onClick={() => void downloadSchoolReport({ ...queryOf(true, visibleColumns), summary: true }).catch((e) => toast.danger('Excel failed', errText(e)))}>Excel summary</Btn>
-                  <Btn size="sm" variant="secondary" icon="doc" onClick={() => void downloadSchoolReport({ ...queryOf(false, visibleColumns), format: 'pdf' }).catch((e) => toast.danger('PDF failed', errText(e)))}>PDF</Btn>
+                  {result.reportKey.startsWith('student_attendance') ? (
+                    <>
+                      <Btn size="sm" variant="secondary" icon="download" onClick={() => downloadAttendance('student_attendance')}>Excel detailed</Btn>
+                      <Btn size="sm" variant="secondary" icon="download" onClick={() => downloadAttendance('student_attendance_summary')}>Excel summary</Btn>
+                      <Btn size="sm" variant="secondary" icon="doc" onClick={() => downloadAttendance('student_attendance_history', 'pdf')}>Individual student PDF</Btn>
+                      <Btn size="sm" variant="secondary" icon="doc" onClick={() => downloadAttendance('student_attendance_class', 'pdf')}>Class-wise PDF</Btn>
+                    </>
+                  ) : (
+                    <>
+                      <Btn size="sm" variant="secondary" icon="download" onClick={() => void downloadSchoolReport(queryOf(false, visibleColumns)).catch((e) => toast.danger('Excel failed', errText(e)))}>Excel detailed</Btn>
+                      <Btn size="sm" variant="secondary" icon="download" onClick={() => void downloadSchoolReport({ ...queryOf(true, visibleColumns), summary: true }).catch((e) => toast.danger('Excel failed', errText(e)))}>Excel summary</Btn>
+                      <Btn size="sm" variant="secondary" icon="doc" onClick={() => void downloadSchoolReport({ ...queryOf(false, visibleColumns), format: 'pdf' }).catch((e) => toast.danger('PDF failed', errText(e)))}>PDF</Btn>
+                    </>
+                  )}
                   <Btn size="sm" variant="secondary" icon="doc" onClick={() => void printSchoolReport(queryOf(false, visibleColumns)).catch((e) => toast.danger('Print failed', errText(e)))}>Print</Btn>
+                  <Btn size="sm" variant="primary" icon="message" onClick={() => setMailOpen((open) => !open)}>{mailOpen ? 'Hide mail' : 'Mail / Schedule'}</Btn>
                 </div>
               }
             />
@@ -768,14 +849,18 @@ export function SchoolReportsScreen() {
                 </div>
               </details>
             </div>
-            <DataTable columns={columns} rows={tableRows} pageSize={20} rowKey={(_, i) => i} />
+            {result.reportKey.startsWith('student_attendance') && result.rows.length === 0 ? (
+              <div className="t-sm muted" style={{ padding: 16 }}>{attendanceEmptyMessage(result.reportKey, filters.student ?? '')}</div>
+            ) : (
+              <DataTable columns={columns} rows={tableRows} pageSize={20} rowKey={(_, i) => i} />
+            )}
           </Card>
         </>
       )}
 
-      <div className="sm-grid-2" style={{ marginTop: 14, gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', alignItems: 'start' }}>
+      {mailOpen && <div className="sm-grid-2" style={{ marginTop: 14, gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', alignItems: 'start' }}>
         <Card>
-          <CardHead title="Email these reports" sub="Sends every ticked report for the dates above" icon="message" />
+          <CardHead title="Email these reports" sub="Sends every ticked report for the dates above to the email in Schedule" icon="message" />
           <div style={{ marginTop: 12 }} className="col gap12">
             <Field label="Report type">
               <ReportTypeChecks
@@ -793,14 +878,13 @@ export function SchoolReportsScreen() {
               onFrom={(date, time) => { setFromDate(date); setFromTime(time) }}
               onTo={(date, time) => { setToDate(date); setToTime(time) }}
             />
-            <Field label="Emails"><Textarea value={emails} onChange={(e) => setEmails(e.target.value)} placeholder="one or more, separated by commas" /></Field>
             <Field label="Subject"><Input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="School name and report title" /></Field>
             <Field label="Message"><Textarea value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Optional note" /></Field>
             <Field label="File">
               <Select value={format} onChange={(e) => setFormat(e.target.value as 'xlsx' | 'pdf')} options={[{ value: 'xlsx', label: 'Excel' }, { value: 'pdf', label: 'PDF' }]} />
             </Field>
             <div className="t-xs muted">
-              Reports: {pickedReports.length ? pickedReports.map((item) => item.title).join(', ') : 'Tick the reports to send'} · From {fromDate || '—'} to {toDate || '—'} · Class: {filters.class?.trim() || 'All'} · Section: {filters.section?.trim() || 'All'}
+              To: {emails.trim() || 'Add an email in the mail box'} · Reports: {pickedReports.length ? pickedReports.map((item) => item.title).join(', ') : 'Tick the reports to send'} · From {fromDate || '—'} to {toDate || '—'} · Class: {filters.class?.trim() || 'All'} · Section: {filters.section?.trim() || 'All'}
             </div>
             <div className="row jc-end">
               <Btn icon="message" disabled={sendingMail} onClick={() => void sendMail()}>
@@ -814,10 +898,13 @@ export function SchoolReportsScreen() {
         <Card>
           <CardHead
             title="Schedule email"
-            sub="Sends the From date to To date below. The next run still follows how often and the send time."
+            sub="One mail box for Send now and for Schedule. Daily sends yesterday, weekly the last 7 days, 15 days the last 15 days, and monthly the previous month."
             icon="calendar"
           />
           <div style={{ marginTop: 12 }} className="col gap12">
+            <Field label="Email">
+              <Textarea value={emails} onChange={(e) => setEmails(e.target.value)} placeholder="name@school.com, another@school.com" />
+            </Field>
             <Field label="Report type">
               <ReportTypeChecks
                 catalog={catalog}
@@ -826,16 +913,8 @@ export function SchoolReportsScreen() {
                 onToggleAll={() => setPickedKeys(pickedKeys.length === catalog.length ? [] : catalog.map((item) => item.key))}
               />
             </Field>
-            <DateRangeFields
-              fromDate={fromDate}
-              fromTime={fromTime}
-              toDate={toDate}
-              toTime={toTime}
-              onFrom={(date, time) => { setFromDate(date); setFromTime(time) }}
-              onTo={(date, time) => { setToDate(date); setToTime(time) }}
-            />
             <Field label="How often">
-              <Select value={frequency} onChange={(e) => setFrequency(e.target.value)} options={['daily', 'weekly', 'monthly'].map((v) => ({ value: v, label: v[0].toUpperCase() + v.slice(1) }))} />
+              <Select value={frequency} onChange={(e) => setFrequency(e.target.value)} options={FREQUENCIES} />
             </Field>
             <Field label="Send time"><Input type="time" value={sendTime} onChange={(e) => setSendTime(e.target.value)} /></Field>
             {frequency === 'weekly' && (
@@ -847,7 +926,7 @@ export function SchoolReportsScreen() {
               <Field label="Day of month"><Input type="number" min={1} max={28} value={dayOfMonth} onChange={(e) => setDayOfMonth(e.target.value)} /></Field>
             )}
             <div className="t-xs muted">
-              Reports: {pickedReports.length ? pickedReports.map((item) => item.title).join(', ') : 'Tick the reports to schedule'} · From {fromDate || '—'} to {toDate || '—'} · Class: {filters.class?.trim() || 'All'} · Section: {filters.section?.trim() || 'All'}. Each ticked report gets its own schedule.
+              To: {emails.trim() || 'Add an email in the mail box'} · Reports: {pickedReports.length ? pickedReports.map((item) => item.title).join(', ') : 'Tick the reports to schedule'} · {frequencyLabel(frequency)} · Class: {filters.class?.trim() || 'All'} · Section: {filters.section?.trim() || 'All'}. Each ticked report gets its own schedule.
             </div>
             <div className="row jc-end gap8">
               {editId && <Btn variant="secondary" onClick={() => setEditId(undefined)}>Cancel edit</Btn>}
@@ -857,16 +936,16 @@ export function SchoolReportsScreen() {
             </div>
           </div>
         </Card>
-      </div>
+      </div>}
 
-      <Card pad={false} style={{ marginTop: 14 }}>
+      {mailOpen && <Card pad={false} style={{ marginTop: 14 }}>
         <CardHead title="Saved schedules" sub={pickedReports.map((item) => item.title).join(', ') || report?.title} icon="clock" />
         {schedules.length === 0 && <div className="t-sm muted" style={{ padding: 16 }}>No schedule for the ticked reports yet.</div>}
         {schedules.map((s) => (
           <div key={s.id} style={{ padding: '12px 16px', borderTop: '1px solid var(--border)' }}>
             <div className="row ai-center gap8 wrap">
               <div style={{ flex: 1, minWidth: 200 }}>
-                <div className="fw6">{s.title || report?.title} · {s.frequency} at {s.sendTime} · {s.format.toUpperCase()}</div>
+                <div className="fw6">{s.title || report?.title} · {frequencyLabel(s.frequency)} at {s.sendTime} · {s.format.toUpperCase()}</div>
                 <div className="t-xs muted">{scheduleScope(s.filtersJson)} · {s.recipients}</div>
                 <div className="t-xs muted">Next {s.status === 'paused' ? 'paused' : new Date(s.nextRunAt).toLocaleString()}</div>
               </div>
@@ -875,13 +954,6 @@ export function SchoolReportsScreen() {
                 setEditId(s.id); setReportKey(s.reportKey); setFrequency(s.frequency); setSendTime(s.sendTime); setFormat(s.format === 'pdf' ? 'pdf' : 'xlsx')
                 setEmails(s.recipients); setSubject(s.subject ?? ''); setMessage(s.message ?? '')
                 setPickedKeys((keys) => keys.includes(s.reportKey) ? keys : [...keys, s.reportKey])
-                const saved = readSaved(s.filtersJson)
-                const savedFrom = saved.fromDate || saved.from_date
-                const savedTo = saved.toDate || saved.to_date
-                if (savedFrom) setFromDate(savedFrom)
-                if (savedTo) setToDate(savedTo)
-                setFromTime(saved.fromTime || saved.from_time || '')
-                setToTime(saved.toTime || saved.to_time || '')
                 if (s.dayOfWeek != null) setDayOfWeek(String(s.dayOfWeek))
                 if (s.dayOfMonth != null) setDayOfMonth(String(s.dayOfMonth))
               }}>Edit</Btn>
@@ -905,7 +977,7 @@ export function SchoolReportsScreen() {
             )}
           </div>
         ))}
-      </Card>
+      </Card>}
     </div>
   )
 }

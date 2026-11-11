@@ -50,6 +50,9 @@ export interface SchoolReportQuery {
   attendanceStatus?: string
   route?: string
   vehicle?: string
+  subject?: string
+  period?: string
+  session?: string
   summary?: boolean
   columns?: string[]
   format?: 'xlsx' | 'pdf'
@@ -128,6 +131,9 @@ export interface SchoolReportFilters {
   attendanceStatus?: string
   route?: string
   vehicle?: string
+  subject?: string
+  period?: string
+  session?: string
   fromDate?: string
   toDate?: string
   fromTime?: string

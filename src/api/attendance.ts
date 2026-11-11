@@ -2,7 +2,7 @@ import { request } from './client'
 import { snakeToCamel, camelToSnake } from './mapper'
 import { tokenStore } from './auth/tokenStore'
 
-export type AttendanceStatus = 'present' | 'late' | 'absent' | 'half_day'
+export type AttendanceStatus = 'present' | 'late' | 'absent' | 'half_day' | 'pending'
 
 export interface AttendanceMark {
   studentId: string
@@ -39,7 +39,7 @@ export interface AttendanceRollCall {
  *  never be silently treated as "present". */
 function asStatus(v: unknown): AttendanceStatus | null {
   const s = String(v ?? '').trim().toLowerCase()
-  if (s === 'late' || s === 'absent' || s === 'present' || s === 'half_day') return s
+  if (s === 'late' || s === 'absent' || s === 'present' || s === 'half_day' || s === 'pending') return s
   if (s === 'half-day' || s === 'half day') return 'half_day'
   return null
 }

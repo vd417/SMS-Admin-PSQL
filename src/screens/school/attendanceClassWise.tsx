@@ -51,8 +51,8 @@ type AttStatus = AttendanceStatus
 /** Present/absent tallied from locally-saved marks for one class on a given day. */
 export interface LocalCount { present: number; absent: number; total: number }
 
-const STATUS_TONE: Record<AttStatus, BadgeTone> = { present: 'success', late: 'warning', absent: 'danger', half_day: 'warning' }
-const STATUS_LABEL: Record<AttStatus, string> = { present: 'Present', late: 'Late', absent: 'Absent', half_day: 'Half day' }
+const STATUS_TONE: Record<AttStatus, BadgeTone> = { present: 'success', late: 'warning', absent: 'danger', half_day: 'warning', pending: 'neutral' }
+const STATUS_LABEL: Record<AttStatus, string> = { present: 'Present', late: 'Late', absent: 'Absent', half_day: 'Half day', pending: 'Pending' }
 const STATUS_OPTS = [
   { value: 'present', label: 'Present' },
   { value: 'late', label: 'Late' },

@@ -53,6 +53,7 @@ export interface AttendanceSummaryStudent {
   absent: number
   late: number
   leave: number
+  pending: number
   total: number
   pct: number
   status: string
@@ -71,8 +72,8 @@ export interface AttendanceDayRow {
 
 /** Overview table as CSV. Exports every filtered student, not one page. */
 export function overviewToCsv(students: AttendanceSummaryStudent[]): string {
-  const header = ['Roll No', 'Student Name', 'Present Days', 'Absent Days', 'Total Days', 'Attendance %', 'Status']
-  const lines = students.map((s) => [s.roll, s.name, s.present, s.absent, s.total, s.pct, s.status].map(csvCell).join(','))
+  const header = ['Roll No', 'Student Name', 'Present Days', 'Absent Days', 'Pending Days', 'Total Days', 'Attendance %', 'Status']
+  const lines = students.map((s) => [s.roll, s.name, s.present, s.absent, s.pending, s.total, s.pct, s.status].map(csvCell).join(','))
   return [header.join(','), ...lines].join('\n')
 }
 
@@ -134,7 +135,8 @@ export async function downloadAttendanceWorkbook(args: {
   const absent = args.students.reduce((n, s) => n + s.absent, 0)
   const late = args.students.reduce((n, s) => n + s.late, 0)
   const leave = args.students.reduce((n, s) => n + s.leave, 0)
-  const marks = present + absent + late + leave
+  const pending = args.students.reduce((n, s) => n + s.pending, 0)
+  const marks = present + absent + late + leave + pending
   const overall = marks ? present / marks : 0
 
   const dash = wb.addWorksheet('Attendance Dashboard')
@@ -142,13 +144,13 @@ export async function downloadAttendanceWorkbook(args: {
   dash.getCell('A1').font = { bold: true, size: 18, color: { argb: 'FF4F46E5' } }
   dash.getCell('A2').value = 'Attendance Report'
   dash.getCell('A2').font = { bold: true, size: 14 }
-  const labels = ['Report range', 'Class', 'Section', 'Total students', 'Present', 'Absent', 'Late', 'Leave', 'Overall attendance']
-  const values: (string | number)[] = [`${args.from} to ${args.to}`, args.classLabel, args.section || 'All', args.students.length, present, absent, late, leave, overall]
+  const labels = ['Report range', 'Class', 'Section', 'Total students', 'Present', 'Absent', 'Pending', 'Late', 'Leave', 'Overall attendance']
+  const values: (string | number)[] = [`${args.from} to ${args.to}`, args.classLabel, args.section || 'All', args.students.length, present, absent, pending, late, leave, overall]
   labels.forEach((label, i) => {
     dash.getCell(4, i + 1).value = label
     dash.getCell(5, i + 1).value = values[i]
   })
-  dash.getCell(5, 9).numFmt = '0.0%'
+  dash.getCell(5, 10).numFmt = '0.0%'
   paintHeader(dash, 4, labels.length)
   finishSheet(dash, 4, labels.length, 5)
 
@@ -159,13 +161,13 @@ export async function downloadAttendanceWorkbook(args: {
   paintHeader(daily, 1, dailyHeaders.length)
   finishSheet(daily, 1, dailyHeaders.length, Math.max(1, args.days.length + 1))
 
-  const monthHeaders = ['Roll No', 'Student Name', 'Student ID', 'Class', 'Section', 'Month', 'Working Days', 'Present Days', 'Absent Days', 'Late Days', 'Leave Days', 'Attendance Percentage', 'Performance Status']
+  const monthHeaders = ['Roll No', 'Student Name', 'Student ID', 'Class', 'Section', 'Month', 'Working Days', 'Present Days', 'Absent Days', 'Pending Days', 'Late Days', 'Leave Days', 'Attendance Percentage', 'Performance Status']
   const month = wb.addWorksheet('Monthly Summary')
   month.addRow(monthHeaders)
   args.students.forEach((s, i) => {
     const row = i + 2
-    month.addRow([s.roll, s.name, s.studentId, s.cls, s.section, args.from.slice(0, 7), s.total, s.present, s.absent, s.late, s.leave, s.total ? s.present / s.total : 0, s.status])
-    month.getCell(row, 12).numFmt = '0.0%'
+    month.addRow([s.roll, s.name, s.studentId, s.cls, s.section, args.from.slice(0, 7), s.total, s.present, s.absent, s.pending, s.late, s.leave, s.total ? s.present / s.total : 0, s.status])
+    month.getCell(row, 13).numFmt = '0.0%'
   })
   paintHeader(month, 1, monthHeaders.length)
   finishSheet(month, 1, monthHeaders.length, Math.max(1, args.students.length + 1))

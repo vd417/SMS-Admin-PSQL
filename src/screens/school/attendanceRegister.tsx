@@ -29,19 +29,22 @@ const LETTER: Record<AttendanceStatus, { text: string; bg: string; color: string
   absent: { text: 'A', bg: '#EF4444', color: '#fff' },
   late: { text: 'L', bg: '#F59E0B', color: '#fff' },
   half_day: { text: 'H', bg: '#3B82F6', color: '#fff' },
+  pending: { text: 'N', bg: '#64748B', color: '#fff' },
 }
 const MARK_COLOR: Record<string, CellColor> = {
   P: { bg: '#22C55E', text: '#FFFFFF' },
   A: { bg: '#EF4444', text: '#FFFFFF' },
   L: { bg: '#F59E0B', text: '#FFFFFF' },
   H: { bg: '#3B82F6', text: '#FFFFFF' },
+  N: { bg: '#64748B', text: '#FFFFFF' },
   '—': { bg: '#E5E7EB', text: '#6B7280' },
 }
 const GOOD_COLOR: CellColor = { bg: '#22C55E', text: '#FFFFFF' }
 const WARNING_COLOR: CellColor = { bg: '#F59E0B', text: '#FFFFFF' }
 const PRESENT_COLOR: CellColor = { bg: '#DCFCE7', text: '#166534' }
 const ABSENT_COLOR: CellColor = { bg: '#FEE2E2', text: '#991B1B' }
-const CYCLE: AttendanceStatus[] = ['present', 'absent', 'late', 'half_day']
+const CYCLE: AttendanceStatus[] = ['present', 'absent', 'late', 'half_day', 'pending']
+const PENDING_COLOR: CellColor = { bg: '#F1F5F9', text: '#334155' }
 
 function iso(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -124,14 +127,15 @@ export function AttendanceRegister({ canMark, screen }: { canMark: boolean; scre
     let absent = 0
     let late = 0
     let leave = 0
+    let pending = 0
     for (const day of dates) {
       const mark = byStudentDay.get(`${s.id}|${day}`)
-      if (!mark) continue
+      if (!mark || mark.status === 'pending') { pending += 1; continue }
       if (mark.status === 'present' || mark.status === 'half_day') present += 1
       else if (mark.status === 'absent') absent += 1
       else if (mark.status === 'late') late += 1
     }
-    const total = present + absent + late + leave
+    const total = dates.length
     const pct = total ? Math.round((present / total) * 1000) / 10 : 0
     return {
       roll: s.roll ? String(s.roll) : '—',
@@ -140,7 +144,7 @@ export function AttendanceRegister({ canMark, screen }: { canMark: boolean; scre
       adm: s.adm,
       cls: s.cls || selected?.name || '',
       section: s.section,
-      present, absent, late, leave, total, pct,
+      present, absent, late, leave, pending, total, pct,
       status: performance(pct, total).label,
     }
   }), [roster, dates, byStudentDay, selected])
@@ -148,7 +152,8 @@ export function AttendanceRegister({ canMark, screen }: { canMark: boolean; scre
   const filtered = summaries.filter((s) => {
     const q = query.trim().toLowerCase()
     if (q && !`${s.name} ${s.adm} ${s.roll}`.toLowerCase().includes(q)) return false
-    if (statusFilter && s.status !== statusFilter) return false
+    if (statusFilter === 'Pending' && s.pending === 0) return false
+    if (statusFilter && statusFilter !== 'Pending' && s.status !== statusFilter) return false
     return true
   })
   const pageRows = filtered.slice(page * PAGE, page * PAGE + PAGE)
@@ -182,20 +187,20 @@ export function AttendanceRegister({ canMark, screen }: { canMark: boolean; scre
     if (format === 'pdf' || format === 'xlsx') {
       const overview = view === 'overview'
       const columns = overview
-        ? ['Roll No', 'Student Name', 'Present Days', 'Absent Days', 'Total Days', 'Attendance %', 'Status']
+        ? ['Roll No', 'Student Name', 'Present Days', 'Absent Days', 'Pending Days', 'Total Days', 'Attendance %', 'Status']
         : ['Admission No', 'Student', 'Abs', 'Lve', ...dates]
       const rows = overview
-        ? filtered.map((s) => [s.roll, s.name, s.present, s.absent, s.total, `${s.pct.toFixed(1)}%`, s.status] as (string | number)[])
+        ? filtered.map((s) => [s.roll, s.name, s.present, s.absent, s.pending, s.total, `${s.pct.toFixed(1)}%`, s.status] as (string | number)[])
         : roster.map((s) => {
             const abs = dates.filter((day) => byStudentDay.get(`${s.id}|${day}`)?.status === 'absent').length
             return [s.adm || '—', s.name, abs, 0, ...dates.map((day) => {
               const mark = byStudentDay.get(`${s.id}|${day}`)
-              return mark ? LETTER[mark.status].text : '—'
+              return mark && mark.status !== 'pending' ? LETTER[mark.status].text : 'N'
             })] as (string | number)[]
           })
       const colors: (CellColor | undefined)[][] = overview
         ? filtered.map((s) => [
-            undefined, undefined, PRESENT_COLOR, ABSENT_COLOR, undefined,
+            undefined, undefined, PRESENT_COLOR, ABSENT_COLOR, PENDING_COLOR, undefined,
             s.pct >= 75 ? { bg: '#EEF2FF', text: '#4F46E5' } : { bg: '#FFEDD5', text: '#C2410C' },
             s.status === 'Good' ? GOOD_COLOR : WARNING_COLOR,
           ])
@@ -203,7 +208,7 @@ export function AttendanceRegister({ canMark, screen }: { canMark: boolean; scre
             undefined, undefined, undefined, undefined,
             ...dates.map((day) => {
               const mark = byStudentDay.get(`${s.id}|${day}`)
-              return MARK_COLOR[mark ? LETTER[mark.status].text : '—']
+              return MARK_COLOR[mark && mark.status !== 'pending' ? LETTER[mark.status].text : 'N']
             }),
           ])
       if (format === 'pdf') {
@@ -290,6 +295,7 @@ export function AttendanceRegister({ canMark, screen }: { canMark: boolean; scre
               ['A', 'Absent', '#EF4444'],
               ['L', 'Late', '#F59E0B'],
               ['H', 'Half day', '#3B82F6'],
+              ['N', 'Pending', '#64748B'],
               ['Good', '75% and above', '#22C55E'],
               ['Warning', 'Below 75%', '#F59E0B'],
             ] as const).map(([label, name, color]) => (
@@ -324,13 +330,18 @@ export function AttendanceRegister({ canMark, screen }: { canMark: boolean; scre
           </label>
           <Btn variant="secondary" onClick={() => { setFrom(shift(today, -13)); setTo(today) }}>2 weeks</Btn>
           <Btn variant="secondary" onClick={() => { setFrom(shift(today, -6)); setTo(today) }}>This week</Btn>
+          {view === 'overview' && (
+            <label className="col gap4"><span className="t-xs muted">Show</span>
+              <Select aria-label="Attendance status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} options={[{ value: '', label: 'All' }, { value: 'Good', label: 'Good' }, { value: 'Warning', label: 'Warning' }, { value: 'Pending', label: 'Pending' }]} />
+            </label>
+          )}
           {view === 'register' && canMark && (
             <>
               <label className="col gap4"><span className="t-xs muted">Mark for a date</span>
                 <Input type="date" aria-label="Mark date" value={markDate} onChange={(e) => setMarkDate(e.target.value)} />
               </label>
               <label className="col gap4"><span className="t-xs muted">Mark as</span>
-                <Select aria-label="Mark as" value={markAs} onChange={(e) => setMarkAs(e.target.value as AttendanceStatus)} options={[{ value: 'present', label: 'Present' }, { value: 'absent', label: 'Absent' }, { value: 'late', label: 'Late' }, { value: 'half_day', label: 'Half day' }]} />
+                <Select aria-label="Mark as" value={markAs} onChange={(e) => setMarkAs(e.target.value as AttendanceStatus)} options={[{ value: 'present', label: 'Present' }, { value: 'absent', label: 'Absent' }, { value: 'late', label: 'Late' }, { value: 'half_day', label: 'Half day' }, { value: 'pending', label: 'Pending' }]} />
               </label>
               <Btn disabled={!classId || saving} onClick={() => void markAll()}>{saving ? 'Saving…' : 'Mark Attendance'}</Btn>
             </>
@@ -355,10 +366,10 @@ export function AttendanceRegister({ canMark, screen }: { canMark: boolean; scre
           <Card pad={false} style={{ marginTop: 14 }}>
             <div style={{ padding: '16px 16px 0' }}>
               <div className="fw7">Student Attendance Summary</div>
-              <div className="t-xs muted">Overall attendance for each student. Students below 75% are marked as low attendance.</div>
+              <div className="t-xs muted">Each day from From to To counts. A day with no mark is Pending, and attendance % uses that full range. Below 75% is Warning.</div>
               <div className="row gap8 wrap att-no-print" style={{ marginTop: 12 }}>
                 <Search value={query} onChange={setQuery} placeholder="Search student" />
-                <Select aria-label="Attendance status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} options={[{ value: '', label: 'All statuses' }, { value: 'Good', label: 'Good' }, { value: 'Warning', label: 'Warning' }]} />
+                <Select aria-label="Attendance status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} options={[{ value: '', label: 'All statuses' }, { value: 'Good', label: 'Good' }, { value: 'Warning', label: 'Warning' }, { value: 'Pending', label: 'Pending' }]} />
               </div>
             </div>
             {!filtered.length ? (
@@ -368,7 +379,7 @@ export function AttendanceRegister({ canMark, screen }: { canMark: boolean; scre
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                   <thead>
                     <tr style={{ textAlign: 'left', color: '#64748B' }}>
-                      {['Roll No', 'Student Name', 'Present Days', 'Absent Days', 'Total Days', 'Attendance %', 'Status'].map((h) => (
+                      {['Roll No', 'Student Name', 'Present Days', 'Absent Days', 'Pending Days', 'Total Days', 'Attendance %', 'Status'].map((h) => (
                         <th key={h} style={{ padding: '10px 12px', borderBottom: '1px solid #E2E8F0', fontWeight: 600 }}>{h}</th>
                       ))}
                     </tr>
@@ -380,6 +391,7 @@ export function AttendanceRegister({ canMark, screen }: { canMark: boolean; scre
                           <td style={cell}>{s.name}</td>
                           <td style={{ ...cell, color: '#16A34A', fontWeight: 700 }}>{s.present}</td>
                           <td style={{ ...cell, color: '#DC2626', fontWeight: 700 }}>{s.absent}</td>
+                          <td style={{ ...cell, color: '#475569', fontWeight: 700 }}>{s.pending}</td>
                           <td style={cell}>{s.total}</td>
                           <td style={{ ...cell, color: pctColor(s.pct), fontWeight: 700 }}>{s.pct.toFixed(1)}%</td>
                           <td style={cell}><Badge tone={performance(s.pct, s.total).tone}>{s.status}</Badge></td>
@@ -416,6 +428,7 @@ export function AttendanceRegister({ canMark, screen }: { canMark: boolean; scre
                 <SummaryLine label="Total Present" dates={dates} roster={roster} byStudentDay={byStudentDay} pick={(s) => s === 'present' || s === 'half_day'} />
                 <SummaryLine label="Total Absent" dates={dates} roster={roster} byStudentDay={byStudentDay} pick={(s) => s === 'absent'} />
                 <SummaryLine label="Total Leave" dates={dates} roster={roster} byStudentDay={byStudentDay} pick={() => false} />
+                <SummaryLine label="Total Pending" dates={dates} roster={roster} byStudentDay={byStudentDay} pick={(s) => s === 'pending'} countMissing />
                 <PercentLine dates={dates} roster={roster} byStudentDay={byStudentDay} />
               </thead>
               <tbody>
@@ -429,12 +442,12 @@ export function AttendanceRegister({ canMark, screen }: { canMark: boolean; scre
                       <td style={head}>0</td>
                       {dates.map((day) => {
                         const mark = byStudentDay.get(`${s.id}|${day}`)
-                        const letter = mark ? LETTER[mark.status] : null
+                        const letter = mark && mark.status !== 'pending' ? LETTER[mark.status] : LETTER.pending
                         return (
                           <td key={day} style={{ ...head, cursor: canMark ? 'pointer' : 'default' }}>
                             <button
                               type="button"
-                              title={mark ? `${LETTER[mark.status].text} · marked by ${mark.markedBy || 'unknown'}` : 'Not marked'}
+                              title={mark && mark.status !== 'pending' ? `${letter.text} · marked by ${mark.markedBy || 'unknown'}` : 'Pending'}
                               onClick={() => void markOne(s.id, day)}
                               style={{
                                 border: 0, borderRadius: 6, minWidth: 26, height: 26, fontWeight: 700, cursor: canMark ? 'pointer' : 'default',
@@ -469,6 +482,7 @@ export function AttendanceRegister({ canMark, screen }: { canMark: boolean; scre
               <Mini label="Present" value={detailSummary.present} />
               <Mini label="Absent" value={detailSummary.absent} />
               <Mini label="Late" value={detailSummary.late} />
+              <Mini label="Pending" value={detailSummary.pending} />
               <Mini label="Leave" value={detailSummary.leave} />
               <Mini label="Attendance" value={`${detailSummary.pct}%`} />
             </div>
@@ -476,7 +490,7 @@ export function AttendanceRegister({ canMark, screen }: { canMark: boolean; scre
             <div className="row gap8 wrap">
               {dates.map((day, i) => {
                 const mark = detailDays[i]
-                const letter = mark ? LETTER[mark.status] : null
+                const letter = mark && mark.status !== 'pending' ? LETTER[mark.status] : LETTER.pending
                 return (
                   <div key={day} title={mark?.markedBy ? `Marked by ${mark.markedBy}` : 'Not marked'} style={{ textAlign: 'center' }}>
                     <div className="t-xs muted">{day.slice(8)}</div>
@@ -519,12 +533,13 @@ function Mini({ label, value }: { label: string; value: string | number }) {
   return <div style={{ minWidth: 90 }}><div className="t-xs muted">{label}</div><div className="fw7">{value}</div></div>
 }
 
-function SummaryLine({ label, dates, roster, byStudentDay, pick }: {
+function SummaryLine({ label, dates, roster, byStudentDay, pick, countMissing = false }: {
   label: string
   dates: string[]
   roster: Student[]
   byStudentDay: Map<string, AttendanceRecord>
   pick: (status: AttendanceStatus) => boolean
+  countMissing?: boolean
 }) {
   return (
     <tr>
@@ -534,7 +549,8 @@ function SummaryLine({ label, dates, roster, byStudentDay, pick }: {
       {dates.map((day) => {
         const n = roster.filter((s) => {
           const mark = byStudentDay.get(`${s.id}|${day}`)
-          return mark ? pick(mark.status) : false
+          if (!mark) return countMissing
+          return pick(mark.status)
         }).length
         return <td key={day} style={head}>{n}</td>
       })}
@@ -557,7 +573,7 @@ function PercentLine({ dates, roster, byStudentDay }: {
         let present = 0
         for (const s of roster) {
           const mark = byStudentDay.get(`${s.id}|${day}`)
-          if (!mark) continue
+          if (!mark || mark.status === 'pending') continue
           marked += 1
           if (mark.status === 'present' || mark.status === 'half_day') present += 1
         }

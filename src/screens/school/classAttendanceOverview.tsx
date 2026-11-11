@@ -96,8 +96,8 @@ function withTimetablePlaceholders(
   return [...merged, ...placeholders]
 }
 
-const PERIOD_STATUS_LABEL: Record<AttStatus, string> = { present: 'Present', late: 'Late', absent: 'Absent', half_day: 'Half day' }
-const PERIOD_STATUS_LETTER: Record<AttStatus, string> = { present: 'P', late: 'L', absent: 'A', half_day: 'H' }
+const PERIOD_STATUS_LABEL: Record<AttStatus, string> = { present: 'Present', late: 'Late', absent: 'Absent', half_day: 'Half day', pending: 'Pending' }
+const PERIOD_STATUS_LETTER: Record<AttStatus, string> = { present: 'P', late: 'L', absent: 'A', half_day: 'H', pending: 'N' }
 /** Present = full green, Late = light green, Absent = red — status shown as a colored letter dot;
  *  subject/time only appear in the tooltip (kept off the dot to avoid repeating it per student). */
 const PERIOD_STATUS_STYLE: Record<AttStatus, { tone: BadgeTone; solid: boolean }> = {
@@ -105,6 +105,7 @@ const PERIOD_STATUS_STYLE: Record<AttStatus, { tone: BadgeTone; solid: boolean }
   late: { tone: 'success', solid: false },
   absent: { tone: 'danger', solid: true },
   half_day: { tone: 'info', solid: false },
+  pending: { tone: 'neutral', solid: false },
 }
 const PERIOD_DOT_STYLE: CSSProperties = {
   padding: '2px 7px', borderRadius: 5, fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap', minWidth: 18, minHeight: 18,
@@ -242,6 +243,7 @@ const EXPORT_STATUS_COLOR: Record<AttStatus, CellColor> = {
   late: { bg: '#ECFDF5', text: '#15803D' },
   absent: { bg: '#FEE2E2', text: '#991B1B' },
   half_day: { bg: '#DBEAFE', text: '#1E40AF' },
+  pending: { bg: '#F1F5F9', text: '#334155' },
 }
 const EXPORT_BLANK_COLOR: CellColor = { bg: '#F3F4F6', text: '#6B7280' }
 

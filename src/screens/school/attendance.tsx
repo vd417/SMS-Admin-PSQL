@@ -71,8 +71,8 @@ const GROUP_OPTS_TEACHER = [
   { value: 'advanced', label: 'Advanced' },
 ]
 
-const STATUS_TONE: Record<AttStatus, BadgeTone> = { present: 'success', late: 'warning', absent: 'danger', half_day: 'warning' }
-const STATUS_LABEL: Record<AttStatus, string> = { present: 'Present', late: 'Late', absent: 'Absent', half_day: 'Half day' }
+const STATUS_TONE: Record<AttStatus, BadgeTone> = { present: 'success', late: 'warning', absent: 'danger', half_day: 'warning', pending: 'neutral' }
+const STATUS_LABEL: Record<AttStatus, string> = { present: 'Present', late: 'Late', absent: 'Absent', half_day: 'Half day', pending: 'Pending' }
 const PEOPLE_STATUS_OPTS = [
   { value: 'present', label: 'Present' },
   { value: 'half_day', label: 'Half day' },
@@ -234,7 +234,7 @@ function StaffRoster({ group, editable }: { group: 'teachers' | 'staff'; editabl
   )
 
   const counts = useMemo(() => {
-    const c = { present: 0, late: 0, absent: 0, half_day: 0, unmarked: 0 }
+    const c = { present: 0, late: 0, absent: 0, half_day: 0, pending: 0, unmarked: 0 }
     searched.forEach((p) => { c[p.status ?? 'unmarked']++ })
     return c
   }, [searched])

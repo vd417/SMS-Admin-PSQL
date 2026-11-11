@@ -42,7 +42,7 @@ describe('overviewToCsv', () => {
   it('includes every filtered student, not a page', () => {
     const csv = overviewToCsv([{
       roll: '1', name: 'Aarav', studentId: 's1', adm: 'ADM1', cls: '12-A', section: 'A',
-      present: 5, absent: 1, late: 0, leave: 0, total: 6, pct: 83.3, status: 'Good',
+      present: 5, absent: 1, late: 0, leave: 0, pending: 0, total: 6, pct: 83.3, status: 'Good',
     }])
     expect(csv.split('\n')[0]).toContain('Attendance %')
     expect(csv).toContain('Aarav')
