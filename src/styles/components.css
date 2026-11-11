@@ -94,9 +94,27 @@ html[data-theme=dark] .sm-card-ic{ background:var(--surface-3); }
 
 /* ---------- Fields ---------- */
 .sm-field { display:flex; flex-direction:column; gap:6px; }
+.report-filter-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:12px; margin-top:12px; align-items:end; }
+.report-filter-grid .sm-field { min-width:0; }
 .sm-label { font-size:12.5px; font-weight:600; color:var(--text); }
 .sm-req { color:var(--danger); margin-left:2px; }
 .sm-hint { font-size:11.5px; color:var(--text-3); }
+.integration-stack { display:flex; flex-direction:column; gap:14px; }
+.integration-panel { border:1px solid var(--border); border-radius:var(--r-lg); background:var(--surface); padding:14px; }
+.integration-panel-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.integration-panel-copy { min-width:0; }
+.integration-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-top:12px; }
+.integration-grid .sm-field { min-width:0; }
+.integration-fold { margin-top:10px; border:1px solid var(--border); border-radius:var(--r-md); background:var(--surface-2); }
+.integration-fold-btn { width:100%; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 12px; border:0; background:transparent; color:inherit; font:inherit; text-align:left; cursor:pointer; }
+.integration-fold-btn .integration-chev { color:var(--text-3); transition:transform .15s ease; }
+.integration-fold.open .integration-chev { transform:rotate(180deg); }
+.integration-fold-body { padding:0 12px 12px; }
+.integration-switches { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:8px; }
+.integration-switch { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:40px; padding:8px 10px; border:1px solid var(--border); border-radius:var(--r-sm); background:var(--surface); }
+.integration-chips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+.integration-chip { font-size:11px; line-height:1.4; padding:2px 7px; border-radius:999px; background:var(--surface); color:var(--text-2); border:1px solid var(--border); }
+.integration-preview { white-space:pre-wrap; padding:10px 12px; border:1px solid var(--border); border-radius:var(--r-sm); background:var(--surface); }
 .sm-err { font-size:11.5px; color:var(--danger); display:flex; align-items:center; gap:4px; }
 .sm-input-wrap { position:relative; display:flex; align-items:center; }
 .sm-input { width:100%; height:38px; border:1px solid var(--border-2); border-radius:var(--r-sm); background:var(--surface);

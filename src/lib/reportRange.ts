@@ -1,4 +1,4 @@
-export type ReportPreset = 'today' | 'yesterday' | 'week' | 'month' | 'lastMonth' | 'year' | 'custom'
+export type ReportPreset = 'today' | 'yesterday' | 'week' | 'lastWeek' | 'month' | 'lastMonth' | 'year' | 'custom'
 
 export function localIso(d: Date): string {
   const y = d.getFullYear()
@@ -25,6 +25,13 @@ export function rangeForPreset(preset: ReportPreset, now = new Date()): { from: 
     return { from: iso, to: iso }
   }
   if (preset === 'week') return { from: localIso(startOfWeek(today)), to }
+  if (preset === 'lastWeek') {
+    const start = startOfWeek(today)
+    start.setDate(start.getDate() - 7)
+    const end = new Date(start)
+    end.setDate(start.getDate() + 6)
+    return { from: localIso(start), to: localIso(end) }
+  }
   if (preset === 'month') return { from: localIso(new Date(today.getFullYear(), today.getMonth(), 1)), to }
   if (preset === 'lastMonth') {
     const start = new Date(today.getFullYear(), today.getMonth() - 1, 1)

@@ -53,6 +53,7 @@ export interface AttendanceSummaryStudent {
   absent: number
   late: number
   leave: number
+  half?: number
   pending: number
   total: number
   pct: number
@@ -72,8 +73,8 @@ export interface AttendanceDayRow {
 
 /** Overview table as CSV. Exports every filtered student, not one page. */
 export function overviewToCsv(students: AttendanceSummaryStudent[]): string {
-  const header = ['Roll No', 'Student Name', 'Present Days', 'Absent Days', 'Pending Days', 'Total Days', 'Attendance %', 'Status']
-  const lines = students.map((s) => [s.roll, s.name, s.present, s.absent, s.pending, s.total, s.pct, s.status].map(csvCell).join(','))
+  const header = ['Roll No', 'Admission No', 'Student Name', 'Present Days', 'Absent Days', 'Late Days', 'Half Days', 'Pending Days', 'Total Days', 'Attendance %', 'Status']
+  const lines = students.map((s) => [s.roll, s.adm, s.name, s.present, s.absent, s.late, s.half ?? 0, s.pending, s.total, s.pct, s.status].map(csvCell).join(','))
   return [header.join(','), ...lines].join('\n')
 }
 

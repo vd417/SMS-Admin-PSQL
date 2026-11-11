@@ -114,6 +114,23 @@ export interface SchoolEmailSettings {
   replyTo?: string
   receiptTemplate?: string
   reminderTemplate?: string
+  overdueTemplate?: string
+  provider?: string
+  smtpHost?: string
+  smtpPort?: number
+  encryption?: string
+  smtpUsername?: string
+  smtpPassword?: string
+  smtpPasswordSet?: boolean
+  notifyLoginOtp?: boolean
+  notifyForgotOtp?: boolean
+  notifyFeeReceipt?: boolean
+  notifyFeeDue?: boolean
+  notifyFeeOverdue?: boolean
+  notifyGeneral?: boolean
+  status?: 'connected' | 'failed' | 'not_configured'
+  lastTestAt?: string | null
+  lastError?: string
 }
 
 export interface SchoolSmsSettings {

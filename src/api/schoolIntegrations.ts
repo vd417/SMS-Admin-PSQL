@@ -29,3 +29,15 @@ export async function saveSchoolIntegrations(input: SaveSchoolIntegrationsInput)
 export async function verifySchoolRazorpay(): Promise<{ status: RazorpayStatus }> {
   return request<{ status: RazorpayStatus }>('/school/integrations/razorpay/verify', { method: 'POST' })
 }
+
+export async function testSchoolEmailConnection(): Promise<{ status: string; lastTestAt?: string }> {
+  const wire = await request<Record<string, unknown>>('/school/integrations/email/test-connection', { method: 'POST' })
+  return snakeToCamel<{ status: string; lastTestAt?: string }>(wire)
+}
+
+export async function sendSchoolTestEmail(to: string, template?: string): Promise<{ sent: boolean }> {
+  return request<{ sent: boolean }>('/school/integrations/email/test-send', {
+    method: 'POST',
+    body: camelToSnake({ to, template }),
+  })
+}

@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useApp, useToast } from '@/lib/hooks'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useToast } from '@/lib/hooks'
 import { ApiError } from '@/api/client'
 import {
   downloadSchoolReport, emailSchoolReport, listReportScheduleRuns, listReportSchedules,
@@ -8,13 +8,12 @@ import {
   type SchoolReportCatalogItem, type SchoolReportOptions, type SchoolReportQuery,
   type SchoolReportResult, type SchoolReportRun, type SchoolReportSchedule,
 } from '@/api/schoolReports'
-import { rangeForPreset } from '@/lib/reportRange'
+import { rangeForPreset, type ReportPreset } from '@/lib/reportRange'
 import { listClasses, type SchoolClass } from '@/api/classes'
-import { can } from '@/lib/gating'
 import { AttendanceRegister } from './attendanceRegister'
 import { HBars, Donut, Legend } from '@/components/charts/Charts'
 import {
-  PageHead, Card, CardHead, Btn, Badge, Search, Select, Field, Input, Textarea, DataTable, Icon,
+  PageHead, Card, CardHead, Btn, Badge, Search, Select, Field, Input, Textarea, DataTable, Icon, Skeleton,
   type Column,
 } from '@/components/ui'
 
@@ -138,6 +137,117 @@ function genderValue(label: string): string {
   return label
 }
 
+const DATE_PRESETS: { id: ReportPreset; label: string }[] = [
+  { id: 'today', label: 'Today' },
+  { id: 'yesterday', label: 'Yesterday' },
+  { id: 'week', label: 'This week' },
+  { id: 'lastWeek', label: 'Last week' },
+  { id: 'month', label: 'This month' },
+  { id: 'lastMonth', label: 'Last month' },
+]
+
+const ATTENDANCE_GROUPS = ['Overview', 'Class', 'Student', 'Subject', 'Staff', 'Insights']
+
+const ATTENDANCE_VIEWS: { id: string; group: string; label: string; key: string; preset?: ReportPreset }[] = [
+  { id: 'school', group: 'Overview', label: 'School-wise', key: 'student_attendance_summary' },
+  { id: 'daily', group: 'Overview', label: 'Daily', key: 'student_attendance_daily', preset: 'today' },
+  { id: 'weekly', group: 'Overview', label: 'Weekly', key: 'student_attendance_summary', preset: 'week' },
+  { id: 'monthly', group: 'Overview', label: 'Monthly', key: 'student_attendance_summary', preset: 'month' },
+  { id: 'class', group: 'Class', label: 'Class-wise', key: 'student_attendance_class' },
+  { id: 'section', group: 'Class', label: 'Section-wise', key: 'student_attendance_class' },
+  { id: 'compare', group: 'Class', label: 'Class comparison', key: 'student_attendance_compare' },
+  { id: 'lowest', group: 'Class', label: 'Lowest sections', key: 'student_attendance_lowest' },
+  { id: 'student', group: 'Student', label: 'Student-wise', key: 'student_attendance_summary' },
+  { id: 'history', group: 'Student', label: 'History', key: 'student_attendance_history' },
+  { id: 'by-subject', group: 'Student', label: 'Subject-wise', key: 'student_attendance_by_subject' },
+  { id: 'low', group: 'Student', label: 'Below 75%', key: 'student_attendance_low' },
+  { id: 'streak', group: 'Student', label: 'Absent 3 days', key: 'student_attendance_streak' },
+  { id: 'streak5', group: 'Student', label: 'Absent 5 days', key: 'student_attendance_streak5' },
+  { id: 'streak7', group: 'Student', label: 'Absent 7 days', key: 'student_attendance_streak7' },
+  { id: 'subject', group: 'Subject', label: 'Subject summary', key: 'student_attendance_subject' },
+  { id: 'period', group: 'Subject', label: 'Period-wise', key: 'student_attendance_period' },
+  { id: 'detail', group: 'Subject', label: 'Period detail', key: 'student_attendance' },
+  { id: 'marking', group: 'Staff', label: 'Teacher marking', key: 'student_attendance_marking' },
+  { id: 'pending', group: 'Staff', label: 'Pending', key: 'student_attendance_pending' },
+  { id: 'corrections', group: 'Staff', label: 'Corrections', key: 'student_attendance_corrections' },
+  { id: 'trend', group: 'Insights', label: 'Trends', key: 'student_attendance_trend' },
+  { id: 'range', group: 'Insights', label: 'Range comparison', key: 'student_attendance_compare' },
+  { id: 'decline', group: 'Insights', label: 'Decline', key: 'student_attendance_decline' },
+  { id: 'improve', group: 'Insights', label: 'Improvement', key: 'student_attendance_improve' },
+  { id: 'absence', group: 'Insights', label: 'Absence analysis', key: 'student_attendance_absence' },
+]
+
+function cellNumber(columns: string[], row: string[], header: string): number | null {
+  const index = columns.findIndex((column) => column.toLowerCase() === header.toLowerCase())
+  if (index < 0) return null
+  const value = Number(String(row[index] ?? '').replace(/,/g, ''))
+  return Number.isFinite(value) ? value : 0
+}
+
+function columnTotal(result: SchoolReportResult, header: string): number | null {
+  if (columnIndex(result.columns, header) < 0) return null
+  return result.rows.reduce((sum, row) => sum + (cellNumber(result.columns, row, header) ?? 0), 0)
+}
+
+function attendanceDashboard(result: SchoolReportResult) {
+  const present = columnTotal(result, 'Present Days')
+  const absent = columnTotal(result, 'Absent Days')
+  const leave = columnTotal(result, 'Leave Days')
+  const late = columnTotal(result, 'Late Days')
+  const working = columnTotal(result, 'Total Working Days')
+  if (present == null || absent == null || leave == null || late == null) return null
+  const marked = present + absent + leave + late
+  const perStudent = columnIndex(result.columns, 'Admission No.') >= 0 && columnIndex(result.columns, 'Present Days') >= 0
+  const buckets = { present: 0, absent: 0, leave: 0, late: 0 }
+  if (perStudent) {
+    for (const row of result.rows) {
+      const p = cellNumber(result.columns, row, 'Present Days') ?? 0
+      const a = cellNumber(result.columns, row, 'Absent Days') ?? 0
+      const lv = cellNumber(result.columns, row, 'Leave Days') ?? 0
+      const lt = cellNumber(result.columns, row, 'Late Days') ?? 0
+      const attended = p + lt
+      const kind = (p + a + lv + lt) <= 0 ? ''
+        : lv > attended && lv >= a ? 'leave'
+        : a > attended && a >= lv ? 'absent'
+        : lt > p && lt >= a && lt >= lv ? 'late'
+        : 'present'
+      if (kind) buckets[kind as keyof typeof buckets] += 1
+    }
+  }
+  const students = columnIndex(result.columns, 'Students') >= 0
+    ? columnTotal(result, 'Students') ?? 0
+    : result.rows.length
+  const pctIndex = columnIndex(result.columns, 'Attendance Percentage')
+  const below = pctIndex < 0 ? 0 : result.rows.filter((row) => {
+    const pct = cellNumber(result.columns, row, 'Attendance Percentage') ?? 0
+    const days = cellNumber(result.columns, row, 'Total Working Days')
+    return pct < 75 && (days == null || days > 0)
+  }).length
+  const pendingClasses = new Set<string>()
+  if (columnIndex(result.columns, 'Admission No.') >= 0 && working != null) {
+    for (const row of result.rows) {
+      const days = cellNumber(result.columns, row, 'Total Working Days') ?? 0
+      const done = (cellNumber(result.columns, row, 'Present Days') ?? 0)
+        + (cellNumber(result.columns, row, 'Absent Days') ?? 0)
+        + (cellNumber(result.columns, row, 'Leave Days') ?? 0)
+        + (cellNumber(result.columns, row, 'Late Days') ?? 0)
+      if (days > done) pendingClasses.add(`${row[columnIndex(result.columns, 'Class')]}|${row[columnIndex(result.columns, 'Section')]}`)
+    }
+  }
+  return {
+    students,
+    present: perStudent ? buckets.present : present,
+    absent: perStudent ? buckets.absent : absent,
+    leave: perStudent ? buckets.leave : leave,
+    late: perStudent ? buckets.late : late,
+    studentCounts: perStudent,
+    pct: marked ? Math.round(((present + late) / marked) * 1000) / 10 : 0,
+    completion: working ? Math.round((Math.min(marked, working) / working) * 1000) / 10 : 0,
+    below,
+    pendingClasses: pendingClasses.size,
+  }
+}
+
 const PIE_COLORS = ['var(--brand-600)', 'var(--success)', 'var(--warning)', 'var(--danger)', '#7c3aed', '#0891b2', '#ea580c', '#0f766e']
 
 const PIE_FIELDS: Record<string, string[]> = {
@@ -223,16 +333,23 @@ function ReportTypeChecks({ catalog, pickedKeys, onToggle, onToggleAll, width = 
   width?: number
 }) {
   const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
   const box = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      setQuery('')
+      return
+    }
     const close = (event: MouseEvent) => {
       if (!box.current?.contains(event.target as Node)) setOpen(false)
     }
     document.addEventListener('mousedown', close)
+    searchRef.current?.focus()
     return () => document.removeEventListener('mousedown', close)
   }, [open])
   const picked = catalog.filter((item) => pickedKeys.includes(item.key))
+  const needle = query.trim().toLowerCase()
   const label = picked.length === 0
     ? 'Select reports'
     : picked.length === catalog.length
@@ -248,113 +365,143 @@ function ReportTypeChecks({ catalog, pickedKeys, onToggle, onToggleAll, width = 
       </button>
       {open && (
         <div style={{
-          position: 'absolute', zIndex: 40, top: 'calc(100% + 4px)', left: 0, width,
-          maxHeight: 280, overflowY: 'auto', background: 'var(--surface)',
-          border: '1px solid var(--border-2)', borderRadius: 8, boxShadow: '0 8px 20px rgba(15, 23, 42, .12)',
-          padding: '6px 8px',
+          position: 'absolute', zIndex: 40, top: 'calc(100% + 4px)', left: 0, width: Math.max(width, 420),
+          background: 'var(--surface)', border: '1px solid var(--border-2)', borderRadius: 8,
+          boxShadow: '0 8px 20px rgba(15, 23, 42, .12)', display: 'flex', flexDirection: 'column',
         }}>
+          <input
+            ref={searchRef}
+            className="sm-input"
+            value={query}
+            placeholder="Search reports"
+            aria-label="Search reports"
+            onChange={(event) => setQuery(event.target.value)}
+            style={{ margin: 8, width: 'calc(100% - 16px)' }}
+          />
+          <div style={{ maxHeight: 360, overflowY: 'auto', padding: '0 8px 8px' }}>
           <label className="t-sm row ai-center gap4" style={{ cursor: 'pointer', padding: '4px 2px' }}>
-            <input type="checkbox" checked={catalog.length > 0 && pickedKeys.length === catalog.length} onChange={() => { onToggleAll(); setOpen(false) }} />
+            <input type="checkbox" checked={catalog.length > 0 && pickedKeys.length === catalog.length} onChange={onToggleAll} />
             All reports
           </label>
           {TABS.map((group) => {
-            const items = catalog.filter((item) => item.tab === group.value)
+            const items = catalog.filter((item) => item.tab === group.value && (!needle || item.title.toLowerCase().includes(needle) || group.label.toLowerCase().includes(needle)))
             if (!items.length) return null
             return (
               <div key={group.value}>
                 <div className="t-xs muted" style={{ marginTop: 6 }}>{group.label}</div>
                 {items.map((item) => (
                   <label key={item.key} className="t-sm row ai-center gap4" style={{ cursor: 'pointer', padding: '3px 2px' }}>
-                    <input type="checkbox" checked={pickedKeys.includes(item.key)} onChange={() => { onToggle(item.key); setOpen(false) }} />
+                    <input type="checkbox" checked={pickedKeys.includes(item.key)} onChange={() => onToggle(item.key)} />
                     {item.title}
                   </label>
                 ))}
               </div>
             )
           })}
+          {needle && !TABS.some((group) => catalog.some((item) => item.tab === group.value && (item.title.toLowerCase().includes(needle) || group.label.toLowerCase().includes(needle)))) && (
+            <div className="t-sm muted" style={{ padding: '8px 2px' }}>No matching reports</div>
+          )}
+          </div>
         </div>
       )}
     </div>
   )
 }
 
-function DateRangeFields({ fromDate, fromTime, toDate, toTime, onFrom, onTo }: {
+function DateRangeFields({ fromDate, toDate, onFrom, onTo }: {
   fromDate: string
-  fromTime: string
   toDate: string
-  toTime: string
-  onFrom: (date: string, time: string) => void
-  onTo: (date: string, time: string) => void
+  onFrom: (date: string) => void
+  onTo: (date: string) => void
 }) {
   return (
-    <div className="row gap12 wrap">
-      <div style={{ width: 220 }}>
-        <Field label="From date">
-          <Input
-            type="datetime-local"
-            value={fromDate ? `${fromDate}T${fromTime || '00:00'}` : ''}
-            onChange={(e) => {
-              const [date, time] = e.target.value.split('T')
-              onFrom(date ?? '', (time ?? '').slice(0, 5))
-            }}
-          />
-        </Field>
-      </div>
-      <div style={{ width: 220 }}>
-        <Field label="To date">
-          <Input
-            type="datetime-local"
-            value={toDate ? `${toDate}T${toTime || '00:00'}` : ''}
-            onChange={(e) => {
-              const [date, time] = e.target.value.split('T')
-              onTo(date ?? '', (time ?? '').slice(0, 5))
-            }}
-          />
-        </Field>
-      </div>
+    <div className="report-filter-grid">
+      <Field label="From date">
+        <Input type="date" value={fromDate} onChange={(e) => onFrom(e.target.value)} />
+      </Field>
+      <Field label="To date">
+        <Input type="date" value={toDate} min={fromDate || undefined} onChange={(e) => onTo(e.target.value)} />
+      </Field>
     </div>
   )
 }
 
-function CompactSelect({ value, onChange, options, width = 200 }: {
+function CompactSelect({ value, onChange, options, width = 200, searchable = false, fill = false }: {
   value: string
   onChange: (value: string) => void
-  options: { value: string; label: string }[]
+  options: { value: string; label: string; group?: string }[]
   width?: number
+  searchable?: boolean
+  fill?: boolean
 }) {
   const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
   const box = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      setQuery('')
+      return
+    }
     const close = (event: MouseEvent) => {
       if (!box.current?.contains(event.target as Node)) setOpen(false)
     }
     document.addEventListener('mousedown', close)
+    if (searchable) searchRef.current?.focus()
     return () => document.removeEventListener('mousedown', close)
-  }, [open])
+  }, [open, searchable])
   const label = options.find((option) => option.value === value)?.label ?? 'All'
+  const needle = query.trim().toLowerCase()
+  const shown = needle
+    ? options.filter((option) => `${option.group ?? ''} ${option.label}`.toLowerCase().includes(needle))
+    : options
+  const menu: ReactNode[] = []
+  let lastGroup = ''
+  for (const option of shown) {
+    if (option.group && option.group !== lastGroup) {
+      lastGroup = option.group
+      menu.push(<div key={`g-${option.group}`} className="t-xs muted" style={{ padding: '8px 12px 2px', fontWeight: 700 }}>{option.group}</div>)
+    }
+    menu.push(
+      <button
+        key={option.value || 'all'}
+        type="button"
+        role="option"
+        aria-selected={option.value === value}
+        className="sm-menu-item"
+        onClick={() => { onChange(option.value); setOpen(false) }}
+      >
+        {option.label}
+      </button>,
+    )
+  }
   return (
-    <div ref={box} style={{ position: 'relative', width }}>
-      <button type="button" className="sm-input" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', textAlign: 'left', cursor: 'pointer' }} onClick={() => setOpen((current) => !current)}>
+    <div ref={box} style={{ position: 'relative', width: fill ? '100%' : width }}>
+      <button type="button" className="sm-input" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', textAlign: 'left', cursor: 'pointer', gap: 8 }} onClick={() => setOpen((current) => !current)} aria-expanded={open} aria-haspopup="listbox">
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
         <Icon name="chevDown" size={16} />
       </button>
       {open && (
         <div style={{
-          position: 'absolute', zIndex: 40, top: 'calc(100% + 4px)', left: 0, width,
-          maxHeight: 240, overflowY: 'auto', background: 'var(--surface)',
-          border: '1px solid var(--border-2)', borderRadius: 8, boxShadow: '0 8px 20px rgba(15, 23, 42, .12)',
+          position: 'absolute', zIndex: 40, top: 'calc(100% + 4px)', left: 0, minWidth: '100%', width: searchable ? 420 : '100%',
+          background: 'var(--surface)', border: '1px solid var(--border-2)', borderRadius: 8,
+          boxShadow: '0 8px 20px rgba(15, 23, 42, .12)', display: 'flex', flexDirection: 'column',
         }}>
-          {options.map((option) => (
-            <button
-              key={option.value || 'all'}
-              type="button"
-              className="sm-menu-item"
-              onClick={() => { onChange(option.value); setOpen(false) }}
-            >
-              {option.label}
-            </button>
-          ))}
+          {searchable && (
+            <input
+              ref={searchRef}
+              className="sm-input"
+              value={query}
+              placeholder="Search reports"
+              aria-label="Search reports"
+              onChange={(event) => setQuery(event.target.value)}
+              style={{ margin: 8, width: 'calc(100% - 16px)' }}
+            />
+          )}
+          <div role="listbox" style={{ maxHeight: searchable ? 360 : 240, overflowY: 'auto' }}>
+            {shown.length === 0 && <div className="t-sm muted" style={{ padding: 10 }}>{searchable ? 'No matching reports' : 'No matches'}</div>}
+            {menu}
+          </div>
         </div>
       )}
     </div>
@@ -363,8 +510,6 @@ function CompactSelect({ value, onChange, options, width = 200 }: {
 
 export function SchoolReportsScreen() {
   const toast = useToast()
-  const app = useApp()
-  const canMarkAttendance = app.role === 'owner' || app.role === 'admin' || app.role === 'principal' || app.role === 'vice_principal' || can(app.role, 'attendance', 'E')
   const initial = rangeForPreset('month')
   const [catalog, setCatalog] = useState<SchoolReportCatalogItem[]>([])
   const [options, setOptions] = useState<SchoolReportOptions>(emptyOptions)
@@ -397,16 +542,19 @@ export function SchoolReportsScreen() {
   const [mailOpen, setMailOpen] = useState(false)
   const [savingSchedule, setSavingSchedule] = useState(false)
   const [runningId, setRunningId] = useState<string | null>(null)
+  const [attendanceView, setAttendanceView] = useState('school')
+  const [todaySnap, setTodaySnap] = useState<SchoolReportResult | null>(null)
+  const [reportError, setReportError] = useState<string | null>(null)
 
   const report = catalog.find((c) => c.key === reportKey) ?? null
   const reportTypes = TABS.flatMap((group) => {
     const items = catalog
       .filter((item) => item.tab === group.value)
-      .map((item) => ({ value: item.key, label: `${group.label} · ${item.title}` }))
+      .map((item) => ({ value: item.key, label: item.title, group: group.label }))
     if (group.value === 'attendance') {
       items.push(
-        { value: 'attendance_overview', label: 'Attendance Reports · Attendance Overview' },
-        { value: 'attendance_register', label: 'Attendance Reports · Daily Attendance Register' },
+        { value: 'attendance_overview', label: 'Attendance Overview', group: group.label },
+        { value: 'attendance_register', label: 'Daily Attendance Register', group: group.label },
       )
     }
     return items
@@ -435,12 +583,29 @@ export function SchoolReportsScreen() {
   const generate = useCallback(async (query: SchoolReportQuery) => {
     setLoading(true)
     try {
-      const data = await runSchoolReport(query)
+      const today = rangeForPreset('today')
+      const [data, snap] = await Promise.all([
+        runSchoolReport(query),
+        query.reportKey.startsWith('student_attendance')
+          ? runSchoolReport({
+              ...query,
+              reportKey: 'student_attendance_summary',
+              fromDate: today.from,
+              toDate: today.to,
+              summary: false,
+              columns: undefined,
+            }).catch(() => null)
+          : Promise.resolve(null),
+      ])
       setResult(data)
+      setTodaySnap(snap)
+      setReportError(null)
       setHidden([])
       setSearch('')
     } catch (e) {
-      toast.danger('Report failed', errText(e))
+      const message = errText(e)
+      setReportError(message)
+      toast.danger('Report failed', message)
     } finally {
       setLoading(false)
     }
@@ -478,13 +643,13 @@ export function SchoolReportsScreen() {
     void loadSchedules(pickedKeys)
   }, [pickedKeys, loadSchedules])
 
-  const queryFor = (item: SchoolReportCatalogItem, summary = false, columns?: string[]): SchoolReportQuery => {
-    const q: SchoolReportQuery = { reportKey: item.key, fromDate, toDate, summary }
+  const queryFor = (item: SchoolReportCatalogItem, summary = false, columns?: string[], source: FilterState = filters, from = fromDate, to = toDate): SchoolReportQuery => {
+    const q: SchoolReportQuery = { reportKey: item.key, fromDate: from, toDate: to, summary }
     if (fromTime) q.fromTime = fromTime
     if (toTime) q.toTime = toTime
     if (columns) q.columns = columns
     for (const key of item.filters) {
-      const raw = filters[key]?.trim()
+      const raw = source[key]?.trim()
       if (!raw) continue
       const value = key === 'gender' ? genderValue(raw) : raw
       if (key === 'class') q.className = value
@@ -518,6 +683,51 @@ export function SchoolReportsScreen() {
       return q
     }
     return queryFor(report, summary, columns)
+  }
+
+  const openAttendance = (viewId: string, patch: FilterState = {}) => {
+    const view = ATTENDANCE_VIEWS.find((item) => item.id === viewId)
+    const key = view?.key ?? viewId
+    const item = catalog.find((entry) => entry.key === key)
+    if (!item) return
+    const next = { ...filters, ...patch }
+    let from = fromDate
+    let to = toDate
+    if (view?.preset) {
+      const range = rangeForPreset(view.preset)
+      from = range.from
+      to = range.to
+      setFromDate(from)
+      setToDate(to)
+      setFromTime('')
+      setToTime('')
+    }
+    setFilters(next)
+    setReportKey(key)
+    setAttendanceView(view?.id ?? viewId)
+    setPickedKeys((keys) => keys.includes(key) ? keys : [...keys, key])
+    const query = queryFor(item, false, undefined, next, from, to)
+    if (view?.preset) {
+      delete query.fromTime
+      delete query.toTime
+    }
+    void generate(query)
+  }
+
+  const attendanceBack = () => {
+    if (filters.subject) {
+      openAttendance(attendanceView, { subject: '' })
+      return
+    }
+    if (filters.student) {
+      openAttendance('student', { student: '' })
+      return
+    }
+    if (filters.section) {
+      openAttendance('class', { section: '' })
+      return
+    }
+    if (filters.class) openAttendance('school', { class: '' })
   }
 
   const downloadAttendance = (key: string, format?: 'xlsx' | 'pdf') => {
@@ -683,10 +893,11 @@ export function SchoolReportsScreen() {
       />
       <Card style={{ marginTop: 14 }}>
         <CardHead title={attendanceScreen === 'overview' ? 'Attendance Overview' : attendanceScreen === 'register' ? 'Daily Attendance Register' : (report?.title ?? 'Report')} sub={attendanceScreen ? 'Same layout as the attendance screens, with an Excel file of these columns.' : report?.note} icon="doc" />
-        <div className="row gap12 wrap" style={{ marginTop: 12, alignItems: 'flex-end' }}>
+        <div className="report-filter-grid">
           <Field label="Report type">
             <CompactSelect
-              width={280}
+              fill
+              searchable
               value={reportKey}
               onChange={(value) => {
                 if (value === 'attendance_overview' || value === 'attendance_register') {
@@ -700,34 +911,51 @@ export function SchoolReportsScreen() {
               options={reportTypes}
             />
           </Field>
+          {!attendanceScreen && reportKey.startsWith('student_attendance') && (
+          <div className="col gap8" style={{ gridColumn: '1 / -1' }}>
+            <div className="row gap8 wrap">
+              {ATTENDANCE_GROUPS.map((group) => (
+                <div key={group} className="row gap4 wrap ai-center">
+                  <span className="t-xs muted">{group}</span>
+                  {ATTENDANCE_VIEWS.filter((view) => view.group === group).map((view) => (
+                    <Btn key={view.id} size="sm" variant={attendanceView === view.id ? 'primary' : 'secondary'} onClick={() => openAttendance(view.id)}>
+                      {view.label}
+                    </Btn>
+                  ))}
+                </div>
+              ))}
+            </div>
+            <div className="row gap8 wrap">
+              {DATE_PRESETS.map((preset) => (
+                <Btn key={preset.id} size="sm" variant="secondary" onClick={() => {
+                  const range = rangeForPreset(preset.id)
+                  setFromDate(range.from)
+                  setToDate(range.to)
+                  setFromTime('')
+                  setToTime('')
+                }}>{preset.label}</Btn>
+              ))}
+            </div>
+            <div className="row gap8 wrap ai-center">
+              <span className="t-xs muted">School</span>
+              {filters.class && <Btn size="sm" variant="secondary" onClick={() => openAttendance('class', { section: '', student: '', subject: '' })}>{filters.class}</Btn>}
+              {filters.section && <Btn size="sm" variant="secondary" onClick={() => openAttendance('section', { student: '', subject: '' })}>{filters.section}</Btn>}
+              {filters.student && <Btn size="sm" variant="secondary" onClick={() => openAttendance('history')}>{filters.student}</Btn>}
+              {filters.subject && <span className="t-xs">{filters.subject}</span>}
+              {(filters.class || filters.section || filters.student || filters.subject) && (
+                <Btn size="sm" variant="secondary" onClick={attendanceBack}>Back</Btn>
+              )}
+            </div>
+          </div>
+          )}
           {!attendanceScreen && (
           <>
-          <div style={{ width: 220 }}>
             <Field label="From date">
-              <Input
-                type="datetime-local"
-                value={fromDate ? `${fromDate}T${fromTime || '00:00'}` : ''}
-                onChange={(e) => {
-                  const [date, time] = e.target.value.split('T')
-                  setFromDate(date ?? '')
-                  setFromTime((time ?? '').slice(0, 5))
-                }}
-              />
+              <Input type="date" value={fromDate} onChange={(e) => { setFromDate(e.target.value); setFromTime('') }} />
             </Field>
-          </div>
-          <div style={{ width: 220 }}>
             <Field label="To date">
-              <Input
-                type="datetime-local"
-                value={toDate ? `${toDate}T${toTime || '00:00'}` : ''}
-                onChange={(e) => {
-                  const [date, time] = e.target.value.split('T')
-                  setToDate(date ?? '')
-                  setToTime((time ?? '').slice(0, 5))
-                }}
-              />
+              <Input type="date" value={toDate} min={fromDate || undefined} onChange={(e) => { setToDate(e.target.value); setToTime('') }} />
             </Field>
-          </div>
           {(report?.filters ?? []).map((key) => {
             const choices = optionList(key, options, schoolClasses, filters.class ?? '')
             const list = key === 'attendanceStatus' && (report?.key ?? '').startsWith('student_attendance')
@@ -737,10 +965,11 @@ export function SchoolReportsScreen() {
             return (
             <Field key={key} label={FILTER_LABEL[key] ?? key}>
               {TEXT_FILTERS.has(key)
-                ? <Input value={filters[key] ?? ''} placeholder={placeholder} onChange={(e) => setFilters((f) => ({ ...f, [key]: e.target.value }))} style={{ width: 200 }} />
+                ? <Input value={filters[key] ?? ''} placeholder={placeholder} onChange={(e) => setFilters((f) => ({ ...f, [key]: e.target.value }))} />
                 : <CompactSelect
+                    fill
                     value={filters[key] ?? ''}
-                    onChange={(value) => setFilters((current) => ({ ...current, [key]: value }))}
+                    onChange={(value) => setFilters((current) => ({ ...current, [key]: value, ...(key === 'class' ? { section: '' } : {}) }))}
                     options={[{ value: '', label: 'All' }, ...list.map((item) => ({ value: item, label: item }))]}
                   />}
             </Field>
@@ -759,19 +988,75 @@ export function SchoolReportsScreen() {
             setFromDate(range.from); setToDate(range.to); setFromTime(''); setToTime(''); setFilters({})
             void generate({ reportKey, fromDate: range.from, toDate: range.to })
           }}>Reset</Btn>
-          <Btn icon="trend" disabled={loading} onClick={() => void generate(queryOf())}>{loading ? 'Generating…' : 'Generate report'}</Btn>
+          <Btn icon="trend" disabled={loading} onClick={() => void generate(queryOf())}>{loading ? 'Applying…' : reportKey.startsWith('student_attendance') ? 'Apply filters' : 'Generate report'}</Btn>
         </div>
         )}
       </Card>
 
       {attendanceScreen && (
         <div style={{ marginTop: 14 }}>
-          <AttendanceRegister canMark={canMarkAttendance} screen={attendanceScreen} />
+          <AttendanceRegister canMark={false} screen={attendanceScreen} />
         </div>
+      )}
+
+      {loading && reportKey.startsWith('student_attendance') && !attendanceScreen && (
+        <div className="sm-grid-4" style={{ marginTop: 14, gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))' }}>
+          {Array.from({ length: 6 }, (_, i) => <Card key={i}><Skeleton height={28} /></Card>)}
+        </div>
+      )}
+      {reportError && reportKey.startsWith('student_attendance') && !attendanceScreen && (
+        <Card style={{ marginTop: 14 }}>
+          <div className="t-sm">{reportError}</div>
+          <div style={{ marginTop: 8 }}><Btn size="sm" onClick={() => void generate(queryOf())}>Retry</Btn></div>
+        </Card>
       )}
 
       {result && !attendanceScreen && (
         <>
+          {result.reportKey.startsWith('student_attendance') && (
+            <div className="col gap12" style={{ marginTop: 14 }}>
+              {[{ title: 'Today', data: todaySnap }, { title: `Selected range · ${result.fromDate} to ${result.toDate}`, data: result }].map((panel) => {
+                const metrics = panel.data ? attendanceDashboard(panel.data) : null
+                return (
+                  <div key={panel.title}>
+                    <div className="t-sm fw6" style={{ marginBottom: 8 }}>{panel.title}</div>
+                    {metrics ? (
+                      <div>
+                      <div className="sm-grid-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))' }}>
+                        {[
+                          ['Students', String(metrics.students)],
+                          [metrics.studentCounts ? 'Present students' : 'Present days', String(metrics.present)],
+                          [metrics.studentCounts ? 'Absent students' : 'Absent days', String(metrics.absent)],
+                          [metrics.studentCounts ? 'Students on leave' : 'Leave days', String(metrics.leave)],
+                          [metrics.studentCounts ? 'Late students' : 'Late days', String(metrics.late)],
+                          ['Attendance %', `${metrics.pct}%`],
+                          ['Marking completion', `${metrics.completion}%`],
+                          ['Below 75%', String(metrics.below)],
+                          ['Classes pending', String(metrics.pendingClasses)],
+                        ].map(([label, value]) => (
+                          <Card key={label}>
+                            <div className="t-xs muted">{label}</div>
+                            <div className="t-lg fw7">{value}</div>
+                          </Card>
+                        ))}
+                      </div>
+                      <Card style={{ marginTop: 8 }}>
+                        <HBars data={[
+                          { label: metrics.studentCounts ? 'Present' : 'Present days', value: metrics.present },
+                          { label: metrics.studentCounts ? 'Absent' : 'Absent days', value: metrics.absent },
+                          { label: metrics.studentCounts ? 'Leave' : 'Leave days', value: metrics.leave },
+                          { label: metrics.studentCounts ? 'Late' : 'Late days', value: metrics.late },
+                        ]} />
+                      </Card>
+                      </div>
+                    ) : (
+                      <div className="t-sm muted">This view is the daily detail. The totals above use the monthly summary, where each student is counted once.</div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
           <div className="sm-grid-4" style={{ marginTop: 14, gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))' }}>
             {result.cards.map((c) => (
               <Card key={c.label}>
@@ -820,6 +1105,8 @@ export function SchoolReportsScreen() {
                     <>
                       <Btn size="sm" variant="secondary" icon="download" onClick={() => downloadAttendance('student_attendance')}>Excel detailed</Btn>
                       <Btn size="sm" variant="secondary" icon="download" onClick={() => downloadAttendance('student_attendance_summary')}>Excel summary</Btn>
+                      <Btn size="sm" variant="secondary" icon="doc" onClick={() => downloadAttendance('student_attendance', 'pdf')}>PDF detailed</Btn>
+                      <Btn size="sm" variant="secondary" icon="doc" onClick={() => downloadAttendance('student_attendance_summary', 'pdf')}>PDF summary</Btn>
                       <Btn size="sm" variant="secondary" icon="doc" onClick={() => downloadAttendance('student_attendance_history', 'pdf')}>Individual student PDF</Btn>
                       <Btn size="sm" variant="secondary" icon="doc" onClick={() => downloadAttendance('student_attendance_class', 'pdf')}>Class-wise PDF</Btn>
                     </>
@@ -852,7 +1139,29 @@ export function SchoolReportsScreen() {
             {result.reportKey.startsWith('student_attendance') && result.rows.length === 0 ? (
               <div className="t-sm muted" style={{ padding: 16 }}>{attendanceEmptyMessage(result.reportKey, filters.student ?? '')}</div>
             ) : (
-              <DataTable columns={columns} rows={tableRows} pageSize={20} rowKey={(_, i) => i} />
+              <DataTable
+                columns={columns}
+                rows={tableRows}
+                pageSize={20}
+                rowKey={(_, i) => i}
+                onRowClick={result.reportKey.startsWith('student_attendance') && result.reportKey !== 'student_attendance_marking' && result.reportKey !== 'student_attendance_pending' ? (row) => {
+                  const student = row['Admission No.'] || row['Student Name'] || ''
+                  const subject = row.Subject ?? ''
+                  if (result.reportKey === 'student_attendance_class' || result.reportKey === 'student_attendance_lowest' || result.reportKey === 'student_attendance_compare') {
+                    openAttendance('student', { class: row.Class ?? '', section: row.Section ?? '' })
+                    return
+                  }
+                  if (result.reportKey === 'student_attendance_subject' || result.reportKey === 'student_attendance_period') {
+                    openAttendance('by-subject', { class: row.Class ?? '', section: row.Section ?? '', subject })
+                    return
+                  }
+                  if (result.reportKey === 'student_attendance_by_subject' || result.reportKey === 'student_attendance' || result.reportKey === 'student_attendance_history') {
+                    if (student) openAttendance(result.reportKey === 'student_attendance_by_subject' ? 'detail' : 'by-subject', { student, subject })
+                    return
+                  }
+                  if (student) openAttendance('history', { student })
+                } : undefined}
+              />
             )}
           </Card>
         </>
@@ -860,8 +1169,11 @@ export function SchoolReportsScreen() {
 
       {mailOpen && <div className="sm-grid-2" style={{ marginTop: 14, gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', alignItems: 'start' }}>
         <Card>
-          <CardHead title="Email these reports" sub="Sends every ticked report for the dates above to the email in Schedule" icon="message" />
+          <CardHead title="Email these reports" sub="Sends every ticked report for the dates above to this mail id. Schedule uses the same mail id." icon="message" />
           <div style={{ marginTop: 12 }} className="col gap12">
+            <Field label="Mail id">
+              <Textarea value={emails} onChange={(e) => setEmails(e.target.value)} placeholder="name@school.com, another@school.com" />
+            </Field>
             <Field label="Report type">
               <ReportTypeChecks
                 catalog={catalog}
@@ -872,11 +1184,9 @@ export function SchoolReportsScreen() {
             </Field>
             <DateRangeFields
               fromDate={fromDate}
-              fromTime={fromTime}
               toDate={toDate}
-              toTime={toTime}
-              onFrom={(date, time) => { setFromDate(date); setFromTime(time) }}
-              onTo={(date, time) => { setToDate(date); setToTime(time) }}
+              onFrom={(date) => { setFromDate(date); setFromTime('') }}
+              onTo={(date) => { setToDate(date); setToTime('') }}
             />
             <Field label="Subject"><Input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="School name and report title" /></Field>
             <Field label="Message"><Textarea value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Optional note" /></Field>
@@ -884,7 +1194,7 @@ export function SchoolReportsScreen() {
               <Select value={format} onChange={(e) => setFormat(e.target.value as 'xlsx' | 'pdf')} options={[{ value: 'xlsx', label: 'Excel' }, { value: 'pdf', label: 'PDF' }]} />
             </Field>
             <div className="t-xs muted">
-              To: {emails.trim() || 'Add an email in the mail box'} · Reports: {pickedReports.length ? pickedReports.map((item) => item.title).join(', ') : 'Tick the reports to send'} · From {fromDate || '—'} to {toDate || '—'} · Class: {filters.class?.trim() || 'All'} · Section: {filters.section?.trim() || 'All'}
+              To: {emails.trim() || 'Enter a mail id above'} · Reports: {pickedReports.length ? pickedReports.map((item) => item.title).join(', ') : 'Tick the reports to send'} · From {fromDate || '—'} to {toDate || '—'} · Class: {filters.class?.trim() || 'All'} · Section: {filters.section?.trim() || 'All'}
             </div>
             <div className="row jc-end">
               <Btn icon="message" disabled={sendingMail} onClick={() => void sendMail()}>
@@ -898,11 +1208,11 @@ export function SchoolReportsScreen() {
         <Card>
           <CardHead
             title="Schedule email"
-            sub="One mail box for Send now and for Schedule. Daily sends yesterday, weekly the last 7 days, 15 days the last 15 days, and monthly the previous month."
+            sub="Uses the mail id in Email these reports. Daily sends yesterday, weekly the last 7 days, 15 days the last 15 days, and monthly the previous month."
             icon="calendar"
           />
           <div style={{ marginTop: 12 }} className="col gap12">
-            <Field label="Email">
+            <Field label="Mail id">
               <Textarea value={emails} onChange={(e) => setEmails(e.target.value)} placeholder="name@school.com, another@school.com" />
             </Field>
             <Field label="Report type">
@@ -926,7 +1236,7 @@ export function SchoolReportsScreen() {
               <Field label="Day of month"><Input type="number" min={1} max={28} value={dayOfMonth} onChange={(e) => setDayOfMonth(e.target.value)} /></Field>
             )}
             <div className="t-xs muted">
-              To: {emails.trim() || 'Add an email in the mail box'} · Reports: {pickedReports.length ? pickedReports.map((item) => item.title).join(', ') : 'Tick the reports to schedule'} · {frequencyLabel(frequency)} · Class: {filters.class?.trim() || 'All'} · Section: {filters.section?.trim() || 'All'}. Each ticked report gets its own schedule.
+              To: {emails.trim() || 'Enter a mail id above'} · Reports: {pickedReports.length ? pickedReports.map((item) => item.title).join(', ') : 'Tick the reports to schedule'} · {frequencyLabel(frequency)} · Class: {filters.class?.trim() || 'All'} · Section: {filters.section?.trim() || 'All'}. Each ticked report gets its own schedule.
             </div>
             <div className="row jc-end gap8">
               {editId && <Btn variant="secondary" onClick={() => setEditId(undefined)}>Cancel edit</Btn>}

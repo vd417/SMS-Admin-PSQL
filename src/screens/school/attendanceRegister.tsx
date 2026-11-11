@@ -46,6 +46,14 @@ const ABSENT_COLOR: CellColor = { bg: '#FEE2E2', text: '#991B1B' }
 const CYCLE: AttendanceStatus[] = ['present', 'absent', 'late', 'half_day', 'pending']
 const PENDING_COLOR: CellColor = { bg: '#F1F5F9', text: '#334155' }
 
+function dmy(day: string): string {
+  const [year, month, date] = day.split('-')
+  return year && month && date ? `${date}-${month}-${year}` : day
+}
+function dayHead(day: string): string {
+  const [, month, date] = day.split('-')
+  return date && month ? `${date}/${month}` : day
+}
 function iso(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
@@ -96,25 +104,48 @@ export function AttendanceRegister({ canMark, screen }: { canMark: boolean; scre
 
   const classes = classesQ.data ?? []
   const grades = useMemo(() => [...new Set(classes.map((c) => c.grade).filter(Boolean))], [classes])
-  const sections = classes.filter((c) => !grade || c.grade === grade)
-  const selected = classes.find((c) => c.id === classId)
-  const roster = useMemo(
-    () => (studentsQ.data ?? []).filter((s) => selected && studentMatchesClass(s, selected)).sort((a, b) => a.roll - b.roll || a.name.localeCompare(b.name)),
-    [studentsQ.data, selected],
+  const sections = classes.filter((c) => c.id && (!grade || c.grade === grade))
+  const scope = useMemo(
+    () => (classId ? sections.filter((c) => c.id === classId) : sections),
+    [sections, classId],
   )
+  const scopeKey = scope.map((c) => c.id).join('|')
+  const selected = scope.length === 1 ? scope[0] : undefined
+  const roster = useMemo(() => {
+    const students = studentsQ.data ?? []
+    const seen = new Set<string>()
+    const rows: Student[] = []
+    for (const student of students) {
+      if (seen.has(student.id) || !scope.some((item) => studentMatchesClass(student, item))) continue
+      seen.add(student.id)
+      rows.push(student)
+    }
+    return rows.sort((a, b) => (a.cls || '').localeCompare(b.cls || '') || a.roll - b.roll || a.name.localeCompare(b.name))
+  }, [studentsQ.data, scope])
   const dates = useMemo(() => daysOf(from, to), [from, to])
 
   useEffect(() => {
-    if (!classId) { setRecords([]); return }
+    const ids = scopeKey ? scopeKey.split('|') : []
+    if (!ids.length) { setRecords([]); setLoading(false); return }
     let live = true
     setLoading(true)
     setError('')
-    void listClassAttendanceRange(classId, from, to)
-      .then((rows) => { if (live) setRecords(rows) })
-      .catch((e) => { if (live) setError(e instanceof Error ? e.message : 'Could not load attendance') })
-      .finally(() => { if (live) setLoading(false) })
+    void (async () => {
+      try {
+        const out: AttendanceRecord[] = []
+        for (let i = 0; i < ids.length; i += 4) {
+          const groups = await Promise.all(ids.slice(i, i + 4).map((id) => listClassAttendanceRange(id, from, to)))
+          out.push(...groups.flat())
+        }
+        if (live) setRecords(out)
+      } catch (e) {
+        if (live) setError(e instanceof Error ? e.message : 'Could not load attendance')
+      } finally {
+        if (live) setLoading(false)
+      }
+    })()
     return () => { live = false }
-  }, [classId, from, to, saving])
+  }, [scopeKey, from, to, saving])
 
   const byStudentDay = useMemo(() => {
     const map = new Map<string, AttendanceRecord>()
@@ -126,17 +157,18 @@ export function AttendanceRegister({ canMark, screen }: { canMark: boolean; scre
     let present = 0
     let absent = 0
     let late = 0
-    let leave = 0
+    let half = 0
     let pending = 0
     for (const day of dates) {
       const mark = byStudentDay.get(`${s.id}|${day}`)
       if (!mark || mark.status === 'pending') { pending += 1; continue }
-      if (mark.status === 'present' || mark.status === 'half_day') present += 1
+      if (mark.status === 'present') present += 1
+      else if (mark.status === 'half_day') half += 1
       else if (mark.status === 'absent') absent += 1
       else if (mark.status === 'late') late += 1
     }
     const total = dates.length
-    const pct = total ? Math.round((present / total) * 1000) / 10 : 0
+    const pct = total ? Math.round(((present + half) / total) * 1000) / 10 : 0
     return {
       roll: s.roll ? String(s.roll) : '—',
       name: s.name,
@@ -144,7 +176,7 @@ export function AttendanceRegister({ canMark, screen }: { canMark: boolean; scre
       adm: s.adm,
       cls: s.cls || selected?.name || '',
       section: s.section,
-      present, absent, late, leave, pending, total, pct,
+      present, absent, late, leave: 0, half, pending, total, pct,
       status: performance(pct, total).label,
     }
   }), [roster, dates, byStudentDay, selected])
@@ -162,7 +194,7 @@ export function AttendanceRegister({ canMark, screen }: { canMark: boolean; scre
   const good = filtered.filter((s) => s.total > 0 && s.pct >= 75).length
   const low = filtered.filter((s) => s.total === 0 || s.pct < 75).length
 
-  useEffect(() => { setPage(0) }, [query, statusFilter, classId, from, to])
+  useEffect(() => { setPage(0) }, [query, statusFilter, scopeKey, from, to])
 
   const meta: ReportMeta = {
     schoolName: app.school.name,
@@ -171,12 +203,64 @@ export function AttendanceRegister({ canMark, screen }: { canMark: boolean; scre
     logoInitials: app.school.logo,
     brandColor: app.school.color,
     currency: app.school.currency,
-    period: `${from} to ${to}`,
+    period: `${dmy(from)} to ${dmy(to)}`,
+  }
+  const classLabel = selected
+    ? `${selected.name || selected.grade}${selected.section ? ` · Section ${selected.section}` : ''}`
+    : grade ? `${grade} · All sections` : 'All classes'
+  const classTag = (student: Student) => {
+    const match = scope.find((item) => studentMatchesClass(student, item))
+    if (match?.grade && match.section) return `${match.grade}-${match.section}`
+    return match?.name || student.cls || '—'
+  }
+  const legend = 'P Present · A Absent · L Late · H Half day · N Pending · Good is 75% and above · Warning is below 75%'
+
+  const reportSpec = () => {
+    const overview = view === 'overview'
+    const columns = overview
+      ? ['Roll No', 'Admission No', 'Student Name', 'Present', 'Absent', 'Late', 'Half day', 'Pending', 'Total Days', 'Attendance %', 'Status']
+      : ['Roll', 'Admission No', 'Student', ...(scope.length === 1 ? [] : ['Class']), ...dates.map(dayHead), 'P', 'A', 'L', 'H', 'N']
+    const rows = overview
+      ? filtered.map((s) => [s.roll, s.adm || '—', s.name, s.present, s.absent, s.late, s.half ?? 0, s.pending, s.total, `${s.pct.toFixed(1)}%`, s.status] as (string | number)[])
+      : roster.map((s) => {
+          const letters = dates.map((day) => {
+            const mark = byStudentDay.get(`${s.id}|${day}`)
+            return mark && mark.status !== 'pending' ? LETTER[mark.status].text : 'N'
+          })
+          const count = (letter: string) => letters.filter((item) => item === letter).length
+          const classCell = scope.length === 1 ? [] : [classTag(s)]
+          return [s.roll || '—', s.adm || '—', s.name, ...classCell, ...letters, count('P'), count('A'), count('L'), count('H'), count('N')] as (string | number)[]
+        })
+    const overviewColors: (CellColor | undefined)[][] = filtered.map((s) => [
+      undefined, undefined, undefined, PRESENT_COLOR, ABSENT_COLOR, MARK_COLOR.L, MARK_COLOR.H, PENDING_COLOR, undefined,
+      s.pct >= 75 ? { bg: '#EEF2FF', text: '#4F46E5' } : { bg: '#FFEDD5', text: '#C2410C' },
+      s.status === 'Good' ? GOOD_COLOR : WARNING_COLOR,
+    ])
+    const registerColors: (CellColor | undefined)[][] = roster.map((s) => {
+      const letters = dates.map((day) => {
+        const mark = byStudentDay.get(`${s.id}|${day}`)
+        return mark && mark.status !== 'pending' ? LETTER[mark.status].text : 'N'
+      })
+      return [undefined, undefined, undefined, ...(scope.length === 1 ? [] : [undefined]), ...letters.map((letter) => MARK_COLOR[letter]), MARK_COLOR.P, MARK_COLOR.A, MARK_COLOR.L, MARK_COLOR.H, MARK_COLOR.N]
+    })
+    return {
+      title: overview ? 'Attendance Overview' : 'Attendance Register',
+      subtitle: `${classLabel} · ${dmy(from)} to ${dmy(to)} · ${legend}`,
+      columns,
+      rows,
+      cellColor: overview ? overviewColors : registerColors,
+      summary: [
+        { label: 'Students', value: String(overview ? filtered.length : roster.length) },
+        { label: 'Class average', value: `${classAvg}%` },
+        { label: 'Good', value: String(good) },
+        { label: 'Warning', value: String(low) },
+      ],
+    }
   }
 
   const download = async () => {
-    if (!filtered.length) {
-      toast.danger('Nothing to export', 'Choose a class that has students.')
+    if (!roster.length) {
+      toast.danger('Nothing to export', 'No students in this class.')
       return
     }
     if (format === 'csv') {
@@ -184,62 +268,22 @@ export function AttendanceRegister({ canMark, screen }: { canMark: boolean; scre
       toast.success('CSV downloaded', `${filtered.length} students`)
       return
     }
-    if (format === 'pdf' || format === 'xlsx') {
-      const overview = view === 'overview'
-      const columns = overview
-        ? ['Roll No', 'Student Name', 'Present Days', 'Absent Days', 'Pending Days', 'Total Days', 'Attendance %', 'Status']
-        : ['Admission No', 'Student', 'Abs', 'Lve', ...dates]
-      const rows = overview
-        ? filtered.map((s) => [s.roll, s.name, s.present, s.absent, s.pending, s.total, `${s.pct.toFixed(1)}%`, s.status] as (string | number)[])
-        : roster.map((s) => {
-            const abs = dates.filter((day) => byStudentDay.get(`${s.id}|${day}`)?.status === 'absent').length
-            return [s.adm || '—', s.name, abs, 0, ...dates.map((day) => {
-              const mark = byStudentDay.get(`${s.id}|${day}`)
-              return mark && mark.status !== 'pending' ? LETTER[mark.status].text : 'N'
-            })] as (string | number)[]
-          })
-      const colors: (CellColor | undefined)[][] = overview
-        ? filtered.map((s) => [
-            undefined, undefined, PRESENT_COLOR, ABSENT_COLOR, PENDING_COLOR, undefined,
-            s.pct >= 75 ? { bg: '#EEF2FF', text: '#4F46E5' } : { bg: '#FFEDD5', text: '#C2410C' },
-            s.status === 'Good' ? GOOD_COLOR : WARNING_COLOR,
-          ])
-        : roster.map((s) => [
-            undefined, undefined, undefined, undefined,
-            ...dates.map((day) => {
-              const mark = byStudentDay.get(`${s.id}|${day}`)
-              return MARK_COLOR[mark && mark.status !== 'pending' ? LETTER[mark.status].text : 'N']
-            }),
-          ])
-      if (format === 'pdf') {
-        openReportPdf({
-          title: overview ? 'Attendance Overview' : 'Attendance',
-          subtitle: `${selected?.name ?? 'Class'} · ${from} to ${to}`,
-          columns,
-          rows,
-          cellColor: colors,
-          summary: [
-            { label: 'Students', value: String(filtered.length) },
-            { label: 'Class average', value: `${classAvg}%` },
-            { label: 'Good', value: String(good) },
-            { label: 'Low', value: String(low) },
-          ],
-        }, meta)
-        return
-      }
-      try {
-        await downloadSheet(
-          overview ? `attendance-overview-${from}.xlsx` : `attendance-register-${from}.xlsx`,
-          overview ? 'Attendance Overview' : 'Attendance',
-          columns,
-          rows,
-          colors,
-        )
-        toast.success('Excel downloaded', `${filtered.length} students`)
-      } catch (e) {
-        toast.danger('Excel failed', e instanceof Error ? e.message : 'Could not build the workbook')
-      }
+    const spec = reportSpec()
+    if (format === 'pdf') {
+      openReportPdf(spec, meta)
       return
+    }
+    try {
+      await downloadSheet(
+        view === 'overview' ? `attendance-overview-${from}.xlsx` : `attendance-register-${from}.xlsx`,
+        spec.title,
+        spec.columns,
+        spec.rows,
+        spec.cellColor,
+      )
+      toast.success('Excel downloaded', `${spec.rows.length} students`)
+    } catch (e) {
+      toast.danger('Excel failed', e instanceof Error ? e.message : 'Could not build the workbook')
     }
   }
 
@@ -257,12 +301,14 @@ export function AttendanceRegister({ canMark, screen }: { canMark: boolean; scre
   }
 
   const markOne = async (studentId: string, day: string) => {
-    if (!canMark || !classId) return
+    const student = roster.find((item) => item.id === studentId)
+    const ownerId = classId || scope.find((item) => student && studentMatchesClass(student, item))?.id || ''
+    if (!canMark || !ownerId) return
     const current = byStudentDay.get(`${studentId}|${day}`)?.status ?? 'absent'
     const next = CYCLE[(CYCLE.indexOf(current) + 1) % CYCLE.length]
     setSaving(true)
     try {
-      await saveAttendance(classId, { date: day, records: [{ studentId, status: next }] })
+      await saveAttendance(ownerId, { date: day, records: [{ studentId, status: next }] })
     } catch (e) {
       toast.danger('Could not update', e instanceof Error ? e.message : 'Try again')
     } finally {
@@ -288,7 +334,7 @@ export function AttendanceRegister({ canMark, screen }: { canMark: boolean; scre
       <div className="row ai-center jc-between wrap gap12 att-no-print">
         <div>
           <div className="t-xl fw7">{view === 'overview' ? 'Attendance Overview' : 'Attendance'}</div>
-          <div className="t-sm muted">{selected ? `${selected.name} · ${roster.length} Students` : 'Choose a class and section'}</div>
+          <div className="t-sm muted">{classesQ.isLoading ? 'Loading classes…' : `${classLabel} · ${roster.length} Students`}</div>
           <div className="row gap8 wrap" style={{ marginTop: 8 }}>
             {([
               ['P', 'Present', '#22C55E'],
@@ -310,7 +356,7 @@ export function AttendanceRegister({ canMark, screen }: { canMark: boolean; scre
           {!screen && <Segmented value={view} onChange={(v) => setPicked(v as View)} options={[{ value: 'overview', label: 'Overview' }, { value: 'register', label: 'Daily register' }]} />}
           <Select aria-label="Export format" value={format} onChange={(e) => setFormat(e.target.value as 'xlsx' | 'csv' | 'pdf')} options={[{ value: 'xlsx', label: 'Excel' }, { value: 'csv', label: 'CSV' }, { value: 'pdf', label: 'PDF' }]} />
           <Btn icon="download" onClick={() => void download()}>Download Report</Btn>
-          <Btn variant="secondary" icon="doc" onClick={() => window.print()}>Print</Btn>
+          <Btn variant="secondary" icon="doc" onClick={() => { if (!roster.length) { toast.danger('Nothing to print', 'No students in this class.'); return } openReportPdf(reportSpec(), meta) }}>Print</Btn>
         </div>
       </div>
 
@@ -320,7 +366,7 @@ export function AttendanceRegister({ canMark, screen }: { canMark: boolean; scre
             <Select aria-label="Class" value={grade} onChange={(e) => { setGrade(e.target.value); setClassId('') }} options={[{ value: '', label: 'All classes' }, ...grades.map((g) => ({ value: g, label: g }))]} />
           </label>
           <label className="col gap4"><span className="t-xs muted">Section</span>
-            <Select aria-label="Section" value={classId} onChange={(e) => setClassId(e.target.value)} options={[{ value: '', label: 'Choose a section' }, ...sections.map((c) => ({ value: c.id ?? '', label: c.name || `${c.grade}-${c.section}` }))]} />
+            <Select aria-label="Section" value={classId} onChange={(e) => setClassId(e.target.value)} options={[{ value: '', label: 'All sections' }, ...sections.map((c) => ({ value: c.id ?? '', label: c.name || `${c.grade}-${c.section}` }))]} />
           </label>
           <label className="col gap4"><span className="t-xs muted">From</span>
             <Input type="date" aria-label="From date" value={from} onChange={(e) => { setFrom(e.target.value); if (to < e.target.value) setTo(e.target.value) }} />
@@ -349,12 +395,12 @@ export function AttendanceRegister({ canMark, screen }: { canMark: boolean; scre
         </div>
       </Card>
 
-      {!classId ? (
-        <div style={{ marginTop: 14 }}><Empty icon="calendar" title="Choose a section" body="The register and overview use the students and attendance saved for that class." /></div>
-      ) : loading || studentsQ.isLoading ? (
+      {classesQ.isLoading || studentsQ.isLoading || loading ? (
         <div style={{ marginTop: 14 }} className="t-sm muted">Loading attendance…</div>
       ) : error ? (
         <div style={{ marginTop: 14 }}><Empty icon="alert" title="Could not load attendance" body={error} /></div>
+      ) : !roster.length ? (
+        <div style={{ marginTop: 14 }}><Empty icon="users" title="No students" body="No students are saved for this class, so there is no attendance to show." /></div>
       ) : view === 'overview' ? (
         <>
           <div className="sm-grid-4" style={{ marginTop: 14, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
@@ -366,7 +412,7 @@ export function AttendanceRegister({ canMark, screen }: { canMark: boolean; scre
           <Card pad={false} style={{ marginTop: 14 }}>
             <div style={{ padding: '16px 16px 0' }}>
               <div className="fw7">Student Attendance Summary</div>
-              <div className="t-xs muted">Each day from From to To counts. A day with no mark is Pending, and attendance % uses that full range. Below 75% is Warning.</div>
+              <div className="t-xs muted">Each day from From to To counts. No mark is Pending. Half day counts with Present for the percentage. Below 75% is Warning.</div>
               <div className="row gap8 wrap att-no-print" style={{ marginTop: 12 }}>
                 <Search value={query} onChange={setQuery} placeholder="Search student" />
                 <Select aria-label="Attendance status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} options={[{ value: '', label: 'All statuses' }, { value: 'Good', label: 'Good' }, { value: 'Warning', label: 'Warning' }, { value: 'Pending', label: 'Pending' }]} />
@@ -379,7 +425,7 @@ export function AttendanceRegister({ canMark, screen }: { canMark: boolean; scre
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                   <thead>
                     <tr style={{ textAlign: 'left', color: '#64748B' }}>
-                      {['Roll No', 'Student Name', 'Present Days', 'Absent Days', 'Pending Days', 'Total Days', 'Attendance %', 'Status'].map((h) => (
+                      {['Roll No', 'Student Name', 'Present', 'Absent', 'Late', 'Half day', 'Pending', 'Total Days', 'Attendance %', 'Status'].map((h) => (
                         <th key={h} style={{ padding: '10px 12px', borderBottom: '1px solid #E2E8F0', fontWeight: 600 }}>{h}</th>
                       ))}
                     </tr>
@@ -391,6 +437,8 @@ export function AttendanceRegister({ canMark, screen }: { canMark: boolean; scre
                           <td style={cell}>{s.name}</td>
                           <td style={{ ...cell, color: '#16A34A', fontWeight: 700 }}>{s.present}</td>
                           <td style={{ ...cell, color: '#DC2626', fontWeight: 700 }}>{s.absent}</td>
+                          <td style={{ ...cell, color: '#B45309', fontWeight: 700 }}>{s.late}</td>
+                          <td style={{ ...cell, color: '#1D4ED8', fontWeight: 700 }}>{s.half ?? 0}</td>
                           <td style={{ ...cell, color: '#475569', fontWeight: 700 }}>{s.pending}</td>
                           <td style={cell}>{s.total}</td>
                           <td style={{ ...cell, color: pctColor(s.pct), fontWeight: 700 }}>{s.pct.toFixed(1)}%</td>
@@ -437,7 +485,7 @@ export function AttendanceRegister({ canMark, screen }: { canMark: boolean; scre
                   return (
                     <tr key={s.id}>
                       <td style={sticky(0, 140)}>{s.adm || '—'}</td>
-                      <td style={sticky(140, 180)}>{s.name}</td>
+                      <td style={sticky(140, 180)}>{s.name}{scope.length !== 1 && <div className="t-xs muted">{classTag(s)}</div>}</td>
                       <td style={head}>{abs}</td>
                       <td style={head}>0</td>
                       {dates.map((day) => {

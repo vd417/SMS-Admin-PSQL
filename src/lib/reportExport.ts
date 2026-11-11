@@ -227,6 +227,9 @@ export function buildReportHtml(spec: ReportSpec, meta: ReportMeta, opts: { auto
   .lv{font-variant-numeric:tabular-nums;font-weight:600;color:#0f172a}
   table{width:100%;border-collapse:collapse;margin-top:8px}
   th,td{padding:7px 9px;border-bottom:1px solid #eef2f7;text-align:left;vertical-align:top}
+  table.fit th,table.fit td{padding:3px 2px;font-size:9px;text-align:center}
+  table.fit th:nth-child(-n+3),table.fit td:nth-child(-n+3){text-align:left;white-space:normal}
+  table.fit th:nth-child(n+4),table.fit td:nth-child(n+4){white-space:nowrap;width:22px}
   th{background:${brand}14;color:#0f172a;font-weight:700;border-bottom:2px solid ${brand}55}
   td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}
   tbody tr:nth-child(even){background:#fafbfc}
@@ -249,7 +252,7 @@ export function buildReportHtml(spec: ReportSpec, meta: ReportMeta, opts: { auto
   ${spec.subtitle ? `<div class="sub">${esc(spec.subtitle)}</div>` : ''}
   ${chips}
   ${chart}
-  <table><thead>${head}</thead><tbody>${body}</tbody></table>
+  <table class="${spec.columns.length > 12 ? 'fit' : ''}"><thead>${head}</thead><tbody>${body}</tbody></table>
   <div class="foot">
     <span>${esc(spec.rows.length.toString())} record${spec.rows.length === 1 ? '' : 's'}</span>
     <span>Generated ${esc(generated)} · ${esc(school)}</span>

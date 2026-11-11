@@ -10,7 +10,7 @@
    - Identity & access is Admin-only (the router guards non-admins)
      and pairs a Users table with an interactive permission matrix.
    ============================================================ */
-import { useEffect, useMemo, useState, type ComponentType } from 'react';
+import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react';
 import { useApp, useToast, useTheme } from '@/lib/hooks'
 import { useInviteUser } from '@/api/hooks/useUserMutations'
 import { SchoolPhoto } from '@/components/SchoolMark'
@@ -19,6 +19,7 @@ import { usePortfolioSchools } from '@/api/hooks/useOwner'
 import {
   useSchoolIntegrations, useSaveSchoolIntegrations, useVerifySchoolRazorpay,
 } from '@/api/hooks/useSchoolIntegrations'
+import { sendSchoolTestEmail, testSchoolEmailConnection } from '@/api/schoolIntegrations'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   assignableSchoolRoles,
@@ -230,6 +231,47 @@ const RZP_MODE_OPTIONS = [
   { value: 'test', label: 'Test mode' },
   { value: 'live', label: 'Live mode' },
 ]
+const SMTP_PRESETS: Record<string, { host: string; port: number; encryption: string }> = {
+  gmail: { host: 'smtp.gmail.com', port: 587, encryption: 'starttls' },
+  workspace: { host: 'smtp.gmail.com', port: 587, encryption: 'starttls' },
+  outlook: { host: 'smtp.office365.com', port: 587, encryption: 'starttls' },
+  microsoft365: { host: 'smtp.office365.com', port: 587, encryption: 'starttls' },
+  zoho: { host: 'smtp.zoho.com', port: 587, encryption: 'starttls' },
+  custom: { host: '', port: 587, encryption: 'starttls' },
+}
+const SMTP_PROVIDER_OPTIONS = [
+  { value: 'gmail', label: 'Gmail' },
+  { value: 'workspace', label: 'Google Workspace' },
+  { value: 'outlook', label: 'Outlook' },
+  { value: 'microsoft365', label: 'Microsoft 365' },
+  { value: 'zoho', label: 'Zoho' },
+  { value: 'custom', label: 'Custom SMTP' },
+]
+const EMAIL_PLACEHOLDERS = ['school_name', 'student_name', 'parent_name', 'admission_number', 'receipt_number', 'amount_paid', 'pending_amount', 'due_date', 'payment_date', 'payment_mode', 'academic_year']
+const EMAIL_SAMPLE: Record<string, string> = {
+  school_name: 'Riverdale School', student_name: 'Aarav Sharma', parent_name: 'Ravi Sharma',
+  admission_number: 'ADM1024', receipt_number: 'RCP-1008', amount_paid: '5000', pending_amount: '2000',
+  due_date: '15-11-2026', payment_date: '11-11-2026', payment_mode: 'UPI', academic_year: '2026-27',
+}
+function previewTemplate(template: string): string {
+  return template.replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (_, key: string) => EMAIL_SAMPLE[key] ?? '')
+}
+
+function IntegrationFold({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className={open ? 'integration-fold open' : 'integration-fold'}>
+      <button type="button" className="integration-fold-btn" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <span className="col">
+          <span className="fw6 t-sm">{title}</span>
+          {hint && <span className="t-xs muted3">{hint}</span>}
+        </span>
+        <Icon name="chevDown" size={16} className="integration-chev" />
+      </button>
+      {open && <div className="integration-fold-body">{children}</div>}
+    </div>
+  )
+}
 
 function IntegrationsCard({ canEdit }: { canEdit: boolean }) {
   const toast = useToast()
@@ -243,6 +285,27 @@ function IntegrationsCard({ canEdit }: { canEdit: boolean }) {
   const [replyTo, setReplyTo] = useState('')
   const [emailReceiptTpl, setEmailReceiptTpl] = useState('')
   const [emailReminderTpl, setEmailReminderTpl] = useState('')
+  const [emailOverdueTpl, setEmailOverdueTpl] = useState('')
+  const [emailProvider, setEmailProvider] = useState('custom')
+  const [smtpHost, setSmtpHost] = useState('')
+  const [smtpPort, setSmtpPort] = useState('587')
+  const [smtpEncryption, setSmtpEncryption] = useState('starttls')
+  const [smtpUsername, setSmtpUsername] = useState('')
+  const [smtpPassword, setSmtpPassword] = useState('')
+  const [smtpPasswordSet, setSmtpPasswordSet] = useState(false)
+  const [showSmtpPassword, setShowSmtpPassword] = useState(false)
+  const [notifyLoginOtp, setNotifyLoginOtp] = useState(true)
+  const [notifyForgotOtp, setNotifyForgotOtp] = useState(true)
+  const [notifyFeeReceipt, setNotifyFeeReceipt] = useState(true)
+  const [notifyFeeDue, setNotifyFeeDue] = useState(true)
+  const [notifyFeeOverdue, setNotifyFeeOverdue] = useState(true)
+  const [notifyGeneral, setNotifyGeneral] = useState(true)
+  const [emailStatus, setEmailStatus] = useState<'connected' | 'failed' | 'not_configured'>('not_configured')
+  const [emailLastTestAt, setEmailLastTestAt] = useState('')
+  const [emailLastError, setEmailLastError] = useState('')
+  const [testRecipient, setTestRecipient] = useState('')
+  const [preview, setPreview] = useState('')
+  const [testingEmail, setTestingEmail] = useState(false)
 
   const [smsEnabled, setSmsEnabled] = useState(false)
   const [senderId, setSenderId] = useState('')
@@ -266,6 +329,23 @@ function IntegrationsCard({ canEdit }: { canEdit: boolean }) {
     setReplyTo(data.email.replyTo ?? '')
     setEmailReceiptTpl(data.email.receiptTemplate ?? '')
     setEmailReminderTpl(data.email.reminderTemplate ?? '')
+    setEmailOverdueTpl(data.email.overdueTemplate ?? '')
+    setEmailProvider(data.email.provider || 'custom')
+    setSmtpHost(data.email.smtpHost ?? '')
+    setSmtpPort(String(data.email.smtpPort || 587))
+    setSmtpEncryption(data.email.encryption === 'ssl' ? 'ssl' : 'starttls')
+    setSmtpUsername(data.email.smtpUsername ?? '')
+    setSmtpPassword('')
+    setSmtpPasswordSet(!!data.email.smtpPasswordSet)
+    setNotifyLoginOtp(data.email.notifyLoginOtp !== false)
+    setNotifyForgotOtp(data.email.notifyForgotOtp !== false)
+    setNotifyFeeReceipt(data.email.notifyFeeReceipt !== false)
+    setNotifyFeeDue(data.email.notifyFeeDue !== false)
+    setNotifyFeeOverdue(data.email.notifyFeeOverdue !== false)
+    setNotifyGeneral(data.email.notifyGeneral !== false)
+    setEmailStatus(data.email.status ?? 'not_configured')
+    setEmailLastTestAt(data.email.lastTestAt ?? '')
+    setEmailLastError(data.email.lastError ?? '')
 
     setSmsEnabled(data.sms.enabled)
     setSenderId(data.sms.senderId ?? '')
@@ -294,6 +374,14 @@ function IntegrationsCard({ canEdit }: { canEdit: boolean }) {
           replyTo: replyTo.trim() || undefined,
           receiptTemplate: emailReceiptTpl.trim() || undefined,
           reminderTemplate: emailReminderTpl.trim() || undefined,
+          overdueTemplate: emailOverdueTpl.trim() || undefined,
+          provider: emailProvider,
+          smtpHost: smtpHost.trim(),
+          smtpPort: Number(smtpPort) || 587,
+          encryption: smtpEncryption,
+          smtpUsername: smtpUsername.trim(),
+          ...(smtpPassword.trim() ? { smtpPassword: smtpPassword.trim() } : {}),
+          notifyLoginOtp, notifyForgotOtp, notifyFeeReceipt, notifyFeeDue, notifyFeeOverdue, notifyGeneral,
         },
         sms: {
           enabled: smsEnabled,
@@ -315,6 +403,12 @@ function IntegrationsCard({ canEdit }: { canEdit: boolean }) {
       setKeySecretSet(!!updated.razorpay.keySecretSet)
       setWebhookSecretSet(!!updated.razorpay.webhookSecretSet)
       setStatus(updated.razorpay.status)
+      setSmtpPassword('')
+      setSmtpPasswordSet(!!updated.email?.smtpPasswordSet)
+      setEmailEnabled(!!updated.email?.enabled)
+      setEmailStatus(updated.email?.status ?? 'not_configured')
+      setEmailLastError(updated.email?.lastError ?? '')
+      setEmailLastTestAt(updated.email?.lastTestAt ?? '')
       toast.success('Integrations saved', 'Email, SMS and Razorpay settings updated.')
     } catch (e) {
       toast.danger('Could not save', e instanceof ApiError ? e.message : 'Try again.')
@@ -332,11 +426,44 @@ function IntegrationsCard({ canEdit }: { canEdit: boolean }) {
     }
   }
 
+  const testSmtp = async () => {
+    setTestingEmail(true)
+    try {
+      const res = await testSchoolEmailConnection()
+      setEmailStatus('connected')
+      setEmailLastError('')
+      if (res.lastTestAt) setEmailLastTestAt(res.lastTestAt)
+      toast.success('SMTP connected', 'The school mailbox accepted the sign-in.')
+    } catch (e) {
+      setEmailStatus('failed')
+      const message = e instanceof ApiError ? e.message : 'Could not connect.'
+      setEmailLastError(message)
+      toast.danger('SMTP failed', message)
+    } finally {
+      setTestingEmail(false)
+    }
+  }
+
+  const sendTest = async () => {
+    setTestingEmail(true)
+    try {
+      await sendSchoolTestEmail(testRecipient.trim(), emailReceiptTpl.trim() || undefined)
+      toast.success('Test email sent', testRecipient.trim())
+    } catch (e) {
+      toast.danger('Test email failed', e instanceof ApiError ? e.message : 'Could not send.')
+    } finally {
+      setTestingEmail(false)
+    }
+  }
+
+  const emailStatusTone = emailStatus === 'connected' ? 'success' as const : emailStatus === 'failed' ? 'danger' as const : 'neutral' as const
+  const emailStatusLabel = emailStatus === 'connected' ? 'Connected' : emailStatus === 'failed' ? 'Failed' : 'Not configured'
+
   return (
     <Card pad={false}>
       <CardHead
         title="Integrations"
-        sub="Email, SMS and Razorpay — used for receipts, reminders and online fee collection"
+        sub="Email, SMS and Razorpay — used for receipts, reminders, OTP and online fee collection"
         icon="zap"
         action={isLoading ? <Spinner size={16} /> : undefined}
       />
@@ -344,83 +471,201 @@ function IntegrationsCard({ canEdit }: { canEdit: boolean }) {
         {!canEdit && (
           <div className="t-xs muted3" style={{ marginBottom: 12 }}>Ask a school owner or admin to update integrations.</div>
         )}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
-          {/* Email */}
-          <div className="col gap10">
-            <div className="row ai-center jc-between">
-              <div className="row ai-center gap8">
-                <Icon name="message" size={16} />
-                <span className="fw7 t-md">Email</span>
+        <div className="integration-stack">
+          <section className="integration-panel">
+            <div className="integration-panel-head">
+              <div className="row ai-center gap10 integration-panel-copy">
+                <span className="sm-card-ic"><Icon name="message" size={16} /></span>
+                <div>
+                  <div className="row ai-center gap8 wrap">
+                    <span className="fw7 t-md">Email</span>
+                    <Badge tone={emailStatusTone}>{emailStatusLabel}</Badge>
+                  </div>
+                  <div className="t-xs muted3">
+                    {emailEnabled
+                      ? 'School mailbox for OTP, invites, receipts and reminders. A switch that is off still sends from Catre.'
+                      : 'Off. Messages are sent from Catre Technology.'}
+                    {emailLastTestAt ? ` Last test ${new Date(emailLastTestAt).toLocaleString('en-IN')}.` : ''}
+                    {emailLastError ? ` ${emailLastError}` : ''}
+                  </div>
+                </div>
               </div>
-              <Toggle checked={emailEnabled} onChange={() => setEmailEnabled((v) => !v)} />
+              <Toggle checked={emailEnabled} onChange={() => {
+                if (disabled) return
+                if (emailEnabled && !window.confirm('School email will turn off. OTP, receipts and reminders will be sent from Catre. Continue?')) return
+                setEmailEnabled((v) => !v)
+              }} />
             </div>
-            <fieldset disabled={disabled} className="col gap10" style={{ border: 'none', padding: 0, margin: 0 }}>
-              <Field label="From name">
-                <Input value={fromName} onChange={(e) => setFromName(e.target.value)} placeholder="e.g. Riverdale School" />
-              </Field>
-              <Field label="From address">
-                <Input icon="message" type="email" value={fromAddress} onChange={(e) => setFromAddress(e.target.value)} placeholder="fees@school.edu" />
-              </Field>
-              <Field label="Reply-to">
-                <Input icon="message" type="email" value={replyTo} onChange={(e) => setReplyTo(e.target.value)} placeholder="Optional" />
-              </Field>
-              <Field label="Receipt template" hint="Sent when a fee payment is recorded.">
-                <Textarea value={emailReceiptTpl} onChange={(e) => setEmailReceiptTpl(e.target.value)} placeholder="Optional custom template" />
-              </Field>
-              <Field label="Reminder template" hint="Sent for due/overdue fee reminders.">
-                <Textarea value={emailReminderTpl} onChange={(e) => setEmailReminderTpl(e.target.value)} placeholder="Optional custom template" />
-              </Field>
+            <fieldset disabled={disabled} style={{ border: 'none', padding: 0, margin: '12px 0 0' }}>
+              <div className="integration-grid" style={{ marginTop: 0 }}>
+                <Field label="From name">
+                  <Input value={fromName} onChange={(e) => setFromName(e.target.value)} placeholder="e.g. Riverdale School" />
+                </Field>
+                <Field label="From email address">
+                  <Input icon="message" type="email" value={fromAddress} onChange={(e) => setFromAddress(e.target.value)} placeholder="fees@school.edu" />
+                </Field>
+                <Field label="Reply-to email">
+                  <Input icon="message" type="email" value={replyTo} onChange={(e) => setReplyTo(e.target.value)} placeholder="Optional" />
+                </Field>
+              </div>
             </fieldset>
-          </div>
-
-          {/* SMS */}
-          <div className="col gap10">
-            <div className="row ai-center jc-between">
-              <div className="row ai-center gap8">
-                <Icon name="phone" size={16} />
-                <span className="fw7 t-md">SMS</span>
+            <IntegrationFold title="SMTP" hint="Mailbox server used when school email is on">
+              <fieldset disabled={disabled} style={{ border: 'none', padding: 0, margin: 0 }}>
+                <div className="integration-grid" style={{ marginTop: 0 }}>
+                  <Field label="Email provider">
+                    <Select aria-label="Email provider" value={emailProvider} onChange={(e) => {
+                      const next = e.target.value
+                      setEmailProvider(next)
+                      const preset = SMTP_PRESETS[next]
+                      if (preset && next !== 'custom') {
+                        setSmtpHost(preset.host)
+                        setSmtpPort(String(preset.port))
+                        setSmtpEncryption(preset.encryption)
+                      }
+                    }} options={SMTP_PROVIDER_OPTIONS} />
+                  </Field>
+                  <Field label="SMTP host">
+                    <Input value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} placeholder="smtp.gmail.com" />
+                  </Field>
+                  <Field label="SMTP port">
+                    <Input value={smtpPort} onChange={(e) => setSmtpPort(e.target.value)} placeholder="587" />
+                  </Field>
+                  <Field label="Encryption">
+                    <Select aria-label="Encryption" value={smtpEncryption} onChange={(e) => setSmtpEncryption(e.target.value)} options={[{ value: 'starttls', label: 'STARTTLS' }, { value: 'ssl', label: 'SSL/TLS' }]} />
+                  </Field>
+                  <Field label="SMTP username">
+                    <Input value={smtpUsername} onChange={(e) => setSmtpUsername(e.target.value)} placeholder="fees@school.edu" />
+                  </Field>
+                  <Field label="SMTP password" hint={smtpPasswordSet ? 'Saved. Leave blank to keep it.' : 'App password for Gmail.'}>
+                    <div className="row gap8 ai-center">
+                      <div className="flex1">
+                        <Input type={showSmtpPassword ? 'text' : 'password'} value={smtpPassword} onChange={(e) => setSmtpPassword(e.target.value)} placeholder={smtpPasswordSet ? '•••• (set)' : 'App password'} />
+                      </div>
+                      <Btn type="button" size="sm" variant="ghost" disabled={disabled} onClick={() => setShowSmtpPassword((v) => !v)}>{showSmtpPassword ? 'Hide' : 'Show'}</Btn>
+                    </div>
+                  </Field>
+                </div>
+                <div className="row jc-end" style={{ marginTop: 12 }}>
+                  <Btn type="button" size="sm" variant="secondary" disabled={disabled || testingEmail} onClick={() => { void testSmtp() }}>{testingEmail ? 'Testing…' : 'Test SMTP'}</Btn>
+                </div>
+              </fieldset>
+            </IntegrationFold>
+            <IntegrationFold title="Notifications" hint="Choose the school mailbox for each message">
+              <div className="integration-switches">
+                {([
+                  ['Login OTP', notifyLoginOtp, setNotifyLoginOtp],
+                  ['Forgot password OTP', notifyForgotOtp, setNotifyForgotOtp],
+                  ['Fee payment receipt', notifyFeeReceipt, setNotifyFeeReceipt],
+                  ['Fee due reminder', notifyFeeDue, setNotifyFeeDue],
+                  ['Overdue fee reminder', notifyFeeOverdue, setNotifyFeeOverdue],
+                  ['General school notifications', notifyGeneral, setNotifyGeneral],
+                ] as const).map(([label, checked, set]) => (
+                  <div key={label} className="integration-switch">
+                    <span className="t-sm">{label}</span>
+                    <Toggle checked={checked} onChange={() => { if (!disabled) set((v) => !v) }} />
+                  </div>
+                ))}
               </div>
-              <Toggle checked={smsEnabled} onChange={() => setSmsEnabled((v) => !v)} />
+            </IntegrationFold>
+            <IntegrationFold title="Templates" hint="Receipt, due reminder and overdue reminder">
+              <fieldset disabled={disabled} className="col gap10" style={{ border: 'none', padding: 0, margin: 0 }}>
+                <div className="integration-chips">
+                  {EMAIL_PLACEHOLDERS.map((item) => <span key={item} className="integration-chip">{`{{${item}}}`}</span>)}
+                </div>
+                <Field label="Fee payment receipt">
+                  <Textarea value={emailReceiptTpl} onChange={(e) => setEmailReceiptTpl(e.target.value)} placeholder="Optional custom template" />
+                </Field>
+                <Field label="Fee due reminder">
+                  <Textarea value={emailReminderTpl} onChange={(e) => setEmailReminderTpl(e.target.value)} placeholder="Optional custom template" />
+                </Field>
+                <Field label="Overdue reminder">
+                  <Textarea value={emailOverdueTpl} onChange={(e) => setEmailOverdueTpl(e.target.value)} placeholder="Optional custom template" />
+                </Field>
+                <div className="row gap8 wrap">
+                  <Btn type="button" size="sm" variant="secondary" onClick={() => setPreview(previewTemplate(emailReceiptTpl || 'Receipt {{receipt_number}} for {{student_name}} at {{school_name}}. Paid {{amount_paid}}.'))}>Preview receipt</Btn>
+                  <Btn type="button" size="sm" variant="secondary" onClick={() => setPreview(previewTemplate(emailReminderTpl || 'Fee due on {{due_date}} for {{student_name}}. Pending {{pending_amount}}.'))}>Preview due reminder</Btn>
+                  <Btn type="button" size="sm" variant="secondary" onClick={() => setPreview(previewTemplate(emailOverdueTpl || 'Overdue fee for {{student_name}}. Due {{due_date}}. Pending {{pending_amount}}.'))}>Preview overdue</Btn>
+                </div>
+                {preview && <div className="t-sm integration-preview">{preview}</div>}
+                <div className="integration-grid" style={{ marginTop: 0 }}>
+                  <Field label="Send test email to">
+                    <Input type="email" value={testRecipient} onChange={(e) => setTestRecipient(e.target.value)} placeholder="name@school.edu" />
+                  </Field>
+                  <div className="row ai-end">
+                    <Btn type="button" size="sm" disabled={disabled || testingEmail || !testRecipient.trim()} onClick={() => { void sendTest() }}>Send test email</Btn>
+                  </div>
+                </div>
+              </fieldset>
+            </IntegrationFold>
+          </section>
+
+          <section className="integration-panel">
+            <div className="integration-panel-head">
+              <div className="row ai-center gap10">
+                <span className="sm-card-ic"><Icon name="phone" size={16} /></span>
+                <div>
+                  <div className="fw7 t-md">SMS</div>
+                  <div className="t-xs muted3">
+                    {smsEnabled
+                      ? 'On. Texts use this school’s sender ID. Turn it off to send from Catre.'
+                      : 'Off. Texts are sent from Catre. Turn this on with a 6-character sender ID to use the school’s own ID.'}
+                  </div>
+                </div>
+              </div>
+              <Toggle checked={smsEnabled} onChange={() => { if (!disabled) setSmsEnabled((v) => !v) }} />
             </div>
-            <fieldset disabled={disabled} className="col gap10" style={{ border: 'none', padding: 0, margin: 0 }}>
-              <Field label="Sender ID" hint="6-character DLT-approved sender ID.">
-                <Input icon="phone" value={senderId} onChange={(e) => setSenderId(e.target.value.toUpperCase())} placeholder="SCHMAT" maxLength={6} />
-              </Field>
-              <Field label="Receipt template">
-                <Textarea value={smsReceiptTpl} onChange={(e) => setSmsReceiptTpl(e.target.value)} placeholder="Optional custom template" />
-              </Field>
-              <Field label="Reminder template">
-                <Textarea value={smsReminderTpl} onChange={(e) => setSmsReminderTpl(e.target.value)} placeholder="Optional custom template" />
-              </Field>
+            <fieldset disabled={disabled} style={{ border: 'none', padding: 0, margin: '12px 0 0' }}>
+              <div className="integration-grid" style={{ marginTop: 0, gridTemplateColumns: 'minmax(180px, 280px)' }}>
+                <Field label="Sender ID" hint="6-character DLT-approved sender ID.">
+                  <Input icon="phone" value={senderId} onChange={(e) => setSenderId(e.target.value.toUpperCase())} placeholder="SCHMAT" maxLength={6} />
+                </Field>
+              </div>
             </fieldset>
-          </div>
+            <IntegrationFold title="Templates" hint="Receipt and reminder text">
+              <fieldset disabled={disabled} className="col gap10" style={{ border: 'none', padding: 0, margin: 0 }}>
+                <Field label="Receipt template">
+                  <Textarea value={smsReceiptTpl} onChange={(e) => setSmsReceiptTpl(e.target.value)} placeholder="Optional custom template" />
+                </Field>
+                <Field label="Reminder template">
+                  <Textarea value={smsReminderTpl} onChange={(e) => setSmsReminderTpl(e.target.value)} placeholder="Optional custom template" />
+                </Field>
+              </fieldset>
+            </IntegrationFold>
+          </section>
 
-          {/* Razorpay */}
-          <div className="col gap10">
-            <div className="row ai-center jc-between">
-              <div className="row ai-center gap8">
-                <Icon name="rupee" size={16} />
-                <span className="fw7 t-md">Razorpay</span>
+          <section className="integration-panel">
+            <div className="integration-panel-head">
+              <div className="row ai-center gap10">
+                <span className="sm-card-ic"><Icon name="rupee" size={16} /></span>
+                <div>
+                  <div className="row ai-center gap8 wrap">
+                    <span className="fw7 t-md">Razorpay</span>
+                    <Badge tone={RZP_STATUS_TONE[status]} icon={status === 'configured' ? 'checkCircle' : status === 'invalid' ? 'alert' : 'lock'}>
+                      {RZP_STATUS_LABEL[status]}
+                    </Badge>
+                  </div>
+                  <div className="t-xs muted3">
+                    {rzpEnabled
+                      ? 'On. Parent fee payments use this school’s Razorpay account, not Catre’s.'
+                      : 'Off. Online fee collection stays unavailable. Plan payments to Catre always use Catre’s account.'}
+                  </div>
+                </div>
               </div>
-              <Toggle checked={rzpEnabled} onChange={() => setRzpEnabled((v) => !v)} />
+              <Toggle checked={rzpEnabled} onChange={() => { if (!disabled) setRzpEnabled((v) => !v) }} />
             </div>
-            <div className="row ai-center gap8">
-              <Badge tone={RZP_STATUS_TONE[status]} icon={status === 'configured' ? 'checkCircle' : status === 'invalid' ? 'alert' : 'lock'}>
-                {RZP_STATUS_LABEL[status]}
-              </Badge>
-            </div>
-            <fieldset disabled={disabled} className="col gap10" style={{ border: 'none', padding: 0, margin: 0 }}>
+            <fieldset disabled={disabled} style={{ border: 'none', padding: 0, margin: '12px 0 0' }}>
+              <div className="integration-grid" style={{ marginTop: 0 }}>
               <Field label="Key ID">
                 <Input icon="key" value={keyId} onChange={(e) => setKeyId(e.target.value)} placeholder="rzp_test_xxxxxxxx" />
               </Field>
-              <Field label="Key secret" hint={keySecretSet ? 'A secret is already saved — leave blank to keep it.' : 'Not set yet.'}>
+              <Field label="Key secret" hint={keySecretSet ? 'Saved. Leave blank to keep it.' : 'Not set yet.'}>
                 <Input
                   icon="lock" type="password" value={keySecret}
                   onChange={(e) => setKeySecret(e.target.value)}
                   placeholder={keySecretSet ? '•••• (set)' : 'Enter key secret'}
                 />
               </Field>
-              <Field label="Webhook secret" hint={webhookSecretSet ? 'A secret is already saved — leave blank to keep it.' : 'Optional.'}>
+              <Field label="Webhook secret" hint={webhookSecretSet ? 'Saved. Leave blank to keep it.' : 'Optional.'}>
                 <Input
                   icon="lock" type="password" value={webhookSecret}
                   onChange={(e) => setWebhookSecret(e.target.value)}
@@ -430,20 +675,23 @@ function IntegrationsCard({ canEdit }: { canEdit: boolean }) {
               <Field label="Mode">
                 <Select options={RZP_MODE_OPTIONS} value={mode} onChange={(e) => setMode(e.target.value as 'test' | 'live')} />
               </Field>
+              </div>
             </fieldset>
             {canEdit && (
-              <Btn
-                variant="secondary" size="sm" icon="refresh"
-                disabled={verifyMut.isPending || !keyId.trim()}
-                onClick={() => { void verify() }}
-              >
-                {verifyMut.isPending ? <><Spinner size={14} /> Testing…</> : 'Test connection'}
-              </Btn>
+              <div className="row jc-end" style={{ marginTop: 12 }}>
+                <Btn
+                  variant="secondary" size="sm" icon="refresh"
+                  disabled={verifyMut.isPending || !keyId.trim()}
+                  onClick={() => { void verify() }}
+                >
+                  {verifyMut.isPending ? <><Spinner size={14} /> Testing…</> : 'Test connection'}
+                </Btn>
+              </div>
             )}
-          </div>
+          </section>
         </div>
         {canEdit && (
-          <div className="row gap8 jc-end" style={{ marginTop: 18 }}>
+          <div className="row gap8 jc-end" style={{ marginTop: 16 }}>
             <Btn variant="primary" icon="check" disabled={saveMut.isPending} onClick={() => { void save() }}>
               {saveMut.isPending ? <><Spinner size={14} /> Saving…</> : 'Save integrations'}
             </Btn>
