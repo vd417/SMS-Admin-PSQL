@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
 import { useApp, useToast } from '@/lib/hooks'
 import {
   PageHead, Card, CardHead, Btn, Badge, Avatar, Search, Select,
-  Drawer, Tabs, Icon, Empty, Progress, Spark, Bars, DataTable,
+  Drawer, Tabs, Icon, Empty, Progress, Spark, Bars, DataTable, Modal,
   type Column, type BadgeTone,
 } from '@/components/ui'
 import { gateRole, tierIncludes } from '@/lib/gating'
@@ -16,9 +16,11 @@ import { useExamPapers } from '@/api/hooks/useExamPapers'
 import { useExamMarksMap, useStudentGrades } from '@/api/hooks/useGrades'
 import { useClasses } from '@/api/hooks/useClasses'
 import { studentGuardianName } from '@/api/students'
+import { useAccountByEmail } from '@/api/hooks/useUsers'
+import { useSetUserActive } from '@/api/hooks/useUserMutations'
+import { useUpdateStudent } from '@/api/hooks/useStudentMutations'
 import { formatStudentRoll } from '@/lib/studentRoll'
 import { listStoredDocs, downloadStoredDoc, openStoredDoc, isStoredImage, studentPhotoUrl, fetchStudentExtras } from '@/api/studentExtras'
-import { openMailCompose, guardianEmailsFromStudent } from '@/lib/composeMail'
 import { markKey } from '@/lib/examData'
 import { properName, properPlace } from '@/lib/properCase'
 import { printReportCard } from '@/lib/reportCardPrint'
@@ -1234,6 +1236,69 @@ function ToppersView({ students, onPick }: { students: Student[]; onPick: (id: s
 /* ============================================================
    StudentsScreen — SIS list
    ============================================================ */
+function StudentSuspendButton({ student }: { student: Student }) {
+  const app = useApp()
+  const toast = useToast()
+  const accounts = useAccountByEmail()
+  const update = useUpdateStudent()
+  const setActive = useSetUserActive()
+  const [confirming, setConfirming] = useState(false)
+  if (app.role !== 'owner' && app.role !== 'admin') return null
+  const account = accounts.get((student.email ?? '').trim().toLowerCase())
+  const suspended = student.status === 'inactive'
+  const busy = update.isPending || setActive.isPending
+  const apply = async () => {
+    const next = suspended ? 'active' : 'inactive'
+    try {
+      await update.mutateAsync({ id: student.id, student: { ...student, status: next } })
+      if (account && (account.status === 'active' || account.status === 'inactive')) {
+        await setActive.mutateAsync({ userId: account.id, active: next === 'active' })
+      }
+      toast.success(
+        suspended ? 'Suspension removed' : 'Student suspended',
+        suspended
+          ? `${student.name} can sign in again.`
+          : `${student.name} is signed out of the app and must contact the school. The profile stays.`,
+      )
+      setConfirming(false)
+    } catch (err) {
+      toast.danger('Could not update', err instanceof Error ? err.message : 'Try again.')
+    }
+  }
+  return (
+    <>
+      <Btn
+        variant="secondary"
+        size="sm"
+        icon={suspended ? 'checkCircle' : 'lock'}
+        disabled={busy}
+        onClick={(e) => {
+          e.stopPropagation()
+          if (suspended) void apply()
+          else setConfirming(true)
+        }}
+      >
+        {busy ? 'Saving…' : suspended ? 'Unsuspend' : 'Suspend'}
+      </Btn>
+      {confirming && (
+        <Modal
+          open
+          icon="lock"
+          title="Suspend student"
+          sub={`${student.name} will be signed out of the app and asked to contact the school. You can remove the suspension later. This doesn't delete the profile.`}
+          onClose={() => { if (!busy) setConfirming(false) }}
+          footer={
+            <div className="row gap8 jc-end">
+              <Btn variant="ghost" onClick={() => setConfirming(false)} disabled={busy}>Cancel</Btn>
+              <Btn variant="danger" icon="lock" onClick={() => void apply()} disabled={busy}>{busy ? 'Suspending…' : 'Suspend'}</Btn>
+            </div>
+          }
+        />
+      )}
+    </>
+  )
+}
+
 function StudentsScreen() {
   const app = useApp()
   const toast = useToast()
@@ -1385,6 +1450,28 @@ function StudentsScreen() {
       key: 'status', label: 'Status', align: 'center', sortValue: (s) => s.status,
       render: (s) => <Badge tone={s.status === 'active' ? 'success' : 'neutral'}>{s.status === 'active' ? 'Active' : 'Inactive'}</Badge>,
     },
+    {
+      key: 'actions', label: '', align: 'right',
+      render: (s) => (
+        <div className="row ai-center gap6 jc-end">
+          <StudentSuspendButton student={s} />
+          <Btn
+            variant="secondary"
+            size="sm"
+            icon="message"
+            onClick={(e) => {
+              e.stopPropagation()
+              app.go('school.comm', {
+                focus: JSON.stringify([{ id: s.id, name: s.name, cls: s.cls ?? '' }]),
+                intent: 'message-students',
+              })
+            }}
+          >
+            Message
+          </Btn>
+        </div>
+      ),
+    },
   ]
 
   const sub = view === 'toppers'
@@ -1447,22 +1534,12 @@ function StudentsScreen() {
                 size="sm"
                 icon="message"
                 onClick={() => {
-                  const emails = [...new Set(selected.flatMap((s) => guardianEmailsFromStudent(s)))]
-                  if (!emails.length) {
-                    toast.danger('No guardian emails', 'Selected students have no guardian email on file.')
-                    return
-                  }
-                  try {
-                    openMailCompose({
-                      to: emails,
-                      subject: `Message from ${app.school.name}`,
-                      body: 'Dear Parent / Guardian,\n\n',
-                    })
-                    toast.success('Opening mail', `Compose to ${emails.length} guardian email(s).`)
-                    clear()
-                  } catch (err) {
-                    toast.danger('Could not open mail', err instanceof Error ? err.message : 'Invalid email.')
-                  }
+                  const targets = selected
+                    .filter((s) => s.id && s.name)
+                    .map((s) => ({ id: s.id, name: s.name, cls: s.cls ?? '' }))
+                  if (!targets.length) return
+                  app.go('school.comm', { focus: JSON.stringify(targets), intent: 'message-students' })
+                  clear()
                 }}
               >
                 Message
@@ -1737,21 +1814,10 @@ function Student360() {
               variant="secondary"
               icon="message"
               onClick={() => {
-                const emails = guardianEmailsFromStudent(stu)
-                if (!emails.length) {
-                  toast.danger('No email on file', `Add a guardian email for ${guardian || stu.name} before messaging.`)
-                  return
-                }
-                try {
-                  openMailCompose({
-                    to: emails,
-                    subject: `Regarding ${stu.name} · ${app.school.name}`,
-                    body: `Dear ${guardian || 'Parent / Guardian'},\n\n`,
-                  })
-                  toast.success('Opening mail', `Compose email to ${guardian || 'guardian'}.`)
-                } catch (err) {
-                  toast.danger('Could not open mail', err instanceof Error ? err.message : 'Invalid email.')
-                }
+                app.go('school.comm', {
+                  focus: JSON.stringify([{ id: stu.id, name: stu.name, cls: stu.cls ?? '' }]),
+                  intent: 'message-students',
+                })
               }}
             >
               Message

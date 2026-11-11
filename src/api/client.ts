@@ -1,6 +1,7 @@
 import { config } from './config'
 import { tokenStore } from './auth/tokenStore'
 import { ApiError } from './ApiError'
+import { rememberSuspension } from '@/lib/suspensionNotice'
 import type { ErrorBody } from './types'
 
 export { ApiError }
@@ -59,6 +60,11 @@ async function readJson(res: Response): Promise<unknown> {
 function throwIfError(res: Response, json: unknown): void {
   if (res.ok) return
   const err = (json as { error?: ErrorBody }).error
+  if ((err?.code === 'access_suspended' || err?.code === 'access_removed') && (tokenStore.getAccess() || tokenStore.getRefresh())) {
+    rememberSuspension(err.message || 'Your account has been suspended. Please contact your school.')
+    tokenStore.clear()
+    onAuthFailure()
+  }
   throw new ApiError(res.status, err?.code ?? 'internal_error', err?.message ?? res.statusText, err?.details ?? null)
 }
 
@@ -95,7 +101,17 @@ async function doRefresh(): Promise<boolean> {
   const refresh = tokenStore.getRefresh()
   if (!refresh) return false
   const res = await rawFetch('/auth/refresh', { method: 'POST', body: { refresh_token: refresh } }, null)
-  if (!res.ok) return false
+  if (!res.ok) {
+    try {
+      const json = await res.clone().json() as { error?: ErrorBody }
+      if (json.error?.code === 'access_suspended' || json.error?.code === 'access_removed') {
+        rememberSuspension(json.error.message || 'Your account has been suspended. Please contact your school.')
+        tokenStore.clear()
+        onAuthFailure()
+      }
+    } catch { /* not a suspension response */ }
+    return false
+  }
   const body = (await res.json()) as { data: { access_token: string; refresh_token: string } }
   tokenStore.set(body.data)
   return true

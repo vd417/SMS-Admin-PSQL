@@ -61,6 +61,14 @@ function frequencyLabel(value: string): string {
   return FREQUENCIES.find((item) => item.value === value)?.label ?? value
 }
 
+function clockTime(value: string): string {
+  const match = /^(\d{1,2}):(\d{2})/.exec(value.trim())
+  if (!match) return '08:00'
+  const hour = Math.min(23, Number(match[1]))
+  const minute = Math.min(59, Number(match[2]))
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+}
+
 function scheduleScope(filtersJson: string): string {
   const saved = readSaved(filtersJson)
   const className = (saved.className || saved.class_name || '').trim() || 'All'
@@ -786,8 +794,19 @@ export function SchoolReportsScreen() {
     subject: q.subject, period: q.period, session: q.session,
   })
 
+  const mailItems = () => {
+    if (editId) return catalog.filter((item) => item.key === reportKey)
+    if (pickedReports.length) return pickedReports
+    const key = reportKey === 'attendance_register'
+      ? 'student_attendance'
+      : reportKey === 'attendance_overview'
+        ? 'student_attendance_summary'
+        : reportKey
+    return catalog.filter((item) => item.key === key)
+  }
+
   const sendMail = async () => {
-    const items = pickedReports
+    const items = mailItems()
     if (sendingMail) return
     if (!items.length) {
       toast.danger('Pick a report', 'Tick at least one report type.')
@@ -842,9 +861,7 @@ export function SchoolReportsScreen() {
   }
 
   const saveSchedule = async () => {
-    const items = editId
-      ? catalog.filter((item) => item.key === reportKey)
-      : pickedReports
+    const items = mailItems()
     if (savingSchedule) return
     if (!items.length) {
       toast.danger('Pick a report', 'Tick at least one report type.')
@@ -857,12 +874,13 @@ export function SchoolReportsScreen() {
     setSavingSchedule(true)
     try {
       const recipients = emails.split(/[\s,;]+/).filter(Boolean)
+      const time = clockTime(sendTime)
       for (const item of items) {
         await saveReportSchedule({
           id: editId && item.key === reportKey ? editId : undefined,
           reportKey: item.key,
           frequency,
-          sendTime,
+          sendTime: time,
           dayOfWeek: frequency === 'weekly' ? Number(dayOfWeek) : null,
           dayOfMonth: frequency === 'monthly' ? Number(dayOfMonth) : null,
           format,
@@ -873,7 +891,7 @@ export function SchoolReportsScreen() {
       }
       const count = items.length
       setEditId(undefined)
-      toast.success(editId ? 'Schedule updated' : 'Schedules saved', `${count} report${count === 1 ? '' : 's'} · ${frequency} at ${sendTime}`)
+      toast.success(editId ? 'Schedule updated' : 'Schedules saved', `${count} report${count === 1 ? '' : 's'} to ${recipients.join(', ')} · ${frequencyLabel(frequency)} at ${time}. Use Run now to send one immediately.`)
       await loadSchedules(items.map((item) => item.key))
     } catch (e) { toast.danger('Could not save schedule', errText(e)) }
     finally { setSavingSchedule(false) }
@@ -1208,7 +1226,7 @@ export function SchoolReportsScreen() {
         <Card>
           <CardHead
             title="Schedule email"
-            sub="Uses the mail id in Email these reports. Daily sends yesterday, weekly the last 7 days, 15 days the last 15 days, and monthly the previous month."
+            sub="Saves the mail id and the ticked report. Daily sends yesterday, weekly the last 7 days, 15 days the last 15 days, and monthly the previous month. Run now sends it immediately."
             icon="calendar"
           />
           <div style={{ marginTop: 12 }} className="col gap12">

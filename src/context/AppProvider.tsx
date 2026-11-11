@@ -4,6 +4,7 @@
    ============================================================ */
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { ApiError, setOnAuthFailure } from '@/api/client'
+import { takeSuspension } from '@/lib/suspensionNotice'
 import { login as passwordLogin, me as fetchMe, logout as apiLogout, refresh as refreshSession } from '@/api/auth'
 import { unregisterWebPush } from '@/lib/webPush'
 import { listMySchools, switchSchool } from '@/api/mySchools'
@@ -455,7 +456,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     document.documentElement.setAttribute('lang', l)
   }
 
-  useEffect(() => { setOnAuthFailure(() => { tokenStore.clear(); void logout() }) }, [])
+  useEffect(() => {
+    setOnAuthFailure(() => {
+      const message = takeSuspension()
+      tokenStore.clear()
+      if (message) setAuthError(message)
+      void logout()
+    })
+  }, [])
 
   /* Reload / refresh: keep session via refresh token (do not bounce to login). */
   useEffect(() => {

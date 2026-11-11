@@ -137,11 +137,13 @@ const CAN_MANAGE_ACCESS: Role[] = ['owner', 'admin', 'principal', 'vice_principa
  *  That access is a different, separately-managed thing from a Teacher/Staff row's app
  *  login, so Suspend from People never touches it — it stays out of scope here and is
  *  only ever paused/removed from Identity & access → Users. */
-function hasCrmAccess(account: SchoolUserDto): boolean {
-  return account.roles.some((r) => {
-    const role = fromApiRole(r)
-    return role === 'owner' || role === 'admin' || role === 'principal'
-  })
+function suspendBlocked(actor: Role, selfEmail: string | undefined, account: SchoolUserDto): boolean {
+  const roles = account.roles.map((r) => fromApiRole(r))
+  if (roles.includes('owner')) return true
+  const email = (account.email ?? '').trim().toLowerCase()
+  if (email && email === (selfEmail ?? '').trim().toLowerCase()) return true
+  if ((actor === 'principal' || actor === 'vice_principal') && roles.some((r) => r === 'admin' || r === 'principal')) return true
+  return false
 }
 
 /** Second step for Suspend — signing someone out of the app is disruptive enough that a
@@ -153,7 +155,7 @@ function SuspendConfirmModal({ name, busy, onCancel, onConfirm }: { name: string
       open
       icon="lock"
       title="Suspend app access"
-      sub={`${name} won't be able to sign in until you unsuspend them. This doesn't remove their profile.`}
+      sub={`${name} will be signed out of the CRM and the app, and asked to contact the school. Removing the suspension lets them sign in again. This doesn't remove their profile.`}
       onClose={() => { if (!busy) onCancel() }}
       footer={
         <div className="row gap8 jc-end">
@@ -184,7 +186,7 @@ function AccessCard({ email, name }: { email: string | undefined; name: string }
   }
 
   const pending = account.status !== 'active' && account.status !== 'inactive'
-  const crmAccess = hasCrmAccess(account)
+  const blocked = suspendBlocked(app.role, app.user?.email, account)
   const suspended = account.status === 'inactive'
   const apply = () => {
     setActive.mutate({ userId: account.id, active: suspended }, {
@@ -208,7 +210,7 @@ function AccessCard({ email, name }: { email: string | undefined; name: string }
         ) : (
           <Badge tone={suspended ? 'danger' : 'success'}>{suspended ? 'Suspended' : 'Active'}</Badge>
         )}
-        {!pending && !crmAccess && (
+        {!pending && !blocked && (
           <Btn
             variant="secondary"
             size="sm"
@@ -220,7 +222,7 @@ function AccessCard({ email, name }: { email: string | undefined; name: string }
           </Btn>
         )}
       </div>
-      {!pending && crmAccess && (
+      {!pending && blocked && (
         <div className="t-xs muted" style={{ marginTop: 8 }}>Also has CRM access — manage that in Identity & access → Users.</div>
       )}
       {confirming && (
@@ -234,12 +236,13 @@ function AccessCard({ email, name }: { email: string | undefined; name: string }
  *  account directly (looked up once per screen via useAccountByEmail) so DataTable rows
  *  don't each run their own useSchoolUserByEmail query. Suspend still confirms first. */
 function SuspendAction({ account, name, canManage }: { account: SchoolUserDto | undefined; name: string; canManage: boolean }) {
+  const app = useApp()
   const toast = useToast()
   const setActive = useSetUserActive()
   const [confirming, setConfirming] = useState(false)
   if (!canManage || !account) return null
   const pending = account.status !== 'active' && account.status !== 'inactive'
-  if (pending || hasCrmAccess(account)) return null
+  if (pending || suspendBlocked(app.role, app.user?.email, account)) return null
   const suspended = account.status === 'inactive'
   const apply = () => {
     setActive.mutate({ userId: account.id, active: suspended }, {
@@ -860,28 +863,19 @@ interface Parent {
 
 function ParentsScreen() {
   const app = useApp()
-  const toast = useToast()
   const [q, setQ] = useState('')
   const studentsQ = useStudents()
   const students = studentsQ.data ?? []
+  const accountByEmail = useAccountByEmail()
+  const canSuspend = app.role === 'owner' || app.role === 'admin'
 
   const openWard = (id: string) => app.go('school.student', { focus: id })
   const message = (p: Parent) => {
-    const email = (p.email || '').trim()
-    if (!email) {
-      toast.danger('No email on file', `Add a guardian email for ${p.name}'s ward(s) before messaging.`)
-      return
-    }
-    try {
-      openMailCompose({
-        to: email,
-        subject: `Message from ${app.school.name}`,
-        body: `Dear ${p.name},\n\n`,
-      })
-      toast.success('Opening mail', `Compose email to ${p.name}.`)
-    } catch (err) {
-      toast.danger('Could not open mail', err instanceof Error ? err.message : 'Invalid email.')
-    }
+    const targets = p.wards
+      .filter((w) => w.id && w.name)
+      .map((w) => ({ id: w.id, name: w.name, cls: w.cls ?? '' }))
+    if (!targets.length) return
+    app.go('school.comm', { focus: JSON.stringify(targets), intent: 'message-students' })
   }
 
   const organizationId = tokenStore.getTenantId() || undefined
@@ -950,6 +944,7 @@ function ParentsScreen() {
       key: 'actions', label: '', align: 'right',
       render: (p) => (
         <div className="row ai-center gap8 jc-end">
+          <SuspendAction account={accountByEmail.get((p.email ?? '').trim().toLowerCase())} name={p.name} canManage={canSuspend} />
           <Btn variant="ghost" size="sm" icon="user" onClick={(e) => { e.stopPropagation(); openWard(p.wards[0].id) }}>Profile</Btn>
           <Btn variant="secondary" size="sm" icon="message" onClick={(e) => { e.stopPropagation(); message(p) }}>Message</Btn>
         </div>

@@ -53,7 +53,7 @@ import {
 } from '@/api/hooks/useOperations'
 import type { FleetBus, TransportRoute, RouteStop, SportsMedal } from '@/api/operations'
 import type { Bus, Complaint } from '@/types'
-import type { ChatAttachment } from '@/api/threads'
+import type { ChatAttachment, ChatThread } from '@/api/threads'
 import { compressImageFile } from '@/lib/compressImage'
 
 /** A picked-but-not-yet-sent attachment — keeps the raw File so an image can be
@@ -174,6 +174,31 @@ function CommunicationScreen() {
 }
 
 /* ---------- Messenger: thread list + conversation (message only) ---------- */
+interface MessageTarget { id: string; name: string; cls: string }
+
+/** Student-list Message passes this intent with a JSON focus payload. */
+const MESSAGE_STUDENTS = 'message-students'
+/** Survives React strict-mode's double effect so one click opens each chat once. */
+const openingStudentChats = new Set<string>()
+
+function parseMessageTargets(focus: string | null): MessageTarget[] {
+  if (!focus) return []
+  try {
+    const parsed = JSON.parse(focus) as unknown
+    if (!Array.isArray(parsed)) return []
+    return parsed.flatMap((row) => {
+      if (!row || typeof row !== 'object') return []
+      const rec = row as { id?: unknown; name?: unknown; cls?: unknown }
+      const id = String(rec.id ?? '').trim()
+      const name = String(rec.name ?? '').trim()
+      if (!id || !name) return []
+      return [{ id, name, cls: String(rec.cls ?? '') }]
+    })
+  } catch {
+    return []
+  }
+}
+
 function hueFor(seed: string): number {
   let h = 0
   for (const ch of seed) h = (h * 31 + ch.charCodeAt(0)) % 360
@@ -196,6 +221,7 @@ function MessageTicks({ read, delivered }: { read: boolean; delivered: boolean; 
 function MessengerTab() {
   const toast = useToast()
   const [activeId, setActiveId] = useState<string | null>(null)
+  const [openedThread, setOpenedThread] = useState<ChatThread | null>(null)
   const [text, setText] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
   const [pending, setPending] = useState<PendingAttachment[]>([])
@@ -205,7 +231,7 @@ function MessengerTab() {
   const [contactQ, setContactQ] = useState('')
   const [catFilter, setCatFilter] = useState<'all' | ContactKind>('all')
 
-  const { data: threadsData, isLoading } = useThreads()
+  const { data: threadsData, isLoading, isError: threadsError } = useThreads()
   const createThread = useCreateThread()
   const sendMessageMut = useSendMessage()
   const classNames = useMergedClassNames()
@@ -215,6 +241,12 @@ function MessengerTab() {
   const { data: schoolUsersData } = useSchoolUsers()
   const app = useApp()
   const allThreads = threadsData ?? []
+  const panelRef = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  const logRef = useRef<HTMLDivElement>(null)
+  const pinnedThreadId = useRef<string | null>(null)
+  const stickToBottom = useRef(true)
+  const userScrolled = useRef(false)
 
   const filteredClasses = useMemo(() => {
     const term = contactQ.trim().toLowerCase()
@@ -229,19 +261,95 @@ function MessengerTab() {
     return term ? list.filter((s) => s.name.toLowerCase().includes(term)) : list
   }, [groupClass, studentsData, contactQ])
 
-  /* Keep a valid active thread when the list loads / changes. */
+  /* Keep a valid active thread when the list loads / changes.
+     A chat opened from the student list stays selected until the user picks another. */
   useEffect(() => {
+    const pin = pinnedThreadId.current
+    if (pin) {
+      if (allThreads.some((t) => t.id === pin)) setActiveId(pin)
+      return
+    }
     if (!allThreads.length) { if (activeId !== null) setActiveId(null); return }
     if (!activeId || !allThreads.some((t) => t.id === activeId)) setActiveId(allThreads[0].id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadsData])
 
-  const thread = allThreads.find((t) => t.id === activeId) ?? null
+  /* Student list / profile Message lands here: open that parent's chat and scroll to it. */
+  useEffect(() => {
+    if (app.intent !== MESSAGE_STUDENTS || !app.focus) return
+    if (isLoading) return
+    const focus = app.focus
+    if (openingStudentChats.has(focus)) return
+    openingStudentChats.add(focus)
+    if (threadsError) {
+      openingStudentChats.delete(focus)
+      toast.danger('Could not open messenger', 'Conversations could not be loaded.')
+      app.clearIntent()
+      return
+    }
+    const targets = parseMessageTargets(focus)
+    const known = threadsData ?? []
+    app.clearIntent()
+    if (!targets.length) {
+      openingStudentChats.delete(focus)
+      return
+    }
+    void (async () => {
+      let first: ChatThread | null = null
+      try {
+        for (const student of targets) {
+          const label = `${student.name} (parent)`
+          const existing = known.find((t) => !t.group && (t.childId === student.id || t.name === label))
+          if (existing) { first ??= existing; continue }
+          try {
+            const created = await createThread.mutateAsync({
+              name: label,
+              role: ['Parent', student.cls].filter(Boolean).join(' · '),
+              contactKind: 'student',
+              contactId: student.id,
+              childId: student.id,
+            })
+            first ??= created
+          } catch (err) {
+            toast.danger('Could not open chat', err instanceof Error ? err.message : 'Please try again.')
+          }
+        }
+        if (!first) return
+        pinnedThreadId.current = first.id
+        stickToBottom.current = true
+        setOpenedThread(first)
+        setActiveId(first.id)
+        requestAnimationFrame(() => {
+          panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        })
+      } finally {
+        openingStudentChats.delete(focus)
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [app.intent, app.focus, isLoading, threadsError])
+
+  const thread = allThreads.find((t) => t.id === activeId) ?? (openedThread?.id === activeId ? openedThread : null)
   const { data: messagesData, isLoading: msgsLoading } = useThreadMessages(activeId)
   const msgs = messagesData ?? []
 
   /* Drop half-composed attachments when switching conversations. */
-  useEffect(() => { setPending([]) }, [activeId])
+  useEffect(() => { setPending([]); stickToBottom.current = true }, [activeId])
+
+  /* Keep the latest message in view. Scrolling up to read history pauses this. */
+  useEffect(() => {
+    const el = logRef.current
+    if (!el || !stickToBottom.current) return
+    el.scrollTop = el.scrollHeight
+  }, [activeId, msgs])
+
+  /* Bring the open conversation into the list without a manual scroll. */
+  useEffect(() => {
+    if (!activeId || !listRef.current) return
+    const safe = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(activeId) : activeId
+    listRef.current.querySelector<HTMLElement>(`[data-thread-id="${safe}"]`)
+      ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [activeId, allThreads])
 
   const addFiles = (files: FileList | null) => {
     if (!files?.length) return
@@ -324,6 +432,7 @@ function MessengerTab() {
       },
       {
         onSuccess: (t) => {
+          pinnedThreadId.current = null
           setActiveId(t.id); setNewOpen(false); setContactQ('')
           toast.success('Chat started', `You can now message ${c.name}.`)
         },
@@ -336,6 +445,7 @@ function MessengerTab() {
     /* Reuse an existing class room if one already exists. */
     const existing = allThreads.find((t) => t.group && t.name === cls)
     if (existing) {
+      pinnedThreadId.current = null
       setActiveId(existing.id); setNewOpen(false); setContactQ('')
       toast.info('Class room opened', `${cls} group already exists.`)
       return
@@ -344,6 +454,7 @@ function MessengerTab() {
       { name: cls, role: 'Class group', group: true },
       {
         onSuccess: (t) => {
+          pinnedThreadId.current = null
           setActiveId(t.id); setNewOpen(false); setContactQ('')
           toast.success('Class room created', `Group chat for ${cls} is ready.`)
         },
@@ -406,17 +517,17 @@ function MessengerTab() {
 
   return (
     <Card pad={false}>
-      <div className="row" style={{ alignItems: 'stretch', minHeight: 460 }}>
+      <div ref={panelRef} className="row" style={{ alignItems: 'stretch', height: 560 }}>
         {/* Thread list */}
-        <div style={{ width: 300, borderRight: '1px solid var(--border)', flex: '0 0 auto' }}>
+        <div className="col" style={{ width: 300, borderRight: '1px solid var(--border)', flex: '0 0 auto', minHeight: 0 }}>
           <div className="row ai-center jc-between" style={{ padding: '10px 12px 10px 14px', borderBottom: '1px solid var(--border)' }}>
             <span className="fw7 t-md">Conversations</span>
             <Btn size="sm" variant="secondary" icon="plus" onClick={openNewChat}>New chat</Btn>
           </div>
-          <div className="col" style={{ overflowY: 'auto', maxHeight: 520 }}>
+          <div ref={listRef} className="col" style={{ overflowY: 'auto', flex: 1, minHeight: 0 }}>
             {allThreads.map((t) => (
-              <button key={t.id} className="row ai-center gap10"
-                onClick={() => setActiveId(t.id)}
+              <button key={t.id} data-thread-id={t.id} className="row ai-center gap10"
+                onClick={() => { pinnedThreadId.current = null; setActiveId(t.id) }}
                 style={{
                   padding: '12px 14px', textAlign: 'left', border: 'none', cursor: 'pointer',
                   borderBottom: '1px solid var(--border)', width: '100%',
@@ -446,7 +557,7 @@ function MessengerTab() {
         </div>
 
         {/* Conversation */}
-        <div className="col flex1" style={{ minWidth: 0 }}>
+        <div className="col flex1" style={{ minWidth: 0, minHeight: 0 }}>
           {thread ? (
             <>
               <div className="row ai-center gap10" style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
@@ -462,7 +573,19 @@ function MessengerTab() {
                 {thread.group && <Badge tone="brand" soft icon="users">Class group</Badge>}
                 <Badge tone="info" soft icon="message">Message only</Badge>
               </div>
-              <div className="col gap10 flex1" style={{ padding: 16, overflow: 'auto' }}>
+              <div
+                ref={logRef}
+                className="col gap10 flex1"
+                style={{ padding: 16, overflow: 'auto', minHeight: 0 }}
+                onWheel={() => { userScrolled.current = true }}
+                onTouchMove={() => { userScrolled.current = true }}
+                onScroll={(e) => {
+                  if (!userScrolled.current) return
+                  userScrolled.current = false
+                  const el = e.currentTarget
+                  stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+                }}
+              >
                 {msgsLoading && msgs.length === 0 && <div className="t-sm muted" style={{ textAlign: 'center' }}>Loading messages…</div>}
                 {!msgsLoading && msgs.length === 0 && <Empty icon="message" title="No messages yet" body="Say hello to start the conversation." />}
                 {msgs.map((m) => (

@@ -335,6 +335,12 @@ export function LoginScreen() {
                 </div>
               )}
 
+              {app.authError && (
+                <div className="sm-login-otp-hint" role="alert">
+                  <Icon name="lock" size={14} /><span>{app.authError}</span>
+                </div>
+              )}
+
               <form className="col gap14" onSubmit={(e) => { e.preventDefault(); signIn(email) }}>
                 <Field label="Email or mobile number">
                   <Input
