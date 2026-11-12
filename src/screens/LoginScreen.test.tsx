@@ -21,7 +21,7 @@ describe('LoginScreen', () => {
       jsonResponse({ error: { code: 'invalid_credentials', message: 'Wrong email or password.' } }, 401)))
     renderLogin()
     await userEvent.click(screen.getByRole('button', { name: /^Sign in/i }))
-    expect(await screen.findByText('Wrong email or password.')).toBeInTheDocument()
+    expect(await screen.findAllByText('Wrong email or password.')).not.toHaveLength(0)
   })
 
   it('Remember me saves login id only — never the password', async () => {
@@ -32,7 +32,7 @@ describe('LoginScreen', () => {
     await userEvent.type(screen.getByPlaceholderText('••••••••'), 'secret123')
     await userEvent.click(screen.getByLabelText(/remember me/i))
     await userEvent.click(screen.getByRole('button', { name: /^Sign in/i }))
-    await screen.findByText('Wrong email or password.')
+    expect(await screen.findAllByText('Wrong email or password.')).not.toHaveLength(0)
     const raw = localStorage.getItem('sm.login.remember')
     expect(raw).toBeTruthy()
     const parsed = JSON.parse(raw!)

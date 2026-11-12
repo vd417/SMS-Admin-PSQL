@@ -51,6 +51,7 @@ describe('createAnnouncement', () => {
       title: 'PTM',
       body: 'Friday 4pm',
       type: 'general',
+      user_id: null,
       audience: 'parents',
       emails: [],
       phones: [],
