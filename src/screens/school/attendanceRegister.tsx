@@ -30,6 +30,7 @@ const LETTER: Record<AttendanceStatus, { text: string; bg: string; color: string
   late: { text: 'L', bg: '#F59E0B', color: '#fff' },
   half_day: { text: 'H', bg: '#3B82F6', color: '#fff' },
   pending: { text: 'N', bg: '#64748B', color: '#fff' },
+  leave: { text: 'LV', bg: '#7C3AED', color: '#fff' },
 }
 const MARK_COLOR: Record<string, CellColor> = {
   P: { bg: '#22C55E', text: '#FFFFFF' },

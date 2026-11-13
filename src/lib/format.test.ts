@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { fmtMoney, fmtNum, gradeFor, gpaFor, reportFor, classRank, overallToppers, classToppers, feeStatusForBalance } from './format'
+import { fmtMoney, fmtNum, gradeFor, gpaFor, reportFor, classRank, overallToppers, classToppers, needsAttention, feeStatusForBalance } from './format'
 import { students } from '@/data/mockDb'
 import type { Student } from '@/types'
 
@@ -134,6 +134,11 @@ describe('topper ranking', () => {
     const y = groups.find((g) => g.cls === 'Y')!
     expect(x.toppers.map((t) => t.student.id)).toEqual(['a', 'b', 'c'])
     expect(y.toppers).toHaveLength(1)
+  })
+
+  it('needsAttention lists attendance under 75%, lowest first', () => {
+    const list = [mk('a', 'X', 90), mk('b', 'X', 60), mk('c', 'X', 74), mk('d', 'X', 75)]
+    expect(needsAttention(list, 'attendance').map((t) => t.student.id)).toEqual(['b', 'c'])
   })
 
   it('classToppers orders classes naturally', () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { listThreads, createThread, listThreadMessages, sendMessage, messageTime } from './threads'
+import { listThreads, createThread, listThreadMessages, sendMessage, messageTime, chatHeading, type ChatThread } from './threads'
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -31,13 +31,78 @@ describe('listThreads', () => {
     const wire = {
       data: [{
         id: 'T1', tenant_id: 'x', name: 'Mrs A', role: 'Parent · X-A',
-        last_message: 'hi', last_at: null, unread: 2, group: false, child_id: null,
+        last_message: 'hi', last_at: null, unread: 2, group: false, child_id: 'S1',
+        child_name: 'Aarav', child_class_label: '5-A', child_roll: 12,
+        parent_name: 'Priya Sharma', relationship: 'Mother',
       }],
       next_cursor: null,
     }
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(wire)))
     const rows = await listThreads()
-    expect(rows[0]).toMatchObject({ id: 'T1', name: 'Mrs A', role: 'Parent · X-A', last: 'hi', unread: 2, group: false })
+    expect(rows[0]).toMatchObject({
+      id: 'T1', name: 'Mrs A', role: 'Parent · X-A', last: 'hi', unread: 2, group: false,
+      childId: 'S1', childName: 'Aarav', childClass: '5-A', childRoll: 12,
+      parentName: 'Priya Sharma', relationship: 'Mother',
+    })
+  })
+})
+
+function thread(partial: Partial<ChatThread> & Pick<ChatThread, 'name'>): ChatThread {
+  return {
+    id: 't', role: '', last: '', lastAt: null, time: '', unread: 0, group: false, childId: null,
+    childName: null, childClass: null, childRoll: null, parentName: null, relationship: null,
+    ...partial,
+  }
+}
+
+describe('chatHeading', () => {
+  it('leads a parent chat with the parent, then the student, class, section, and roll', () => {
+    expect(chatHeading(thread({
+      name: 'Aarav (parent)', role: 'Parent · 5-A', childId: 'S1',
+      childName: 'Aarav', childClass: '5-A', childRoll: 12, parentName: 'Priya Sharma',
+    }), { name: 'Aarav', grade: '5', section: 'A', roll: 12 })).toEqual({
+      title: 'Priya Sharma',
+      subtitle: 'Class 5 · Section A · Roll 12',
+      student: 'Aarav',
+    })
+  })
+
+  it('uses the guardian name when the thread only stored the student', () => {
+    expect(chatHeading(
+      thread({ name: 'Aarav (parent)', role: 'Parent', childId: 'S1' }),
+      { name: 'Aarav', cls: '5-A', grade: '5', section: 'A', roll: 12, parentName: 'Priya Sharma' },
+    )).toEqual({
+      title: 'Priya Sharma',
+      subtitle: 'Class 5 · Section A · Roll 12',
+      student: 'Aarav',
+    })
+  })
+
+  it('shows a student chat as the student name with roll, class, and section', () => {
+    expect(chatHeading(
+      thread({ name: 'Aarav', role: 'Student', childId: 'S1', childName: 'Aarav', childRoll: 12 }),
+      { name: 'Aarav', grade: '5', section: 'A', roll: 12 },
+    )).toEqual({
+      title: 'Aarav',
+      subtitle: 'Class 5 · Section A · Roll 12',
+      student: 'Aarav',
+    })
+  })
+
+  it('uses the guardian on the student when the thread title is only the student name', () => {
+    expect(chatHeading(
+      thread({ name: 'Arav Sharma (parent)', role: 'Parent', childId: null, parentName: 'Parent' }),
+      { name: 'Arav Sharma', grade: '5', section: 'A', roll: 4, parentName: 'Suresh Sharma' },
+    )).toEqual({
+      title: 'Suresh Sharma',
+      subtitle: 'Class 5 · Section A · Roll 4',
+      student: 'Arav Sharma',
+    })
+  })
+
+  it('keeps a teacher thread as name and role', () => {
+    expect(chatHeading(thread({ name: 'Meera Rao', role: 'Teacher · Science' })))
+      .toEqual({ title: 'Meera Rao', subtitle: 'Teacher · Science', student: null })
   })
 })
 

@@ -11,6 +11,8 @@ import {
 } from '@/components/ui'
 import { gateRole, tierIncludes } from '@/lib/gating'
 import { useStudents, useStudentsPage, useStudent } from '@/api/hooks/useStudents'
+import { useStudentMonthAttendance } from '@/api/hooks/useStudentMonthAttendance'
+import { AttendanceSpanCell, AttendanceSpanLabel, type AttendanceSpan } from '@/components/AttendanceSpanCell'
 import { useExams } from '@/api/hooks/useExams'
 import { useExamPapers } from '@/api/hooks/useExamPapers'
 import { useExamMarksMap, useStudentGrades } from '@/api/hooks/useGrades'
@@ -26,7 +28,7 @@ import { properName, properPlace } from '@/lib/properCase'
 import { printReportCard } from '@/lib/reportCardPrint'
 import {
   reportFor, classRank, fmtMoney, fmtDate, feeInvoiceNo, feeStatusForBalance,
-  overallToppers, classToppers,
+  overallToppers, classToppers, needsAttention,
   type TopperMetric, type ScoredStudent, type ClassTopperGroup, type TopperScoreOpts,
 } from '@/lib/format'
 import { useStudentMonthlyAttendance } from '@/api/hooks/useStudentMonthlyAttendance'
@@ -58,8 +60,8 @@ import { DEFAULT_GRADES, compareClassesAscending } from '@/lib/defaultClasses'
 /* ---------- shared helpers ---------- */
 const feeTone: Record<FeeStatus, BadgeTone> = { paid: 'success', partial: 'warning', due: 'danger' }
 const feeLabel: Record<FeeStatus, string> = { paid: 'Paid', partial: 'Partial', due: 'Due' }
-const dayStatusTone: Record<AttendanceStatus, BadgeTone> = { present: 'success', late: 'warning', absent: 'danger', half_day: 'warning', pending: 'neutral' }
-const dayStatusLabel: Record<AttendanceStatus, string> = { present: 'Present', late: 'Late', absent: 'Absent', half_day: 'Half day', pending: 'Pending' }
+const dayStatusTone: Record<AttendanceStatus, BadgeTone> = { present: 'success', late: 'warning', absent: 'danger', half_day: 'warning', pending: 'neutral', leave: 'brand' }
+const dayStatusLabel: Record<AttendanceStatus, string> = { present: 'Present', late: 'Late', absent: 'Absent', half_day: 'Half day', pending: 'Pending', leave: 'Leave' }
 const WEEKDAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 function fmtDayLabel(iso: string): string {
   const d = new Date(`${iso}T12:00:00`)
@@ -1185,6 +1187,10 @@ function ToppersView({ students, onPick }: { students: Student[]; onPick: (id: s
     () => classToppers(students, cat, 3, scoreOpts),
     [students, cat, scoreOpts],
   )
+  const followUp = useMemo(
+    () => (cat === 'attendance' ? needsAttention(students, 'attendance', scoreOpts) : []),
+    [students, cat, scoreOpts],
+  )
   const catTabs = [
     { value: 'exam', label: 'Exam Toppers', icon: 'cap' },
     { value: 'attendance', label: 'Attendance Toppers', icon: 'calendar' },
@@ -1227,6 +1233,45 @@ function ToppersView({ students, onPick }: { students: Student[]; onPick: (id: s
                 {byClass.length === 0
                   ? null
                   : <ClassToppersGrid groups={byClass} onPick={onPick} />}
+                {cat === 'attendance' && (
+                  <Card pad={false}>
+                    <div style={{ padding: 16 }}>
+                      <CardHead
+                        title="Needs attention"
+                        sub={followUp.length ? `Attendance under 75% · ${followUp.length}` : 'No student is under 75%'}
+                        icon="alert"
+                      />
+                    </div>
+                    {followUp.length > 0 && (
+                      <table className="sm-table">
+                        <thead>
+                          <tr>
+                            <th>Student</th>
+                            <th>Class</th>
+                            <th className="ta-right">Attendance %</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {followUp.map((r) => (
+                            <tr key={r.student.id} style={{ cursor: 'pointer' }} onClick={() => onPick(r.student.id)}>
+                              <td>
+                                <div className="row ai-center gap10">
+                                  <Avatar name={properName(r.student.name)} hue={r.student.avatarHue} size={30} src={studentPhotoUrl(r.student.id)} />
+                                  <div>
+                                    <div className="fw6">{properName(r.student.name)}</div>
+                                    <div className="t-xs muted">{r.student.adm}</div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="fw6">{r.student.cls}</td>
+                              <td className="ta-right fw7">{r.score}%</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </Card>
+                )}
               </>
             )}
     </div>
@@ -1309,6 +1354,7 @@ function StudentsScreen() {
   const [fee, setFee] = useState('all')
   const [importOpen, setImportOpen] = useState(false)
   const [view, setView] = useState<'list' | 'toppers'>('list')
+  const [attMode, setAttMode] = useState<AttendanceSpan>('month')
   const [cursor, setCursor] = useState<string | undefined>()
   const [prevCursors, setPrevCursors] = useState<string[]>([])
 
@@ -1343,10 +1389,12 @@ function StudentsScreen() {
 
   const students = view === 'toppers' ? (toppersQ.data ?? []) : (pageQ.data?.rows ?? [])
   const nextCursor = pageQ.data?.nextCursor ?? null
+  const monthPct = useStudentMonthAttendance(students.map((s) => s.id))
 
-  /* Official period attendance % from student API; null when unmarked. */
-  const attendancePctOf = (s: Student): number | null =>
-    s.attendance == null ? null : Number(s.attendance)
+  /* Overall is the list percent (all marked periods). Month is this calendar month. */
+  const overallPctOf = (s: Student): number | null =>
+    s.attendance == null ? null : Math.round(Number(s.attendance))
+  const monthPctOf = (s: Student): number | null => monthPct.get(s.id.toLowerCase()) ?? null
 
   const gradeOptions = useMemo(() => {
     const unique = new Set<string>([...DEFAULT_GRADES])
@@ -1418,18 +1466,16 @@ function StudentsScreen() {
       ),
     },
     {
-      key: 'attendance', label: 'Attendance', align: 'left', sortValue: (s) => attendancePctOf(s) ?? -1,
-      render: (s) => {
-        const pct = attendancePctOf(s)
-        return pct == null
-          ? <span className="t-sm muted3">Not marked</span>
-          : (
-            <div className="row ai-center gap8" style={{ minWidth: 120 }}>
-              <div style={{ flex: 1 }}><Progress value={pct} color={attColor(pct)} /></div>
-              <span className="t-sm fw6" style={{ width: 34 }}>{pct}%</span>
-            </div>
-          )
-      },
+      key: 'attendance', label: <AttendanceSpanLabel mode={attMode} onChange={setAttMode} />, align: 'left',
+      sortValue: (s) => (attMode === 'month' ? monthPctOf(s) : overallPctOf(s)) ?? -1,
+      render: (s) => (
+        <AttendanceSpanCell
+          month={monthPctOf(s)}
+          overall={overallPctOf(s)}
+          mode={attMode}
+          onChange={setAttMode}
+        />
+      ),
     },
     {
       key: 'fee', label: 'Fees', sortValue: (s) => feeFor(s).due,

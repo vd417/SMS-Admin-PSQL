@@ -2,7 +2,7 @@
    SchoolMate — Generic DataTable: sort, pagination, bulk-select,
    column visibility.
    ============================================================ */
-import { useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { Icon } from '@/components/ui/Icon'
 import { Checkbox } from '@/components/ui/forms'
 
@@ -12,6 +12,15 @@ export interface Column<T> {
   render?: (row: T) => ReactNode
   sortValue?: (row: T) => string | number
   align?: 'left' | 'right' | 'center'
+  /** Fixed column width so a short value stays under its heading. */
+  width?: number | string
+}
+
+function headingStyle(align?: 'left' | 'right' | 'center'): CSSProperties {
+  return {
+    width: '100%',
+    justifyContent: align === 'right' ? 'flex-end' : align === 'center' ? 'center' : 'flex-start',
+  }
 }
 
 export interface DataTableProps<T> {
@@ -93,9 +102,10 @@ export function DataTable<T>({
                   c.align === 'center' && 'ta-center',
                   c.key === 'actions' && 'sm-col-actions',
                 ].filter(Boolean).join(' ')}
+                style={c.width != null ? { width: c.width } : undefined}
                 onClick={c.sortValue ? () => toggleSort(c.key) : undefined}
               >
-                <span className="row ai-center gap4" style={{ justifyContent: c.align === 'right' ? 'flex-end' : undefined }}>
+                <span className="row ai-center gap4" style={headingStyle(c.align)}>
                   {c.label}
                   {sort?.key === c.key && <Icon name={sort.dir === 'asc' ? 'chevDown' : 'chevRight'} size={12} />}
                 </span>

@@ -6,6 +6,7 @@
    Staff: photos + present/absent. Geo-fence: Platinum campus setup + live punches.
    ============================================================ */
 import { useEffect, useMemo, useState, type ComponentType } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useApp, useToast } from '@/lib/hooks'
 import { can, tierIncludes } from '@/lib/gating'
 import {
@@ -27,7 +28,7 @@ import {
 } from '@/api/peopleAttendance'
 import { ClassWiseStudents } from './attendanceClassWise'
 import { listClassAttendanceRange, type AttendanceStatus } from '@/api/attendance'
-import { listAllPeriodAttendanceRecords } from '@/api/periodAttendanceAdvanced'
+import { listAllPeriodAttendanceRecords, studentDayHeadcount } from '@/api/periodAttendanceAdvanced'
 import { useClasses } from '@/api/hooks/useClasses'
 import { buildStudentRegisterRows, registerToCsv, type RegisterRow } from '@/lib/attendanceExport'
 import { downloadTextFile } from '@/lib/feeExport'
@@ -71,8 +72,8 @@ const GROUP_OPTS_TEACHER = [
   { value: 'advanced', label: 'Advanced' },
 ]
 
-const STATUS_TONE: Record<AttStatus, BadgeTone> = { present: 'success', late: 'warning', absent: 'danger', half_day: 'warning', pending: 'neutral' }
-const STATUS_LABEL: Record<AttStatus, string> = { present: 'Present', late: 'Late', absent: 'Absent', half_day: 'Half day', pending: 'Pending' }
+const STATUS_TONE: Record<AttStatus, BadgeTone> = { present: 'success', late: 'warning', absent: 'danger', half_day: 'warning', pending: 'neutral', leave: 'brand' }
+const STATUS_LABEL: Record<AttStatus, string> = { present: 'Present', late: 'Late', absent: 'Absent', half_day: 'Half day', pending: 'Pending', leave: 'Leave' }
 const PEOPLE_STATUS_OPTS = [
   { value: 'present', label: 'Present' },
   { value: 'half_day', label: 'Half day' },
@@ -234,7 +235,7 @@ function StaffRoster({ group, editable }: { group: 'teachers' | 'staff'; editabl
   )
 
   const counts = useMemo(() => {
-    const c = { present: 0, late: 0, absent: 0, half_day: 0, pending: 0, unmarked: 0 }
+    const c = { present: 0, late: 0, absent: 0, half_day: 0, pending: 0, leave: 0, unmarked: 0 }
     searched.forEach((p) => { c[p.status ?? 'unmarked']++ })
     return c
   }, [searched])
@@ -531,6 +532,31 @@ function AttendanceScreen() {
 
   const today = todayIso()
   const overviewQ = usePeriodAttendanceRangeSummary({ preset: 'custom', from: today, to: today }, allPeople)
+  const headcountFromApi = overviewQ.data?.presentStudents != null
+    && overviewQ.data.absentStudents != null
+    && overviewQ.data.lateStudents != null
+  const todayMarksQ = useQuery({
+    queryKey: ['attendance', 'today-student-headcount', today],
+    queryFn: () => listAllPeriodAttendanceRecords({ preset: 'custom', from: today, to: today }),
+    enabled: allPeople && overviewQ.isSuccess && !headcountFromApi,
+    staleTime: 15_000,
+  })
+  const studentCounts = headcountFromApi
+    ? {
+        presentStudents: overviewQ.data!.presentStudents!,
+        absentStudents: overviewQ.data!.absentStudents!,
+        lateStudents: overviewQ.data!.lateStudents!,
+      }
+    : todayMarksQ.data
+      ? studentDayHeadcount(todayMarksQ.data)
+      : null
+  const studentMarked = studentCounts
+    ? studentCounts.presentStudents + studentCounts.absentStudents + studentCounts.lateStudents + (studentCounts.leaveStudents ?? 0)
+    : 0
+  const studentPct = studentMarked > 0 && studentCounts
+    ? Math.round(((studentCounts.presentStudents + studentCounts.lateStudents) / studentMarked) * 100)
+    : null
+  const countsLoading = overviewQ.isLoading || (!headcountFromApi && todayMarksQ.isLoading)
   const trendQ = useDashboardAttendanceTrend(allPeople)
   const attTrend = useMemo(() => (trendQ.data ?? []).filter((p) => !p.empty), [trendQ.data])
 
@@ -617,25 +643,25 @@ function AttendanceScreen() {
             <Kpi
               icon="check" iconBg="color-mix(in srgb, #22C55E 12%, white)" iconColor="#22C55E"
               label="Overall attendance"
-              value={overviewQ.data?.attendancePercentage == null ? '—' : `${overviewQ.data.attendancePercentage}%`}
+              value={countsLoading || studentPct == null ? '—' : `${studentPct}%`}
               foot="Today · students"
             />
             <Kpi
               icon="users" iconBg="color-mix(in srgb, #4F46E5 12%, white)" iconColor="#4F46E5"
               label="Present"
-              value={overviewQ.isLoading ? '—' : fmtNum(overviewQ.data?.present ?? 0)}
+              value={countsLoading || !studentCounts ? '—' : fmtNum(studentCounts.presentStudents)}
               foot="Today · students"
             />
             <Kpi
               icon="close" iconBg="color-mix(in srgb, #DC2626 12%, white)" iconColor="#DC2626"
               label="Absent"
-              value={overviewQ.isLoading ? '—' : fmtNum(overviewQ.data?.absent ?? 0)}
+              value={countsLoading || !studentCounts ? '—' : fmtNum(studentCounts.absentStudents)}
               foot="Today · students"
             />
             <Kpi
               icon="clock" iconBg="color-mix(in srgb, #D97706 12%, white)" iconColor="#D97706"
               label="Late"
-              value={overviewQ.isLoading ? '—' : fmtNum(overviewQ.data?.late ?? 0)}
+              value={countsLoading || !studentCounts ? '—' : fmtNum(studentCounts.lateStudents)}
               foot="Today · students"
             />
           </div>

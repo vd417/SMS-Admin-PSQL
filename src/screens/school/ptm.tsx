@@ -19,6 +19,11 @@ const STATUS_TONE: Record<PtmStatus, BadgeTone> = { pending: 'warning', confirme
 const STATUS_LABEL: Record<PtmStatus, string> = { pending: 'Pending', confirmed: 'Confirmed' }
 const MODES = ['In person', 'Video call', 'Phone call']
 
+function todayIso(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 type StatusFilter = 'all' | PtmStatus
 
 type Scope = 'student' | 'section' | 'class' | 'all'
@@ -126,6 +131,7 @@ function PtmScreen() {
   const submit = () => {
     if (!form.teacherId) { toast.danger('Teacher required', 'Pick the teacher for this meeting.'); return }
     if (!form.date) { toast.danger('Date required', 'Pick a meeting date.'); return }
+    if (form.date < todayIso()) { toast.danger('Date not allowed', 'Pick today or a later date. Past dates cannot be scheduled.'); return }
     if (!form.time) { toast.danger('Time required', 'Pick a meeting time.'); return }
     const isVideo = form.mode === 'Video call'
     if (isVideo && !form.meetingLink.trim()) { toast.danger('Meeting link required', 'Paste the video-call link for this meeting.'); return }
@@ -336,7 +342,9 @@ function PtmScreen() {
           </Field>
           <Field label="Subject"><Input value={form.subject} placeholder="Optional" onChange={(e) => setForm((f) => ({ ...f, subject: e.target.value }))} /></Field>
           <div className="sm-grid-2 gap16">
-            <Field label="Date" required><Input type="date" value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} /></Field>
+            <Field label="Date" required hint="Today or a later date">
+              <Input type="date" min={todayIso()} value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} />
+            </Field>
             <Field label="Time" required><Input type="time" value={form.time} onChange={(e) => setForm((f) => ({ ...f, time: e.target.value }))} /></Field>
           </div>
           <Field label="Mode">

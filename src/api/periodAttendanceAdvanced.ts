@@ -271,6 +271,8 @@ export type ClassStudentSummaryRow = {
   absent: number
   late: number
   attendancePercentage: number | null
+  /** Every marked period in the range, chronological. Day columns read this so a day with more than six periods still shows the earliest subjects. */
+  periods: ClassStudentRecentPeriod[]
   /** Chronological, most recent last, capped to CLASS_STUDENT_RECENT_PERIODS. */
   recentPeriods: ClassStudentRecentPeriod[]
   tier: ClassStudentAttendanceTier
@@ -310,6 +312,7 @@ export function buildClassStudentSummaries(rows: PeriodAttendanceAdvancedRow[]):
     }
     const total = marks.length
     const pct = total > 0 ? Math.round((present / total) * 100) : null
+    const periods = marks.map((m) => ({ status: m.status, subject: m.subject, date: m.date, period: m.period }))
     out.push({
       studentId,
       studentName: name,
@@ -317,8 +320,8 @@ export function buildClassStudentSummaries(rows: PeriodAttendanceAdvancedRow[]):
       absent,
       late,
       attendancePercentage: pct,
-      recentPeriods: marks.slice(-CLASS_STUDENT_RECENT_PERIODS)
-        .map((m) => ({ status: m.status, subject: m.subject, date: m.date, period: m.period })),
+      periods,
+      recentPeriods: periods.slice(-CLASS_STUDENT_RECENT_PERIODS),
       tier: classStudentTier(pct),
     })
   }
@@ -430,6 +433,74 @@ export type AdvRangeRollup = {
   late: number
   leave: number
   attendancePercentage: number | null
+  /** Distinct students for the range. Null when the API still returns period totals only. */
+  presentStudents: number | null
+  absentStudents: number | null
+  lateStudents: number | null
+}
+
+type DayBuckets = { present: number; late: number; absent: number; leave: number }
+
+function dayStatusFromBuckets(counts: DayBuckets): 'present' | 'absent' | 'late' | 'leave' | null {
+  const marked = counts.present + counts.late + counts.absent + counts.leave
+  if (marked <= 0) return null
+  const attended = counts.present + counts.late
+  if (counts.leave > attended && counts.leave >= counts.absent) return 'leave'
+  if (attended * 2 < marked) return 'absent'
+  if (counts.present === 0 && counts.late > 0) return 'late'
+  return 'present'
+}
+
+function bucketsByStudentDay(rows: { studentId: string; date: string; status: string }[]): Map<string, DayBuckets> {
+  const byStudentDay = new Map<string, DayBuckets>()
+  for (const row of rows) {
+    if (!row.studentId) continue
+    const status = String(row.status ?? '').trim().toLowerCase().replace(/-/g, '_')
+    const bucket = status === 'present' || status === 'half_day' ? 'present'
+      : status === 'late' ? 'late'
+      : status === 'absent' ? 'absent'
+      : status === 'leave' ? 'leave'
+      : null
+    if (!bucket) continue
+    const key = `${row.studentId}|${attendanceCalendarDate(row.date)}`
+    const cur = byStudentDay.get(key) ?? { present: 0, late: 0, absent: 0, leave: 0 }
+    cur[bucket] += 1
+    byStudentDay.set(key, cur)
+  }
+  return byStudentDay
+}
+
+/** One count per student per day. A student with several present periods counts once.
+ *  Present when present + late is at least half of that day's marks. */
+export function studentDayHeadcount(
+  rows: { studentId: string; date: string; status: string }[],
+): { presentStudents: number; absentStudents: number; lateStudents: number; leaveStudents: number } {
+  let presentStudents = 0
+  let absentStudents = 0
+  let lateStudents = 0
+  let leaveStudents = 0
+  for (const counts of bucketsByStudentDay(rows).values()) {
+    const status = dayStatusFromBuckets(counts)
+    if (status === 'present') presentStudents += 1
+    else if (status === 'absent') absentStudents += 1
+    else if (status === 'late') lateStudents += 1
+    else if (status === 'leave') leaveStudents += 1
+  }
+  return { presentStudents, absentStudents, lateStudents, leaveStudents }
+}
+
+/** One status per student for the marks given (a single day). */
+export function studentDayStatusById(
+  rows: { studentId: string; date: string; status: string }[],
+): Map<string, 'present' | 'absent' | 'late' | 'leave'> {
+  const out = new Map<string, 'present' | 'absent' | 'late' | 'leave'>()
+  for (const [key, counts] of bucketsByStudentDay(rows)) {
+    const status = dayStatusFromBuckets(counts)
+    if (!status) continue
+    const studentId = key.slice(0, key.lastIndexOf('|'))
+    out.set(studentId, status)
+  }
+  return out
 }
 
 export type PeriodAttendanceRangeFilters = {
@@ -502,6 +573,9 @@ function toRangeRollup(raw: Record<string, unknown>): AdvRangeRollup {
     late: Number(row.late) || 0,
     leave: Number(row.leave) || 0,
     attendancePercentage: row.attendancePercentage != null ? Number(row.attendancePercentage) : null,
+    presentStudents: row.presentStudents == null || row.presentStudents === '' ? null : Number(row.presentStudents),
+    absentStudents: row.absentStudents == null || row.absentStudents === '' ? null : Number(row.absentStudents),
+    lateStudents: row.lateStudents == null || row.lateStudents === '' ? null : Number(row.lateStudents),
   }
 }
 

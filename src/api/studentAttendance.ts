@@ -333,6 +333,25 @@ export async function getStudentAttendanceSummary(
   }
 }
 
+/** This month's official period % for each student. Missing or unmarked ids are left out. */
+export async function studentMonthAttendancePct(
+  studentIds: string[],
+  from: string,
+  to: string,
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>()
+  await mapPool(studentIds.filter(Boolean), 6, async (id) => {
+    try {
+      const summary = await getStudentAttendanceSummary(id, from, to)
+      if (summary.attendancePercentage == null || summary.totalMarkedPeriods <= 0) return
+      out.set(id.toLowerCase(), Math.round(summary.attendancePercentage))
+    } catch {
+      /* one student failing must not blank the rest of the list */
+    }
+  })
+  return out
+}
+
 export async function getClassAttendanceSummary(
   classId: string,
   from?: string,

@@ -33,6 +33,15 @@ describe('groupStudentsByParent', () => {
     expect(parents[0].name).toBe('Ravi Kumar')
     expect(parents[0].wards.map((w) => `${w.name} (${w.cls})`)).toEqual(['Anaya (V-A)', 'Rohan (VIII-B)'])
     expect(parents[0].due).toBe(140)
+    const fromInvoices = groupStudentsByParent(
+      [
+        stu({ id: 'a', name: 'Anaya', cls: 'V-A', guardianEmail: 'ravi@home.test', feeDue: 100 }),
+        stu({ id: 'b', name: 'Rohan', cls: 'VIII-B', guardianEmail: 'ravi@home.test', feeDue: 40 }),
+      ],
+      undefined,
+      new Map([['a', 250], ['b', 0]]),
+    )
+    expect(fromInvoices[0].due).toBe(250)
     expect(parents[0].email).toBe('ravi@home.test')
   })
 

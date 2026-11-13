@@ -7,6 +7,7 @@ import {
   fetchRemotePeopleAttendance, savePeopleAttendanceRemote, pushPeopleAttendance,
   collectPeopleMarksToSave, listPersonAttendanceHistory, listPeopleAttendanceRange,
   listPeopleAttendanceRegister, PEOPLE_ATTENDANCE_CHANGED,
+  attendancePctByPerson, mergeAttendanceDays, attendanceSpans,
 } from './peopleAttendance'
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -279,6 +280,56 @@ describe('listPeopleAttendanceRange', () => {
     expect(rows).toHaveLength(2)
     expect(rows[0]).toMatchObject({ studentId: 't1', date: '2026-08-01', status: 'present' })
     expect(localStorage.length).toBe(0)
+  })
+})
+
+describe('attendancePctByPerson', () => {
+  it('counts present, late, and half day over marked days, and ignores unmarked people', () => {
+    const pct = attendancePctByPerson([
+      { studentId: 't1', status: 'present' },
+      { studentId: 't1', status: 'late' },
+      { studentId: 't1', status: 'absent' },
+      { studentId: 't1', status: 'half_day' },
+      { studentId: 't1', status: 'leave' },
+      { studentId: 't2', status: 'absent' },
+    ])
+    expect(pct.get('t1')).toBe(60)
+    expect(pct.get('t2')).toBe(0)
+    expect(pct.has('t3')).toBe(false)
+  })
+
+  it('matches ids ignoring case', () => {
+    const pct = attendancePctByPerson([{ studentId: 'T1', status: 'present' }])
+    expect(pct.get('t1')).toBe(100)
+  })
+})
+
+describe('attendanceSpans', () => {
+  it('keeps this month separate from the rest of the loaded span', () => {
+    const spans = attendanceSpans(
+      [
+        { studentId: 't1', date: '2026-10-01', status: 'absent' },
+        { studentId: 't1', date: '2026-11-02', status: 'present' },
+      ],
+      [],
+      '2026-11-01',
+      '2026-11-14',
+    )
+    expect(spans.month.get('t1')).toBe(100)
+    expect(spans.overall.get('t1')).toBe(50)
+  })
+})
+
+describe('mergeAttendanceDays', () => {
+  it('counts an app check-in as present only on a day with no roll-call mark', () => {
+    const pct = mergeAttendanceDays(
+      [
+        { studentId: 'T1', date: '2026-11-01', status: 'absent' },
+        { studentId: 'T1', date: '2026-11-02', status: 'present' },
+      ],
+      [{ personId: 't1', dates: ['2026-11-01', '2026-11-03'] }],
+    )
+    expect(pct.get('t1')).toBe(67)
   })
 })
 

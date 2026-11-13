@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { listStudents, listStudentsPage, getStudent, createStudent, updateStudent, toStudent, studentGuardianName, studentParentLabel, parentMailFromStudent, fromStudent, fromStudentUpdate } from './students'
+import { listStudents, listStudentsPage, getStudent, createStudent, updateStudent, toStudent, studentGuardianName, actualParentName, studentParentLabel, parentMailFromStudent, fromStudent, fromStudentUpdate } from './students'
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -35,6 +35,20 @@ describe('listStudents', () => {
     })
     expect(s.guardian).toBe('Meera Rao')
     expect(studentGuardianName(s)).toBe('Meera Rao')
+  })
+
+  it('uses the father name when the guardian field is the student or the word Parent', () => {
+    expect(actualParentName({
+      name: 'Arav Sharma',
+      guardian: 'Parent',
+      father: { name: 'Suresh Sharma' },
+    })).toBe('Suresh Sharma')
+    expect(actualParentName({
+      name: 'Arav Sharma',
+      guardian: 'Arav Sharma',
+      mother: { name: 'Anita Sharma' },
+    })).toBe('Anita Sharma')
+    expect(actualParentName({ name: 'Arav Sharma', guardian: 'Parent' })).toBe('')
   })
 
   it('forwards q/grade/status/fee as query params and drops "all"', async () => {

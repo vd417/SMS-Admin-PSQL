@@ -92,7 +92,7 @@ describe('PtmScreen', () => {
     setSelect('Student', 'student-1')
     setSelect('Teacher', 'teacher-2')
     setText('Subject', 'Science')
-    setDate('Date', '2026-11-01')
+    setDate('Date', '2026-12-01')
     setTime('Time', '09:15')
     setSelect('Mode', 'In person')
 
@@ -104,10 +104,21 @@ describe('PtmScreen', () => {
       studentId: 'student-1',
       teacherId: 'teacher-2',
       subject: 'Science',
-      date: '2026-11-01',
+      date: '2026-12-01',
       time: '09:15',
       mode: 'In person',
     })
+  })
+
+  it('does not schedule a meeting on a past date', () => {
+    render(<PtmScreen />)
+    fireEvent.click(screen.getByText('Schedule meeting'))
+    setSelect('Student', 'student-1')
+    setSelect('Teacher', 'teacher-2')
+    setDate('Date', '2020-01-01')
+    setTime('Time', '09:15')
+    fireEvent.click(screen.getByRole('button', { name: /^schedule$/i }))
+    expect(createMutate).not.toHaveBeenCalled()
   })
 
   it('cancels a meeting via the delete confirmation', () => {

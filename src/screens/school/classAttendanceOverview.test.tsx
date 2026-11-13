@@ -13,6 +13,17 @@ vi.mock('@/api/hooks/usePeriodAttendanceAdvanced', () => ({
       students: [{
         studentId: 'student-1', studentName: 'Aarav Shah', present: 5, absent: 1, late: 0,
         attendancePercentage: 83,
+        periods: [
+          // Monday period 2 is present in the full list, but omitted from recentPeriods
+          // (the last-6 cap). The day columns must still show it.
+          { status: 'present', subject: 'Art', date: '2026-08-31', period: 2 },
+          { status: 'present', subject: 'Mathematics', date: '2026-08-31', period: 1 },
+          { status: 'present', subject: 'Science', date: '2026-09-04', period: 2 },
+          { status: 'absent', subject: 'English', date: '2026-09-01', period: 3 },
+          { status: 'present', subject: 'Hindi', date: '2026-09-02', period: 1 },
+          { status: 'present', subject: 'Mathematics', date: '2026-09-03T00:00:00.000', period: 1 },
+          { status: 'present', subject: 'Social Science', date: '2026-09-03', period: 2 },
+        ],
         recentPeriods: [
           // 2026-08-31 = Mon, 2026-09-04 = Fri. The timetable mock below publishes
           // Mon period 1 = Computer (overrides the historically-recorded Mathematics)
@@ -211,13 +222,14 @@ describe('ClassAttendanceOverview', () => {
   it('fullRoster + multi-day range: subject columns change per day, stepping with Next/Prev', () => {
     render(<ClassAttendanceOverview classId="class-1" from="2026-08-31" to="2026-09-04" fullRoster />)
 
-    // Day 1 (Mon 2026-08-31): timetable publishes Computer (P1, marked) and Art (P2, unmarked).
+    // Day 1 (Mon 2026-08-31): timetable publishes Computer (P1) and Art (P2). Art is only on
+    // the full period list, not the last-6 recentPeriods slice, and must still show Present.
     expect(within(screen.getByRole('table')).getByText('Computer')).toBeInTheDocument()
     expect(within(screen.getByRole('table')).getByText('Art')).toBeInTheDocument()
     expect(within(screen.getByRole('table')).queryByText('Science')).not.toBeInTheDocument()
     const aaravDay1 = screen.getByText('Aarav Shah').closest('tr')!
-    expect(within(aaravDay1).getByText('P')).toBeInTheDocument()
-    expect(within(aaravDay1).getByTitle('2026-08-31 · Period 2 · Art · Not marked')).toBeInTheDocument()
+    expect(within(aaravDay1).getAllByText('P')).toHaveLength(2)
+    expect(within(aaravDay1).getByTitle('2026-08-31 · Period 2 · Art · Present')).toBeInTheDocument()
     expect(screen.getByText(/1 of 5/)).toBeInTheDocument()
 
     const next = screen.getByText('Next →')

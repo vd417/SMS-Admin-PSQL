@@ -135,11 +135,8 @@ html[data-theme="dark"] .sm-people-card .sm-people-meter > span { background: #f
 @keyframes sm-live { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 55%, transparent); } 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
 
 /* ---------- Tables ---------- */
-.sm-table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--sh-xs); overflow-x: auto; overflow-y: hidden; }
+.sm-table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--sh-xs); overflow: auto; }
 .sm-table { width: 100%; border-collapse: collapse; min-width: 960px; }
-.sm-table th.sm-col-actions,
-.sm-table td.sm-col-actions { position: sticky; right: 0; background: var(--surface); z-index: 1; box-shadow: -8px 0 12px -10px rgba(15, 23, 42, .25); }
-.sm-table thead th.sm-col-actions { background: var(--surface-2); }
 .sm-table thead th { text-align: left; font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-3); padding: 12px 16px; border-bottom: 1px solid var(--border); white-space: nowrap; background: var(--surface-2); }
 .sm-table thead th.sortable { cursor: pointer; user-select: none; }
 .sm-table thead th.sortable:hover { color: var(--text-2); }

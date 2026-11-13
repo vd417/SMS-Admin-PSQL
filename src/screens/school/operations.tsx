@@ -9,8 +9,8 @@
      with a Platinum-gated live map below.
    Frontend-only, mock data.
    ============================================================ */
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { UseQueryResult } from '@tanstack/react-query'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useQuery, type UseQueryResult } from '@tanstack/react-query'
 import { useApp, useToast } from '@/lib/hooks'
 import { tierIncludes, can } from '@/lib/gating'
 import {
@@ -37,6 +37,7 @@ import { fromApiRole, leadershipRoleLabel } from '@/api/users'
 import { collectAudienceContacts } from '@/lib/collectAudienceEmails'
 import { gradeRank } from '@/lib/defaultClasses'
 import { shouldPublishGps } from '@/lib/gpsThrottle'
+import { tripIsLive } from '@/lib/busTrip'
 import { validatePhone } from '@/lib/validation'
 import { groupStudentsByStop } from '@/lib/transportStops'
 import {
@@ -48,12 +49,14 @@ import {
   useSportsSummary, useSportsTeams, useSportsEvents, useSportsMedals,
   useCreateSportsTeam, useCreateSportsEvent, useCreateSportsMedal,
   useSendBusNotification,
-  useStartBusTrip, usePingBusTrip, useEndBusTrip,
+  usePingBusTrip,
   useFleetWebSocket, useFleetRouteStops, useFleetRouteGeometries,
 } from '@/api/hooks/useOperations'
 import type { FleetBus, TransportRoute, RouteStop, SportsMedal } from '@/api/operations'
-import type { Bus, Complaint } from '@/types'
-import type { ChatAttachment, ChatThread } from '@/api/threads'
+import type { Bus, Complaint, Student } from '@/types'
+import { chatHeading, type ChatAttachment, type ChatThread } from '@/api/threads'
+import { actualParentName, getStudent, listStudents } from '@/api/students'
+import { fetchStudentExtras } from '@/api/studentExtras'
 import { compressImageFile } from '@/lib/compressImage'
 
 /** A picked-but-not-yet-sent attachment — keeps the raw File so an image can be
@@ -116,10 +119,6 @@ const BUS_META: Record<Bus['status'], { tone: BadgeTone; label: string }> = {
   maintenance: { tone: 'warning', label: 'Maintenance' },
 }
 
-function isFreshGps(status: string): boolean {
-  return status === 'on_route' || status === 'at_stop';
-}
-
 /** Stable colour per vehicle from its number plate (backend has no colour column). */
 function busHue(seed: string): number {
   let h = 0
@@ -173,6 +172,49 @@ function CommunicationScreen() {
   )
 }
 
+const MESSAGE_URL = /https?:\/\/[^\s<]+|www\.[^\s<]+/gi
+
+/** Plain message text, with web links shown as the address and kept inside the bubble. */
+function MessageText({ text, light }: { text: string; light?: boolean }) {
+  const nodes: ReactNode[] = []
+  let last = 0
+  for (const match of text.matchAll(new RegExp(MESSAGE_URL.source, 'gi'))) {
+    const start = match.index ?? 0
+    if (start > last) nodes.push(text.slice(last, start))
+    let url = match[0]
+    const trail = url.match(/[)\].,!?;:]+$/)
+    let extra = ''
+    if (trail && trail.index != null) {
+      extra = url.slice(trail.index)
+      url = url.slice(0, trail.index)
+    }
+    const href = /^https?:\/\//i.test(url) ? url : `https://${url}`
+    nodes.push(
+      <a
+        key={`${start}-${url}`}
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        style={{
+          color: light ? '#fff' : 'var(--brand-700)',
+          textDecoration: 'underline',
+          overflowWrap: 'anywhere',
+        }}
+      >
+        {url}
+      </a>,
+    )
+    if (extra) nodes.push(extra)
+    last = start + match[0].length
+  }
+  if (last < text.length) nodes.push(text.slice(last))
+  return (
+    <div className="t-md" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+      {nodes}
+    </div>
+  )
+}
+
 /* ---------- Messenger: thread list + conversation (message only) ---------- */
 interface MessageTarget { id: string; name: string; cls: string }
 
@@ -197,6 +239,120 @@ function parseMessageTargets(focus: string | null): MessageTarget[] {
   } catch {
     return []
   }
+}
+
+interface RosterHint {
+  id: string
+  name: string
+  cls: string
+  grade: string
+  section: string
+  roll: number
+  parentName: string
+}
+
+function rosterHint(s: Pick<Student, 'id' | 'name' | 'cls' | 'grade' | 'section' | 'roll' | 'guardian' | 'father' | 'mother'>): RosterHint {
+  return {
+    id: s.id,
+    name: s.name,
+    cls: s.cls || '',
+    grade: s.grade || '',
+    section: s.section || '',
+    roll: s.roll || 0,
+    parentName: actualParentName(s),
+  }
+}
+
+function isParentThread(t: ChatThread): boolean {
+  if (t.group) return false
+  if (/ \(parent\)$/i.test(t.name)) return true
+  if (/\bparent\b/i.test(t.role)) return true
+  return /mother|father|guardian|parent/i.test(t.relationship || '')
+}
+
+/** Student shown under a parent chat: the linked child, or the name before " (parent)". */
+function parentStudentName(t: ChatThread): string {
+  const child = (t.childName || '').trim()
+  if (child) return child
+  if (/ \(parent\)$/i.test(t.name)) return t.name.replace(/ \(parent\)$/i, '').trim()
+  return ''
+}
+
+function indexRoster(students: Student[]): { byId: Map<string, RosterHint>; byName: Map<string, RosterHint> } {
+  const byId = new Map<string, RosterHint>()
+  const byName = new Map<string, RosterHint>()
+  for (const s of students) {
+    const hint = rosterHint(s)
+    byId.set(s.id.toLowerCase(), hint)
+    const key = s.name.trim().toLowerCase()
+    if (key && !byName.has(key)) byName.set(key, hint)
+  }
+  return { byId, byName }
+}
+
+function lookupRoster(roster: { byId: Map<string, RosterHint>; byName: Map<string, RosterHint> }, t: ChatThread): RosterHint | undefined {
+  if (t.childId) {
+    const hit = roster.byId.get(t.childId.toLowerCase())
+    if (hit) return hit
+  }
+  if (!isParentThread(t)) return undefined
+  const key = parentStudentName(t).toLowerCase()
+  return key ? roster.byName.get(key) : undefined
+}
+
+async function mapPool<T>(items: T[], size: number, fn: (item: T) => Promise<void>): Promise<void> {
+  for (let i = 0; i < items.length; i += size) {
+    await Promise.all(items.slice(i, i + size).map(fn))
+  }
+}
+
+interface InboxParentFill {
+  byId: Record<string, RosterHint>
+  names: Record<string, string>
+}
+
+/** Students missing from the first roster page, plus father/mother names stored only on extras. */
+async function fillInboxParents(input: {
+  unknownIds: string[]
+  unknownNames: string[]
+  known: { id: string; name: string }[]
+}): Promise<InboxParentFill> {
+  const students: Student[] = []
+  await mapPool(input.unknownIds, 4, async (id) => {
+    try { students.push(await getStudent(id)) } catch { /* removed student */ }
+  })
+  await mapPool(input.unknownNames, 4, async (name) => {
+    if (students.some((s) => s.name.trim().toLowerCase() === name)) return
+    try {
+      const rows = await listStudents({ q: name, limit: 15 })
+      const hit = rows.find((s) => s.name.trim().toLowerCase() === name)
+      if (hit) students.push(hit)
+    } catch { /* search failed */ }
+  })
+  const byId: Record<string, RosterHint> = {}
+  const nameById = new Map<string, string>()
+  for (const known of input.known) nameById.set(known.id.toLowerCase(), known.name)
+  for (const s of students) {
+    byId[s.id.toLowerCase()] = rosterHint(s)
+    nameById.set(s.id.toLowerCase(), s.name)
+  }
+  const needExtras = [
+    ...input.known.map((k) => k.id),
+    ...students.filter((s) => !actualParentName(s)).map((s) => s.id),
+  ]
+  const names: Record<string, string> = {}
+  await mapPool([...new Set(needExtras.map((id) => id.toLowerCase()))], 4, async (id) => {
+    try {
+      const ex = await fetchStudentExtras(id)
+      const name = actualParentName({ name: nameById.get(id) || '', father: ex?.father, mother: ex?.mother })
+      if (name) names[id] = name
+    } catch { /* extras are optional */ }
+  })
+  return { byId, names }
+}
+
+function studentIsTitle(head: { title: string; student?: string | null }): boolean {
+  return !!head.student && head.student.trim().toLowerCase() === head.title.trim().toLowerCase()
 }
 
 function hueFor(seed: string): number {
@@ -237,10 +393,58 @@ function MessengerTab() {
   const classNames = useMergedClassNames()
   const { data: teachersData } = useTeachers()
   const { data: staffData } = useStaff()
-  const { data: studentsData } = useStudents()
+  const { data: studentsData } = useStudents({ limit: 200 })
   const { data: schoolUsersData } = useSchoolUsers()
   const app = useApp()
   const allThreads = threadsData ?? []
+  const roster = useMemo(() => indexRoster(studentsData ?? []), [studentsData])
+  const studentById = roster.byId
+  const parentGaps = useMemo(() => {
+    const unknownIds: string[] = []
+    const unknownNames: string[] = []
+    const known: { id: string; name: string }[] = []
+    const seenId = new Set<string>()
+    const seenName = new Set<string>()
+    for (const t of allThreads) {
+      if (!isParentThread(t)) continue
+      const hint = lookupRoster(roster, t)
+      if (!hint) {
+        if (t.childId) {
+          const id = t.childId.toLowerCase()
+          if (!seenId.has(id)) { seenId.add(id); unknownIds.push(t.childId) }
+        }
+        const name = parentStudentName(t).toLowerCase()
+        if (name && !seenName.has(name)) { seenName.add(name); unknownNames.push(name) }
+        continue
+      }
+      if (!hint.parentName && !seenId.has(hint.id.toLowerCase())) {
+        seenId.add(hint.id.toLowerCase())
+        known.push({ id: hint.id, name: hint.name })
+      }
+    }
+    return { unknownIds, unknownNames, known }
+  }, [allThreads, roster])
+  const parentFill = useQuery({
+    queryKey: ['inbox-parent-names', parentGaps.unknownIds, parentGaps.unknownNames, parentGaps.known.map((k) => k.id)],
+    enabled: parentGaps.unknownIds.length + parentGaps.unknownNames.length + parentGaps.known.length > 0,
+    staleTime: 60_000,
+    queryFn: () => fillInboxParents(parentGaps),
+  })
+  const hintFor = (t: ChatThread): RosterHint | undefined => {
+    let hint = lookupRoster(roster, t)
+    const fill = parentFill.data
+    if (!hint && fill) {
+      if (t.childId && fill.byId[t.childId.toLowerCase()]) hint = fill.byId[t.childId.toLowerCase()]
+      else {
+        const key = parentStudentName(t).toLowerCase()
+        hint = key ? Object.values(fill.byId).find((h) => h.name.trim().toLowerCase() === key) : undefined
+      }
+    }
+    if (!hint) return undefined
+    const extra = fill?.names[hint.id.toLowerCase()]
+    return { ...hint, parentName: hint.parentName || extra || '' }
+  }
+  const headingFor = (t: ChatThread) => chatHeading(t, hintFor(t))
   const panelRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const logRef = useRef<HTMLDivElement>(null)
@@ -412,7 +616,7 @@ function MessengerTab() {
       ...leadershipContacts,
       ...staffContacts,
       ...teacherContacts,
-      ...(studentsData ?? []).slice(0, 120).map((s) => ({ id: 'p:' + s.id, rawId: s.id, name: `${s.name} (parent)`, hue: s.avatarHue ?? 0, kind: 'parent' as ContactKind, role: ['Parent', s.cls].filter(Boolean).join(' · ') })),
+      ...(studentsData ?? []).slice(0, 200).map((s) => ({ id: 'p:' + s.id, rawId: s.id, name: `${s.name} (parent)`, hue: s.avatarHue ?? 0, kind: 'parent' as ContactKind, role: ['Parent', s.cls, s.roll > 0 ? `Roll ${s.roll}` : ''].filter(Boolean).join(' · ') })),
     ]
   }, [leadershipContacts, teachersData, staffData, studentsData])
   const filteredContacts = useMemo(() => {
@@ -525,7 +729,9 @@ function MessengerTab() {
             <Btn size="sm" variant="secondary" icon="plus" onClick={openNewChat}>New chat</Btn>
           </div>
           <div ref={listRef} className="col" style={{ overflowY: 'auto', flex: 1, minHeight: 0 }}>
-            {allThreads.map((t) => (
+            {allThreads.map((t) => {
+              const head = headingFor(t)
+              return (
               <button key={t.id} data-thread-id={t.id} className="row ai-center gap10"
                 onClick={() => { pinnedThreadId.current = null; setActiveId(t.id) }}
                 style={{
@@ -533,21 +739,25 @@ function MessengerTab() {
                   borderBottom: '1px solid var(--border)', width: '100%',
                   background: t.id === activeId ? 'var(--brand-50)' : 'transparent',
                 }}>
-                <Avatar name={t.name} hue={hueFor(t.id || t.name)} size={38} />
+                <Avatar name={head.student || head.title} hue={hueFor(t.id || head.student || t.name)} size={38} />
                 <div className="flex1" style={{ minWidth: 0 }}>
                   <div className="row ai-center jc-between gap8">
-                    <span className="fw6 t-md row ai-center gap6" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <span className="fw6 t-md row ai-center gap6" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: studentIsTitle(head) ? 'var(--brand-700)' : undefined }}>
                       {t.group && <Icon name="users" size={13} style={{ color: 'var(--brand-600)', flex: '0 0 auto' }} />}
-                      {t.name}
+                      {head.title}
                     </span>
                     <span className="t-xs muted3" style={{ flex: '0 0 auto' }}>{t.time}</span>
                   </div>
-                  {t.role && <div className="t-xs muted3" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.role}</div>}
+                  {head.student && !studentIsTitle(head) && (
+                    <div className="t-sm fw6" style={{ color: 'var(--brand-700)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{head.student}</div>
+                  )}
+                  {head.subtitle && <div className="t-xs muted3" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{head.subtitle}</div>}
                   <div className="t-xs muted" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.last}</div>
                 </div>
                 {t.unread > 0 && <span className="sm-badge solid sm-badge-brand" style={{ flex: '0 0 auto' }}>{t.unread}</span>}
               </button>
-            ))}
+              )
+            })}
             {allThreads.length === 0 && (
               <div style={{ padding: 16 }}>
                 <Empty icon="message" title={isLoading ? 'Loading…' : 'No conversations'} body={isLoading ? undefined : 'Start a new chat with a teacher, staff member or parent.'} />
@@ -558,16 +768,21 @@ function MessengerTab() {
 
         {/* Conversation */}
         <div className="col flex1" style={{ minWidth: 0, minHeight: 0 }}>
-          {thread ? (
+          {thread ? (() => {
+            const head = headingFor(thread)
+            return (
             <>
               <div className="row ai-center gap10" style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
-                <Avatar name={thread.name} hue={hueFor(thread.id || thread.name)} size={36} />
+                <Avatar name={head.student || head.title} hue={hueFor(thread.id || head.student || thread.name)} size={36} />
                 <div className="flex1">
-                  <div className="fw6 t-md row ai-center gap6">
+                  <div className="fw6 t-md row ai-center gap6" style={{ color: studentIsTitle(head) ? 'var(--brand-700)' : undefined }}>
                     {thread.group && <Icon name="users" size={14} style={{ color: 'var(--brand-600)' }} />}
-                    {thread.name}
+                    {head.title}
                   </div>
-                  <div className="t-xs muted3">{thread.role || 'Conversation'}</div>
+                  {head.student && !studentIsTitle(head) && (
+                    <div className="t-sm fw6" style={{ color: 'var(--brand-700)' }}>{head.student}</div>
+                  )}
+                  <div className="t-xs muted3">{head.subtitle || 'Conversation'}</div>
                 </div>
                 {/* NOTE: no call/phone button — messaging only */}
                 {thread.group && <Badge tone="brand" soft icon="users">Class group</Badge>}
@@ -591,11 +806,12 @@ function MessengerTab() {
                 {msgs.map((m) => (
                   <div key={m.id} className="row" style={{ justifyContent: m.mine ? 'flex-end' : 'flex-start' }}>
                     <div style={{
-                      maxWidth: '70%', padding: '9px 13px', borderRadius: 14,
+                      maxWidth: '70%', minWidth: 0, padding: '9px 13px', borderRadius: 14,
                       background: m.mine ? 'var(--brand-600)' : 'var(--surface-2)',
                       color: m.mine ? '#fff' : 'var(--text)',
+                      overflowWrap: 'anywhere',
                     }}>
-                      {m.text && <div className="t-md">{m.text}</div>}
+                      {m.text && <MessageText text={m.text} light={m.mine} />}
                       {m.attachments?.map((a) => (
                         a.type.startsWith('image/') ? (
                           <a key={a.id} href={a.url} target="_blank" rel="noreferrer" style={{ display: 'block', marginTop: m.text ? 6 : 0 }}>
@@ -655,7 +871,8 @@ function MessengerTab() {
                 </div>
               </div>
             </>
-          ) : (
+            )
+          })() : (
             <Empty icon="message" title="Select a conversation" />
           )}
         </div>
@@ -705,17 +922,33 @@ function MessengerTab() {
                       <span className="t-xs fw7 muted3" style={{ textTransform: 'uppercase', letterSpacing: 0.4 }}>{g.label}</span>
                       <Badge tone="neutral" soft>{items.length}</Badge>
                     </div>
-                    {items.map((c) => (
+                    {items.map((c) => {
+                      const person = c.kind === 'parent' && c.rawId ? studentById.get(c.rawId.toLowerCase()) : undefined
+                      const personParent = person
+                        ? (person.parentName || parentFill.data?.names[person.id.toLowerCase()] || '')
+                        : ''
+                      const head = person
+                        ? chatHeading({
+                          id: c.rawId, name: c.name, role: c.role, last: '', lastAt: null, time: '', unread: 0, group: false,
+                          childId: c.rawId, childName: person.name, childClass: person.cls, childRoll: person.roll,
+                          parentName: personParent, relationship: null,
+                        }, { ...person, parentName: personParent })
+                        : { title: c.name, subtitle: c.role, student: null }
+                      return (
                       <button key={c.id} onClick={() => startChat(c)} disabled={createThread.isPending} className="row ai-center gap10"
                         style={{ width: '100%', textAlign: 'left', border: '1px solid var(--border)', borderRadius: 10, padding: '8px 11px', background: 'var(--surface)', cursor: 'pointer' }}>
-                        <Avatar name={c.name} hue={c.hue} size={34} />
+                        <Avatar name={head.student || head.title} hue={c.hue} size={34} />
                         <div className="flex1" style={{ minWidth: 0 }}>
-                          <div className="fw6 t-sm" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</div>
-                          <div className="t-xs muted3">{c.role}</div>
+                          <div className="fw6 t-sm" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{head.title}</div>
+                          {head.student && !studentIsTitle(head) && (
+                            <div className="t-sm fw6" style={{ color: 'var(--brand-700)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{head.student}</div>
+                          )}
+                          {head.subtitle && <div className="t-xs muted3">{head.subtitle}</div>}
                         </div>
                         <Icon name="arrowRight" size={15} style={{ color: 'var(--text-3)', flex: '0 0 auto' }} />
                       </button>
-                    ))}
+                      )
+                    })}
                   </div>
                 )
               })}
@@ -741,22 +974,30 @@ function MessengerTab() {
               <Icon name="arrowRight" size={15} style={{ color: 'var(--brand-600)', flex: '0 0 auto' }} />
             </button>
             <div className="t-xs muted3" style={{ padding: '4px 2px' }}>Or message one student’s parent</div>
-            {classStudents.map((s) => (
+            {classStudents.map((s) => {
+              const head = chatHeading({
+                id: s.id, name: `${s.name} (parent)`, role: 'Parent', last: '', lastAt: null, time: '', unread: 0, group: false,
+                childId: s.id, childName: s.name, childClass: s.cls, childRoll: s.roll,
+                parentName: actualParentName(s) || parentFill.data?.names[s.id.toLowerCase()] || '', relationship: null,
+              }, { name: s.name, cls: s.cls, grade: s.grade, section: s.section, roll: s.roll, parentName: actualParentName(s) || parentFill.data?.names[s.id.toLowerCase()] || '' })
+              return (
               <button
                 key={s.id}
-                onClick={() => startChat({ name: `${s.name} (parent)`, role: `Parent · ${groupClass}`, kind: 'parent', rawId: s.id })}
+                onClick={() => startChat({ name: `${s.name} (parent)`, role: ['Parent', groupClass, s.roll > 0 ? `Roll ${s.roll}` : ''].filter(Boolean).join(' · '), kind: 'parent', rawId: s.id })}
                 disabled={createThread.isPending}
                 className="row ai-center gap10"
                 style={{ width: '100%', textAlign: 'left', border: '1px solid var(--border)', borderRadius: 10, padding: '8px 11px', background: 'var(--surface)', cursor: 'pointer' }}
               >
-                <Avatar name={s.name} hue={s.avatarHue ?? 0} size={34} />
+                <Avatar name={head.student || s.name} hue={s.avatarHue ?? 0} size={34} />
                 <div className="flex1" style={{ minWidth: 0 }}>
-                  <div className="fw6 t-sm" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</div>
-                  <div className="t-xs muted3">Parent · {groupClass}</div>
+                  <div className="fw6 t-sm" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{head.title}</div>
+                  {head.student && <div className="t-sm fw6" style={{ color: 'var(--brand-700)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{head.student}</div>}
+                  {head.subtitle && <div className="t-xs muted3">{head.subtitle}</div>}
                 </div>
                 <Icon name="arrowRight" size={15} style={{ color: 'var(--text-3)', flex: '0 0 auto' }} />
               </button>
-            ))}
+              )
+            })}
             {classStudents.length === 0 && (
               <div style={{ padding: 8 }}>
                 <Empty icon="users" title="No students in this class" body="Add students to this class in SIS, or message the whole class group." />
@@ -1221,7 +1462,9 @@ function AnnouncementDetailModal({ announcement, onClose, onResend }: {
         <div className="col gap14">
           <Card style={{ background: 'var(--surface-2)' }}>
             <div className="t-xs muted3" style={{ textTransform: 'uppercase', letterSpacing: 0.5 }}>Message</div>
-            <div className="t-md" style={{ whiteSpace: 'pre-wrap', marginTop: 6 }}>{a.body || <span className="muted">No message body.</span>}</div>
+            <div style={{ marginTop: 6 }}>
+              {a.body ? <MessageText text={a.body} /> : <span className="muted">No message body.</span>}
+            </div>
           </Card>
           <div className="sm-grid-2">
             <ReviewRow label="Sent by" value={senderLine(a) || '—'} />
@@ -1555,7 +1798,7 @@ function AnnouncementModal({ open, initial, onClose }: { open: boolean; initial?
               <span className="t-xs muted3">{app.school.name} · SchoolMate</span>
             </div>
             <div className="fw7 t-lg" style={{ margin: '6px 0' }}>{title || 'Untitled'}</div>
-            <div className="t-md muted" style={{ whiteSpace: 'pre-wrap' }}>{body}</div>
+            {body ? <MessageText text={body} /> : null}
           </Card>
           <div className="sm-grid-2">
             <ReviewRow label="Audience" value={audOptions.find((o) => o.key === aud)?.label ?? ''} />
@@ -1652,10 +1895,12 @@ function SpecificPeoplePicker({ selected, onChange }: { selected: Person[]; onCh
    ============================================================ */
 /** Live fleet board. Self-fetches when no `fleet` prop is supplied; otherwise
  *  renders the fleet passed by the parent screen (shared query). */
-function BusFleet({ fleet: fleetProp, loading: loadingProp, error: errorProp }: {
+function BusFleet({ fleet: fleetProp, loading: loadingProp, error: errorProp, onLocate }: {
   fleet?: FleetBus[]
   loading?: boolean
   error?: boolean
+  /** Open the bus location card. Never starts a trip or sends Bus started. */
+  onLocate?: (busId: string) => void
 } = {}) {
   const self = useTransportFleet(fleetProp === undefined)
   const fleet = fleetProp ?? self.data ?? []
@@ -1674,13 +1919,31 @@ function BusFleet({ fleet: fleetProp, loading: loadingProp, error: errorProp }: 
           <span style={{ width: 34, height: 34, borderRadius: 9, background: `hsl(${busHue(r.busNo)} 58% 45%)`, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto' }}>
             <Icon name="bus" size={16} />
           </span>
-          <div><div className="fw6">{r.busNo}</div>{r.routeName ? <div className="t-xs muted3">{r.routeName}</div> : null}</div>
+          <div>
+            {onLocate ? (
+              <button type="button" className="fw6" onClick={() => onLocate(r.busId)}
+                style={{ background: 'none', border: 'none', padding: 0, color: 'inherit', cursor: 'pointer' }}>
+                {r.busNo}
+              </button>
+            ) : <div className="fw6">{r.busNo}</div>}
+            {r.routeName ? <div className="t-xs muted3">{r.routeName}</div> : null}
+          </div>
         </div>
       ),
     },
     {
       key: 'route', label: 'Route', sortValue: (r) => r.routeName ?? '',
-      render: (r) => <div><div className="t-md">{r.routeName || '—'}</div><div className="t-xs muted3">{r.stopCount} stops</div></div>,
+      render: (r) => (
+        <div>
+          {onLocate && r.routeName ? (
+            <button type="button" className="t-md" onClick={() => onLocate(r.busId)}
+              style={{ background: 'none', border: 'none', padding: 0, color: 'inherit', cursor: 'pointer' }}>
+              {r.routeName}
+            </button>
+          ) : <div className="t-md">{r.routeName || '—'}</div>}
+          <div className="t-xs muted3">{r.stopCount} stops</div>
+        </div>
+      ),
     },
     {
       key: 'driver', label: 'Driver',
@@ -2469,79 +2732,109 @@ function BusNotifyModal({ bus, onClose }: { bus: FleetBus; onClose: () => void }
 /* ============================================================
    DRIVER MODE PANEL
    ============================================================ */
-function DriverModePanel({ fleet }: { fleet: FleetBus[] }) {
+function DriverModePanel({ fleet, onLocate }: { fleet: FleetBus[]; onLocate: (busId: string) => void }) {
   const toast = useToast()
-  const startTrip = useStartBusTrip()
   const pingTrip = usePingBusTrip()
-  const endTrip = useEndBusTrip()
   const [driverBusId, setDriverBusId] = useState('')
   const [tracking, setTracking] = useState(false)
   const [lastPush, setLastPush] = useState<string | null>(null)
   const watchRef = useRef<number | null>(null)
   const lastSampleRef = useRef<{ lat: number; lng: number; at: number } | null>(null)
   const pendingPingRef = useRef<{ lat: number; lng: number; speedKmh?: number; at: string } | null>(null)
+  const driverBusIdRef = useRef(driverBusId)
+  const toldPingFail = useRef(false)
+  driverBusIdRef.current = driverBusId
+
+  const selected = fleet.find((b) => b.busId === driverBusId)
+  const live = tripIsLive(selected?.status)
 
   const flushPing = () => {
     const ping = pendingPingRef.current
-    if (!ping || !driverBusId) return
+    const busId = driverBusIdRef.current
+    if (!ping || !busId) return
     pendingPingRef.current = null
     pingTrip.mutate({
-      busId: driverBusId,
+      busId,
       pings: [{ lat: ping.lat, lng: ping.lng, speedKmh: ping.speedKmh, at: ping.at }],
+    }, {
+      onError: (e) => {
+        if (toldPingFail.current) return
+        toldPingFail.current = true
+        if (e instanceof ApiError && (e.status === 409 || e.code === 'no_active_trip')) return
+        toast.danger('Location not sent', e.message)
+      },
     })
     setLastPush(new Date().toLocaleTimeString())
   }
 
-  const start = () => {
-    if (!driverBusId) { toast.danger('Select a bus', 'Pick your bus before starting.'); return }
-    if (!navigator.geolocation) { toast.danger('GPS unavailable', 'Your browser does not support geolocation.'); return }
-    startTrip.mutate({ busId: driverBusId, direction: 'pickup' }, {
-      onSuccess: () => {
-        lastSampleRef.current = null
-        pendingPingRef.current = null
-        setTracking(true)
-        watchRef.current = navigator.geolocation.watchPosition(
-          (pos) => {
-            const sample = { lat: pos.coords.latitude, lng: pos.coords.longitude, at: Date.now() }
-            if (!shouldPublishGps(lastSampleRef.current, sample)) return
-            lastSampleRef.current = sample
-            pendingPingRef.current = {
-              lat: sample.lat,
-              lng: sample.lng,
-              speedKmh: pos.coords.speed != null ? Math.round(pos.coords.speed * 3.6) : undefined,
-              at: new Date(sample.at).toISOString(),
-            }
-            flushPing()
-          },
-          (err) => { toast.danger('GPS error', err.message); setTracking(false) },
-          { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 },
-        )
-      },
-      onError: (e) => toast.danger('Could not start trip', e.message),
-    })
-  }
-
-  const stop = () => {
+  const stopWatch = () => {
     if (watchRef.current != null) { navigator.geolocation.clearWatch(watchRef.current); watchRef.current = null }
-    setTracking(false)
     lastSampleRef.current = null
     pendingPingRef.current = null
-    if (driverBusId) {
-      endTrip.mutate({ busId: driverBusId }, {
-        onError: (e) => toast.danger('Could not end trip', e.message),
-      })
-    }
   }
+
+  const beginWatch = () => {
+    if (watchRef.current != null || !navigator.geolocation) return
+    toldPingFail.current = false
+    watchRef.current = navigator.geolocation.watchPosition(
+      (pos) => {
+        const sample = { lat: pos.coords.latitude, lng: pos.coords.longitude, at: Date.now() }
+        if (!shouldPublishGps(lastSampleRef.current, sample)) return
+        lastSampleRef.current = sample
+        pendingPingRef.current = {
+          lat: sample.lat,
+          lng: sample.lng,
+          speedKmh: pos.coords.speed != null ? Math.round(pos.coords.speed * 3.6) : undefined,
+          at: new Date(sample.at).toISOString(),
+        }
+        flushPing()
+      },
+      (err) => toast.danger('GPS error', err.message),
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 },
+    )
+  }
+
+  const start = () => {
+    if (!driverBusId) { toast.danger('Select a bus', 'Pick the bus whose location you want to check.'); return }
+    onLocate(driverBusId)
+    setTracking(true)
+    if (tripIsLive(fleet.find((b) => b.busId === driverBusId)?.status)) beginWatch()
+    else toast.info(
+      'Location only',
+      'Bus started is sent when the driver app starts pickup or drop. This button does not send it.',
+    )
+  }
+
+  const closeCheck = () => {
+    if (live) return
+    stopWatch()
+    setTracking(false)
+    setLastPush(null)
+  }
+
+  useEffect(() => {
+    if (!tracking) return
+    if (live) {
+      beginWatch()
+      return
+    }
+    if (watchRef.current != null) {
+      stopWatch()
+      setTracking(false)
+      setLastPush(null)
+      toast.info('Trip ended', 'Location check stopped.')
+    }
+  }, [tracking, live])
 
   useEffect(() => () => { if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current) }, [])
 
   return (
     <Card>
-      <CardHead title="Driver mode" sub="Push your live GPS so the fleet map stays current" icon="pin" />
+      <CardHead title="Check live location" sub="See where the bus is. Bus started is sent only by the driver app." icon="pin" />
       <div className="col gap14" style={{ marginTop: 14 }}>
         <div className="row ai-end gap10 wrap">
           <div style={{ flex: '0 0 240px' }}>
-            <Field label="Your bus">
+            <Field label="Bus">
               <Select value={driverBusId} onChange={(e) => setDriverBusId(e.target.value)} disabled={tracking}
                 options={[
                   { value: '', label: 'Select bus…' },
@@ -2550,20 +2843,22 @@ function DriverModePanel({ fleet }: { fleet: FleetBus[] }) {
             </Field>
           </div>
           {!tracking
-            ? <Btn variant="primary" icon="zap" onClick={start} disabled={startTrip.isPending}>Start tracking</Btn>
-            : <Btn variant="danger" icon="x" onClick={stop} disabled={endTrip.isPending}>Stop tracking</Btn>}
-          {tracking && (
+            ? <Btn variant="primary" icon="zap" onClick={start}>Start tracking</Btn>
+            : live
+              ? <Badge tone="success" soft dot>On until the trip ends</Badge>
+              : <Btn variant="secondary" icon="x" onClick={closeCheck}>Close</Btn>}
+          {tracking && live && (
             <div className="row ai-center gap8">
               <span className="sm-dot-live" />
-              <span className="t-sm">{lastPush ? `Last push: ${lastPush}` : 'Waiting for GPS…'}</span>
+              <span className="t-sm">{lastPush ? `Last location: ${lastPush}` : 'Waiting for GPS…'}</span>
             </div>
           )}
         </div>
-        {tracking && (
-          <div className="t-xs muted3">
-            Location is being pushed automatically. Keep this tab open while driving.
-          </div>
-        )}
+        <div className="t-xs muted3">
+          {tracking && live
+            ? 'Pickup or drop is already running in the driver app. This shares location only and cannot be stopped until that trip ends.'
+            : 'Start tracking only checks the bus location. Clicking the bus or its route does the same. The Bus started notice is sent when the driver app starts pickup or drop, and that trip runs until it ends.'}
+        </div>
       </div>
     </Card>
   )
@@ -2591,12 +2886,13 @@ function GpsScreenBody() {
   const [viewBusId, setViewBusId] = useState<string | null>(null)
   const viewBus = viewBusId ? fleet.find((b) => b.busId === viewBusId) ?? null : null
 
-  const onRoute = fleet.filter((b) => isFreshGps(b.status)).length
+  const onRoute = fleet.filter((b) => tripIsLive(b.status)).length
   const delayed = fleet.filter((b) => b.status === 'delayed').length
   const riding = fleet.reduce((n, b) => n + b.studentsRiding, 0)
   const mapFleet = fleet.map((b) => {
     const zero = b.lat === 0 && b.lng === 0
-    if (!isFreshGps(b.status) || zero) return { ...b, lat: null, lng: null }
+    // A running pickup or drop keeps its last location. It is not dropped until the trip ends.
+    if (!tripIsLive(b.status) || zero) return { ...b, lat: null, lng: null }
     return b
   })
   const located = mapFleet.filter((b) => b.lat != null && b.lng != null)
@@ -2629,9 +2925,9 @@ function GpsScreenBody() {
           <Kpi icon="users" iconBg="var(--info-bg)" iconColor="var(--info)" label="Students riding" value={riding} />
         </div>
 
-        <Card pad={false}><BusFleet fleet={fleet} loading={fleetQ.isLoading} error={fleetQ.isError} /></Card>
+        <Card pad={false}><BusFleet fleet={fleet} loading={fleetQ.isLoading} error={fleetQ.isError} onLocate={setViewBusId} /></Card>
 
-        <DriverModePanel fleet={fleet} />
+        <DriverModePanel fleet={fleet} onLocate={setViewBusId} />
 
         <Card>
           <CardHead title="Live map" sub="Real-time vehicle positions · optional student stop ★"
@@ -2722,6 +3018,9 @@ function GpsScreenBody() {
                 <span className="t-sm fw6">{new Date(viewBus.lastPingAt).toLocaleTimeString()}</span>
               </div>
             )}
+            <div className="t-xs muted3">
+              This shows where the bus is. The "Bus started" notice is sent when the driver app starts pickup or drop, and that trip cannot be stopped until it ends.
+            </div>
           </div>
         )}
       </Modal>

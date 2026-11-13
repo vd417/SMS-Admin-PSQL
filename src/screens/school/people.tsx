@@ -5,6 +5,7 @@
    these screens only ever offer "Message", never a Call button.
    ============================================================ */
 import { useEffect, useMemo, useState, type ComponentType } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useApp, useToast } from '@/lib/hooks'
 import { can } from '@/lib/gating'
 import { TierGate } from '@/components/shell/gates'
@@ -20,8 +21,13 @@ import type { Teacher, Staff, Role } from '@/types'
 import { useTeachers } from '@/api/hooks/useTeachers'
 import { normalizeSubjects } from '@/api/teachers'
 import { useStaff } from '@/api/hooks/useStaff'
+import { academicYearStart } from '@/api/studentAttendance'
+import { rosterAttendanceSpans, type PeopleAttGroup } from '@/api/peopleAttendance'
+import { AttendanceSpanCell, AttendanceSpanLabel, type AttendanceSpan } from '@/components/AttendanceSpanCell'
 import { useTransportBuses } from '@/api/hooks/useOperations'
+import type { TransportBus } from '@/api/transport'
 import { useStudents } from '@/api/hooks/useStudents'
+import { useFeeInvoices } from '@/api/hooks/useFeeInvoices'
 import { tokenStore } from '@/api/auth/tokenStore'
 import { groupStudentsByParent, wardClassSection } from '@/lib/parentLink'
 import {
@@ -30,12 +36,52 @@ import {
 import { fetchTeacherExtras } from '@/api/teacherExtras'
 import { fetchStaffExtras } from '@/api/staffExtras'
 import { openMailCompose } from '@/lib/composeMail'
-import { useLeadershipRoleByEmail, useSchoolUserByEmail, useAccountByEmail } from '@/api/hooks/useUsers'
+import { useLeadershipRoleByEmail, useSchoolUserByEmail, useAccountByEmail, useParentLogins } from '@/api/hooks/useUsers'
 import { fromApiRole, type SchoolUserDto } from '@/api/users'
 import { useSetUserActive } from '@/api/hooks/useUserMutations'
 
 /* ---------- shared helpers ---------- */
 const attColor = (v: number): string => (v >= 90 ? 'var(--success)' : v >= 80 ? 'var(--brand-600)' : v >= 75 ? 'var(--warning)' : 'var(--danger)')
+
+function sessionToDate(): { from: string; to: string } {
+  const now = new Date()
+  const start = academicYearStart(now)
+  const to = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  return { from: `${start}-04-01`, to }
+}
+
+function useRosterAttendance(group: PeopleAttGroup, ids: string[]) {
+  const span = useMemo(() => sessionToDate(), [])
+  const idKey = ids.slice().sort().join(',')
+  const q = useQuery({
+    queryKey: ['people-attendance-pct', group, span.from, span.to, idKey],
+    queryFn: () => rosterAttendanceSpans(group, ids, span.from, span.to),
+    enabled: ids.length > 0,
+    staleTime: 60_000,
+  })
+  return q.data ?? { month: new Map<string, number>(), overall: new Map<string, number>() }
+}
+
+/** Live marks for the span. A saved percent is the overall figure, never this month. */
+function listAttendance(
+  live: Map<string, number>,
+  id: string,
+  stored: number,
+  span: AttendanceSpan,
+): number | null {
+  const marked = live.get(id.toLowerCase())
+  if (marked != null) return marked
+  if (span === 'overall' && Number.isFinite(stored) && stored > 0) return Math.round(stored)
+  return null
+}
+
+/** Staff.Route when set; otherwise the bus they drive or conduct. */
+function staffRouteName(staffId: string, route: string | null, buses: TransportBus[]): string | null {
+  const own = route?.trim()
+  if (own) return own
+  const bus = buses.find((b) => b.driverStaffId === staffId || b.conductorStaffId === staffId)
+  return bus?.routeName?.trim() || null
+}
 const statusTone = (s: string): BadgeTone => (s === 'active' ? 'success' : 'neutral')
 const statusLabel = (s: string): string => (s === 'active' ? 'Active' : 'Inactive')
 
@@ -149,13 +195,15 @@ function suspendBlocked(actor: Role, selfEmail: string | undefined, account: Sch
 /** Second step for Suspend — signing someone out of the app is disruptive enough that a
  *  stray click shouldn't do it, so Suspend always confirms first. Unsuspend restores
  *  access and stays a single click. */
-function SuspendConfirmModal({ name, busy, onCancel, onConfirm }: { name: string; busy: boolean; onCancel: () => void; onConfirm: () => void }) {
+function SuspendConfirmModal({ name, busy, onCancel, onConfirm, parent }: { name: string; busy: boolean; onCancel: () => void; onConfirm: () => void; parent?: boolean }) {
   return (
     <Modal
       open
       icon="lock"
-      title="Suspend app access"
-      sub={`${name} will be signed out of the CRM and the app, and asked to contact the school. Removing the suspension lets them sign in again. This doesn't remove their profile.`}
+      title={parent ? 'Suspend parent' : 'Suspend app access'}
+      sub={parent
+        ? `${name} will be signed out of the parent app and asked to contact the school. Wards and this profile stay. You can restore access later.`
+        : `${name} will be signed out of the CRM and the app, and asked to contact the school. Removing the suspension lets them sign in again. This doesn't remove their profile.`}
       onClose={() => { if (!busy) onCancel() }}
       footer={
         <div className="row gap8 jc-end">
@@ -235,7 +283,7 @@ function AccessCard({ email, name }: { email: string | undefined; name: string }
 /** Suspend/Unsuspend action for a list row — mirrors AccessCard's logic but takes the
  *  account directly (looked up once per screen via useAccountByEmail) so DataTable rows
  *  don't each run their own useSchoolUserByEmail query. Suspend still confirms first. */
-function SuspendAction({ account, name, canManage }: { account: SchoolUserDto | undefined; name: string; canManage: boolean }) {
+function SuspendAction({ account, name, canManage, parent }: { account: SchoolUserDto | undefined; name: string; canManage: boolean; parent?: boolean }) {
   const app = useApp()
   const toast = useToast()
   const setActive = useSetUserActive()
@@ -249,7 +297,9 @@ function SuspendAction({ account, name, canManage }: { account: SchoolUserDto | 
       onSuccess: () => {
         toast.success(
           suspended ? 'Access restored' : 'Account suspended',
-          `${name} ${suspended ? 'can sign in again' : 'can no longer sign in'}.`,
+          parent
+            ? `${name} ${suspended ? 'can open the parent app again' : 'is signed out of the parent app. Wards stay on the roster'}.`
+            : `${name} ${suspended ? 'can sign in again' : 'can no longer sign in'}.`,
         )
         setConfirming(false)
       },
@@ -272,13 +322,21 @@ function SuspendAction({ account, name, canManage }: { account: SchoolUserDto | 
         {setActive.isPending ? 'Saving…' : suspended ? 'Unsuspend' : 'Suspend'}
       </Btn>
       {confirming && (
-        <SuspendConfirmModal name={name} busy={setActive.isPending} onCancel={() => setConfirming(false)} onConfirm={apply} />
+        <SuspendConfirmModal name={name} busy={setActive.isPending} onCancel={() => setConfirming(false)} onConfirm={apply} parent={parent} />
       )}
     </>
   )
 }
 
-function TeacherProfile({ teacher, onClose, onMessage }: { teacher: Teacher | null; onClose: () => void; onMessage: (t: Teacher) => void }) {
+function TeacherProfile({ teacher, month, overall, mode, onMode, onClose, onMessage }: {
+  teacher: Teacher | null
+  month: number | null
+  overall: number | null
+  mode: AttendanceSpan
+  onMode: (mode: AttendanceSpan) => void
+  onClose: () => void
+  onMessage: (t: Teacher) => void
+}) {
   const app = useApp()
   const toast = useToast()
   if (!teacher) return null
@@ -337,8 +395,8 @@ function TeacherProfile({ teacher, onClose, onMessage }: { teacher: Teacher | nu
               <Progress value={teacher.result} color={attColor(teacher.result)} />
             </div>
             <div>
-              <div className="row ai-center jc-between" style={{ marginBottom: 4 }}><span className="muted t-sm">Attendance</span><span className="fw7">{teacher.attendance}%</span></div>
-              <Progress value={teacher.attendance} color={attColor(teacher.attendance)} />
+              <div className="row ai-center jc-between" style={{ marginBottom: 4 }}><span className="muted t-sm">Attendance</span></div>
+              <AttendanceSpanCell month={month} overall={overall} mode={mode} onChange={onMode} />
             </div>
             <StatRow label="Teaching load" value={`${teacher.load} periods/wk`} />
           </div>
@@ -409,7 +467,16 @@ function DriverSection({ staff }: { staff: Staff }) {
   )
 }
 
-function StaffProfile({ staff, onClose, onMessage }: { staff: Staff | null; onClose: () => void; onMessage: (s: Staff) => void }) {
+function StaffProfile({ staff, route, month, overall, mode, onMode, onClose, onMessage }: {
+  staff: Staff | null
+  route: string | null
+  month: number | null
+  overall: number | null
+  mode: AttendanceSpan
+  onMode: (mode: AttendanceSpan) => void
+  onClose: () => void
+  onMessage: (s: Staff) => void
+}) {
   const app = useApp()
   const toast = useToast()
   if (!staff) return null
@@ -438,8 +505,15 @@ function StaffProfile({ staff, onClose, onMessage }: { staff: Staff | null; onCl
           <div className="col gap12">
             <StatRow label="Role" value={staff.role} />
             <StatRow label="Category" value={staffCategoryLabel(staff.cat, staff.dept, staff.role)} />
-            <StatRow label="Phone" value={staff.phone} />
+            <StatRow label="Department" value={staff.dept || '—'} />
+            <StatRow label="Shift" value={staff.shift || '—'} />
+            <StatRow label="Route" value={route || '—'} />
+            <StatRow label="Phone" value={staff.phone || '—'} />
             <StatRow label="Email" value={staff.email || '—'} />
+            <div>
+              <div className="muted t-sm" style={{ marginBottom: 6 }}>Attendance</div>
+              <AttendanceSpanCell month={month} overall={overall} mode={mode} onChange={onMode} />
+            </div>
             <StatRow label="Status" value={<Badge tone={statusTone(staff.status)}>{statusLabel(staff.status)}</Badge>} />
           </div>
         </Card>
@@ -466,10 +540,14 @@ function TeachersScreen() {
   const [dept, setDept] = useState('all')
   const [status, setStatus] = useState('all')
   const [profile, setProfile] = useState<Teacher | null>(null)
+  const [attMode, setAttMode] = useState<AttendanceSpan>('month')
 
   const editable = can(app.role, 'sis', 'E')
   const teachersQ = useTeachers()
   const teachers = teachersQ.data ?? []
+  const attPct = useRosterAttendance('teachers', teachers.map((t) => t.id))
+  const monthOf = (t: Teacher) => listAttendance(attPct.month, t.id, t.attendance, 'month')
+  const overallOf = (t: Teacher) => listAttendance(attPct.overall, t.id, t.attendance, 'overall')
   const leadershipByEmail = useLeadershipRoleByEmail()
   const accountByEmail = useAccountByEmail()
   const canManageAccess = CAN_MANAGE_ACCESS.includes(app.role)
@@ -531,6 +609,13 @@ function TeachersScreen() {
           </div>
         )
       },
+    },
+    {
+      key: 'attendance', label: <AttendanceSpanLabel mode={attMode} onChange={setAttMode} />, align: 'left',
+      sortValue: (t) => (attMode === 'month' ? monthOf(t) : overallOf(t)) ?? -1,
+      render: (t) => (
+        <AttendanceSpanCell month={monthOf(t)} overall={overallOf(t)} mode={attMode} onChange={setAttMode} />
+      ),
     },
     {
       key: 'dept', label: 'Department', sortValue: (t) => t.dept,
@@ -649,7 +734,15 @@ function TeachersScreen() {
         )}
       </Card>
 
-      <TeacherProfile teacher={profile} onClose={() => setProfile(null)} onMessage={(t) => { message(t); setProfile(null) }} />
+      <TeacherProfile
+        teacher={profile}
+        month={profile ? monthOf(profile) : null}
+        overall={profile ? overallOf(profile) : null}
+        mode={attMode}
+        onMode={setAttMode}
+        onClose={() => setProfile(null)}
+        onMessage={(t) => { message(t); setProfile(null) }}
+      />
     </div>
   )
 }
@@ -671,10 +764,15 @@ function StaffRoster() {
   const [q, setQ] = useState('')
   const [cat, setCat] = useState('all')
   const [profile, setProfile] = useState<Staff | null>(null)
+  const [attMode, setAttMode] = useState<AttendanceSpan>('month')
 
   const editable = can(app.role, 'sis', 'E')
   const staffQ = useStaff()
   const roster = staffQ.data ?? []
+  const attPct = useRosterAttendance('staff', roster.map((s) => s.id))
+  const monthOf = (s: Staff) => listAttendance(attPct.month, s.id, s.attendance, 'month')
+  const overallOf = (s: Staff) => listAttendance(attPct.overall, s.id, s.attendance, 'overall')
+  const buses = useTransportBuses().data ?? []
   const leadershipByEmail = useLeadershipRoleByEmail()
   const accountByEmail = useAccountByEmail()
   const canManageAccess = CAN_MANAGE_ACCESS.includes(app.role)
@@ -749,20 +847,25 @@ function StaffRoster() {
       ),
     },
     {
-      key: 'shift', label: 'Shift', align: 'center', sortValue: (s) => s.shift,
+      key: 'shift', label: 'Shift', width: 110, sortValue: (s) => s.shift,
       render: (s) => <Badge tone="neutral">{s.shift}</Badge>,
     },
     {
-      key: 'route', label: 'Route', align: 'center', sortValue: (s) => s.route ?? '',
-      render: (s) => s.route ? <Badge tone="info">{s.route}</Badge> : <span className="muted">—</span>,
+      key: 'phone', label: 'Phone', width: 140, sortValue: (s) => s.phone,
+      render: (s) => <span className="t-sm">{s.phone || '—'}</span>,
     },
     {
-      key: 'attendance', label: 'Attendance', sortValue: (s) => s.attendance,
+      key: 'route', label: 'Route', width: 140, sortValue: (s) => staffRouteName(s.id, s.route, buses) ?? '',
+      render: (s) => {
+        const route = staffRouteName(s.id, s.route, buses)
+        return route ? <Badge tone="info">{route}</Badge> : <span className="muted">—</span>
+      },
+    },
+    {
+      key: 'attendance', label: <AttendanceSpanLabel mode={attMode} onChange={setAttMode} />, align: 'left',
+      sortValue: (s) => (attMode === 'month' ? monthOf(s) : overallOf(s)) ?? -1,
       render: (s) => (
-        <div className="row ai-center gap8" style={{ minWidth: 120 }}>
-          <div style={{ flex: 1 }}><Progress value={s.attendance} color={attColor(s.attendance)} /></div>
-          <span className="t-sm fw6" style={{ width: 34 }}>{s.attendance}%</span>
-        </div>
+        <AttendanceSpanCell month={monthOf(s)} overall={overallOf(s)} mode={attMode} onChange={setAttMode} />
       ),
     },
     {
@@ -832,7 +935,16 @@ function StaffRoster() {
         )}
       </Card>
 
-      <StaffProfile staff={profile} onClose={() => setProfile(null)} onMessage={(s) => { message(s); setProfile(null) }} />
+      <StaffProfile
+        staff={profile}
+        route={profile ? staffRouteName(profile.id, profile.route, buses) : null}
+        month={profile ? monthOf(profile) : null}
+        overall={profile ? overallOf(profile) : null}
+        mode={attMode}
+        onMode={setAttMode}
+        onClose={() => setProfile(null)}
+        onMessage={(s) => { message(s); setProfile(null) }}
+      />
     </div>
   )
 }
@@ -865,9 +977,20 @@ function ParentsScreen() {
   const app = useApp()
   const [q, setQ] = useState('')
   const studentsQ = useStudents()
+  const invoicesQ = useFeeInvoices()
   const students = studentsQ.data ?? []
   const accountByEmail = useAccountByEmail()
+  const parentLogins = useParentLogins()
   const canSuspend = app.role === 'owner' || app.role === 'admin'
+  const dueByStudent = useMemo(() => {
+    if (!invoicesQ.isSuccess) return undefined
+    const map = new Map<string, number>()
+    for (const invoice of invoicesQ.data ?? []) {
+      if (!invoice.studentId) continue
+      map.set(invoice.studentId, (map.get(invoice.studentId) ?? 0) + (Number(invoice.due) || 0))
+    }
+    return map
+  }, [invoicesQ.isSuccess, invoicesQ.data])
 
   const openWard = (id: string) => app.go('school.student', { focus: id })
   const message = (p: Parent) => {
@@ -880,9 +1003,13 @@ function ParentsScreen() {
 
   const organizationId = tokenStore.getTenantId() || undefined
   const parents = useMemo<Parent[]>(
-    () => groupStudentsByParent(students, organizationId),
-    [students, organizationId],
+    () => groupStudentsByParent(students, organizationId, dueByStudent),
+    [students, organizationId, dueByStudent],
   )
+  const accountFor = (email: string) => {
+    const key = email.trim().toLowerCase()
+    return parentLogins.get(key) ?? accountByEmail.get(key)
+  }
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase()
@@ -944,7 +1071,7 @@ function ParentsScreen() {
       key: 'actions', label: '', align: 'right',
       render: (p) => (
         <div className="row ai-center gap8 jc-end">
-          <SuspendAction account={accountByEmail.get((p.email ?? '').trim().toLowerCase())} name={p.name} canManage={canSuspend} />
+          <SuspendAction account={accountFor(p.email)} name={p.name} canManage={canSuspend} parent />
           <Btn variant="ghost" size="sm" icon="user" onClick={(e) => { e.stopPropagation(); openWard(p.wards[0].id) }}>Profile</Btn>
           <Btn variant="secondary" size="sm" icon="message" onClick={(e) => { e.stopPropagation(); message(p) }}>Message</Btn>
         </div>

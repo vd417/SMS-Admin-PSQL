@@ -1,4 +1,5 @@
 import { request } from './client'
+import { ApiError } from './ApiError'
 import type { Cap, Role, UserOverrides } from '@/types'
 
 /** CRM login invite roles only — Teacher/Staff use the onboard form (People), not Send invite. */
@@ -75,6 +76,17 @@ export interface PermissionOverrideDto {
 export async function listSchoolUsers(): Promise<SchoolUserDto[]> {
   const data = await request<SchoolUserDto[]>('/users')
   return data ?? []
+}
+
+/** Parent app logins. Older APIs omit this route — then the parent list has no suspend button. */
+export async function listParentLogins(): Promise<SchoolUserDto[]> {
+  try {
+    const data = await request<SchoolUserDto[]>('/users/parents')
+    return data ?? []
+  } catch (err) {
+    if (err instanceof ApiError && (err.status === 404 || err.status === 405)) return []
+    throw err
+  }
 }
 
 export interface InviteUserOptions {

@@ -16,7 +16,7 @@ function personTypeOf(group: PeopleAttGroup): 'teacher' | 'staff' {
  *  never be silently treated as "present". */
 function asStatus(v: unknown): AttendanceStatus | null {
   const s = String(v ?? '').trim().toLowerCase().replace(/-/g, '_')
-  if (s === 'late' || s === 'absent' || s === 'present' || s === 'half_day') return s
+  if (s === 'late' || s === 'absent' || s === 'present' || s === 'half_day' || s === 'leave') return s
   return null
 }
 
@@ -288,6 +288,184 @@ export async function listPeopleAttendanceRange(
     query: { person_type: personTypeOf(group), from: toAttendanceDate(from), to: toAttendanceDate(to) },
   })
   return mapStaffAttendanceRows(group, rows)
+}
+
+/**
+ * Official attendance percent per person from roll-call marks.
+ * Present, late, and half day count as attended. Leave and absent stay in the
+ * marked total. Days with no mark are left out. Empty when nobody was marked.
+ */
+export function attendancePctByPerson(
+  rows: Pick<AttendanceRecord, 'studentId' | 'status'>[],
+): Map<string, number> {
+  const by = new Map<string, { marked: number; attended: number }>()
+  for (const row of rows) {
+    if (!row.studentId) continue
+    const key = row.studentId.toLowerCase()
+    const cur = by.get(key) ?? { marked: 0, attended: 0 }
+    cur.marked += 1
+    if (row.status === 'present' || row.status === 'late' || row.status === 'half_day') cur.attended += 1
+    by.set(key, cur)
+  }
+  const out = new Map<string, number>()
+  for (const [id, counts] of by) {
+    if (counts.marked > 0) out.set(id, Math.round((counts.attended / counts.marked) * 100))
+  }
+  return out
+}
+
+/**
+ * One status per person per day. A roll-call mark wins. A teacher-app check-in
+ * fills a day that was never marked, and counts as present — same idea as the
+ * student list, which only counts days that were actually recorded.
+ */
+function dayBuckets(
+  marks: Pick<AttendanceRecord, 'studentId' | 'date' | 'status'>[],
+  checkIns: { personId: string; dates: string[] }[],
+): Map<string, Map<string, AttendanceStatus>> {
+  const days = new Map<string, Map<string, AttendanceStatus>>()
+  const slot = (id: string) => {
+    const key = id.toLowerCase()
+    let bucket = days.get(key)
+    if (!bucket) {
+      bucket = new Map()
+      days.set(key, bucket)
+    }
+    return bucket
+  }
+  for (const row of marks) {
+    if (!row.studentId || !row.date) continue
+    slot(row.studentId).set(row.date, row.status)
+  }
+  for (const person of checkIns) {
+    const bucket = slot(person.personId)
+    for (const date of person.dates) {
+      if (date && !bucket.has(date)) bucket.set(date, 'present')
+    }
+  }
+  return days
+}
+
+function pctInWindow(
+  days: Map<string, Map<string, AttendanceStatus>>,
+  from?: string,
+  to?: string,
+): Map<string, number> {
+  const rows: Pick<AttendanceRecord, 'studentId' | 'status'>[] = []
+  for (const [id, byDate] of days) {
+    for (const [date, status] of byDate) {
+      if (from && date < from) continue
+      if (to && date > to) continue
+      rows.push({ studentId: id, status })
+    }
+  }
+  return attendancePctByPerson(rows)
+}
+
+export function mergeAttendanceDays(
+  marks: Pick<AttendanceRecord, 'studentId' | 'date' | 'status'>[],
+  checkIns: { personId: string; dates: string[] }[],
+): Map<string, number> {
+  return pctInWindow(dayBuckets(marks, checkIns))
+}
+
+/** This calendar month and the whole loaded span, from the same marks. */
+export function attendanceSpans(
+  marks: Pick<AttendanceRecord, 'studentId' | 'date' | 'status'>[],
+  checkIns: { personId: string; dates: string[] }[],
+  monthFrom: string,
+  monthTo: string,
+): { month: Map<string, number>; overall: Map<string, number> } {
+  const days = dayBuckets(marks, checkIns)
+  return {
+    month: pctInWindow(days, monthFrom, monthTo),
+    overall: pctInWindow(days),
+  }
+}
+
+async function checkInDates(personId: string): Promise<string[]> {
+  try {
+    const rows = await request<Record<string, unknown>[] | null>(
+      `/principal/staff/${personId}/attendance/history`,
+      { query: { limit: 366, offset_minutes: -new Date().getTimezoneOffset() } },
+    )
+    const dates: string[] = []
+    for (const row of rows ?? []) {
+      const checkIn = row.check_in ?? row.checkIn
+      const date = row.date != null ? toAttendanceDate(String(row.date)) : ''
+      if (checkIn && date) dates.push(date)
+    }
+    return dates
+  } catch {
+    return []
+  }
+}
+
+async function mapPool<T>(items: T[], size: number, fn: (item: T) => Promise<void>): Promise<void> {
+  if (!items.length) return
+  let next = 0
+  const workers = Array.from({ length: Math.min(size, items.length) }, async () => {
+    while (next < items.length) {
+      const item = items[next]
+      next += 1
+      await fn(item)
+    }
+  })
+  await Promise.all(workers)
+}
+
+/** Roll-call marks plus app check-ins for the roster. Keys are lowercase ids. */
+export async function rosterAttendancePct(
+  group: PeopleAttGroup,
+  personIds: string[],
+  from: string,
+  to: string,
+): Promise<Map<string, number>> {
+  let marks: AttendanceRecord[] = []
+  try {
+    marks = await listPeopleAttendanceRange(group, from, to)
+  } catch {
+    marks = []
+  }
+  const lo = toAttendanceDate(from)
+  const hi = toAttendanceDate(to)
+  const checkIns: { personId: string; dates: string[] }[] = []
+  await mapPool(personIds.filter(Boolean), 6, async (personId) => {
+    const dates = (await checkInDates(personId)).filter((d) => d >= lo && d <= hi)
+    checkIns.push({ personId, dates })
+  })
+  return mergeAttendanceDays(marks, checkIns)
+}
+
+export function calendarMonthToDate(now = new Date()): { from: string; to: string } {
+  const y = now.getFullYear()
+  const m = String(now.getMonth() + 1).padStart(2, '0')
+  const d = String(now.getDate()).padStart(2, '0')
+  return { from: `${y}-${m}-01`, to: `${y}-${m}-${d}` }
+}
+
+/** Month and session percents from one roll-call plus check-in load. */
+export async function rosterAttendanceSpans(
+  group: PeopleAttGroup,
+  personIds: string[],
+  from: string,
+  to: string,
+): Promise<{ month: Map<string, number>; overall: Map<string, number> }> {
+  let marks: AttendanceRecord[] = []
+  try {
+    marks = await listPeopleAttendanceRange(group, from, to)
+  } catch {
+    marks = []
+  }
+  const lo = toAttendanceDate(from)
+  const hi = toAttendanceDate(to)
+  const checkIns: { personId: string; dates: string[] }[] = []
+  await mapPool(personIds.filter(Boolean), 6, async (personId) => {
+    const dates = (await checkInDates(personId)).filter((d) => d >= lo && d <= hi)
+    checkIns.push({ personId, dates })
+  })
+  const month = calendarMonthToDate()
+  return attendanceSpans(marks, checkIns, month.from, month.to > hi ? hi : month.to)
 }
 
 /** Load teacher/staff marks for a date range from SQL, optionally limited to a roster. */

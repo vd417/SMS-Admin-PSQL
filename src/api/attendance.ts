@@ -2,7 +2,7 @@ import { request } from './client'
 import { snakeToCamel, camelToSnake } from './mapper'
 import { tokenStore } from './auth/tokenStore'
 
-export type AttendanceStatus = 'present' | 'late' | 'absent' | 'half_day' | 'pending'
+export type AttendanceStatus = 'present' | 'late' | 'absent' | 'half_day' | 'pending' | 'leave'
 
 export interface AttendanceMark {
   studentId: string
@@ -39,7 +39,7 @@ export interface AttendanceRollCall {
  *  never be silently treated as "present". */
 function asStatus(v: unknown): AttendanceStatus | null {
   const s = String(v ?? '').trim().toLowerCase()
-  if (s === 'late' || s === 'absent' || s === 'present' || s === 'half_day' || s === 'pending') return s
+  if (s === 'late' || s === 'absent' || s === 'present' || s === 'half_day' || s === 'pending' || s === 'leave') return s
   if (s === 'half-day' || s === 'half day') return 'half_day'
   return null
 }
@@ -334,6 +334,31 @@ export async function savePeriodAttendance(
     }),
   })
   await listPeriodAttendance(classId, { date: day, period: args.period, subject: args.subject })
+}
+
+/** Marks from before the last change of this period. Null when none is stored yet. */
+export async function getPeriodAttendanceBackup(
+  classId: string,
+  args: { date: string; period: number; subject: string },
+): Promise<AttendanceMark[] | null> {
+  try {
+    const wire = await request<Record<string, unknown>>(
+      `/classes/${classId}/attendance/periods/backup`,
+      { query: { date: toAttendanceDate(args.date), period: String(args.period), subject: args.subject } },
+    )
+    const body = snakeToCamel<Record<string, unknown>>(wire)
+    const records = Array.isArray(body.records) ? body.records : []
+    const marks: AttendanceMark[] = []
+    for (const row of records) {
+      const item = snakeToCamel<Record<string, unknown>>(row as Record<string, unknown>)
+      const studentId = String(item.studentId ?? '')
+      const status = String(item.status ?? '') as AttendanceStatus
+      if (studentId && status) marks.push({ studentId, status })
+    }
+    return marks.length ? marks : null
+  } catch {
+    return null
+  }
 }
 
 export async function saveAttendance(

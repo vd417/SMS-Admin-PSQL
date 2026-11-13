@@ -48,6 +48,27 @@ export function studentGuardianName(s: Student): string {
   )
 }
 
+function genericParentLabel(name: string): boolean {
+  return /^(parent|mother|father|guardian|dad|mom)$/i.test(name.trim())
+}
+
+/** Guardian, then father, then mother — never the student name or the word Parent. */
+export function actualParentName(s: {
+  name?: string | null
+  guardian?: string | null
+  father?: { name?: string | null } | null
+  mother?: { name?: string | null } | null
+}): string {
+  const student = cleanName(s.name).toLowerCase()
+  for (const raw of [s.guardian, s.father?.name, s.mother?.name]) {
+    const name = cleanName(raw)
+    if (!name || genericParentLabel(name)) continue
+    if (student && name.toLowerCase() === student) continue
+    return name
+  }
+  return ''
+}
+
 /** Display label for Parents — never empty when a student exists. */
 export function studentParentLabel(s: Student): string {
   return studentGuardianName(s) || (s.phone ? `Guardian · ${s.phone}` : `Parent of ${s.name}`)

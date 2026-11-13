@@ -194,6 +194,16 @@ export function overallToppers(
   return rankStudents(list, metric, opts).slice(0, limit)
 }
 
+/** Students under `below` on this metric, lowest first. */
+export function needsAttention(
+  list: Student[],
+  metric: TopperMetric,
+  opts?: TopperScoreOpts,
+  below = 75,
+): ScoredStudent[] {
+  return rankStudents(list, metric, opts).filter((row) => row.score < below).reverse()
+}
+
 export function classToppers(
   list: Student[],
   metric: TopperMetric,

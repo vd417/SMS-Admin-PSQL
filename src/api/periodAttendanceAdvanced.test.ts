@@ -13,6 +13,8 @@ import {
   classWiseDayHero,
   classWiseHeroDisplay,
   buildClassStudentSummaries,
+  studentDayHeadcount,
+  studentDayStatusById,
   buildClassDailyTrend,
   mergeSubjectSummariesBySubject,
   type PeriodAttendanceAdvancedRow,
@@ -264,6 +266,43 @@ describe('getPeriodAttendanceRangeSummary', () => {
     expect(url).toContain('subject=Math')
     expect(url).toContain('teacherId=t1')
     expect(rollup).toMatchObject({ totalMarkedPeriods: 120, present: 100, absent: 10, late: 8, leave: 2, attendancePercentage: 90 })
+    expect(rollup.presentStudents).toBeNull()
+  })
+
+  it('maps student headcount fields when the API sends them', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
+      data: {
+        total_marked_periods: 8, present: 7, absent: 1, late: 0, leave: 0,
+        attendance_percentage: 87.5,
+        present_students: 1, absent_students: 0, late_students: 0,
+      },
+    })))
+    const rollup = await getPeriodAttendanceRangeSummary({ preset: 'custom', from: '2026-11-12', to: '2026-11-12' })
+    expect(rollup.presentStudents).toBe(1)
+    expect(rollup.absentStudents).toBe(0)
+    expect(rollup.lateStudents).toBe(0)
+  })
+})
+
+describe('studentDayHeadcount', () => {
+  it('counts a student once when several periods are present', () => {
+    const rows = [
+      ...Array.from({ length: 7 }, (_, i) => ({ studentId: 's1', date: '2026-11-12', status: 'present', period: i + 1 })),
+      { studentId: 's1', date: '2026-11-12', status: 'absent', period: 8 },
+      { studentId: 's2', date: '2026-11-12', status: 'absent', period: 1 },
+    ]
+    expect(studentDayHeadcount(rows)).toEqual({ presentStudents: 1, absentStudents: 1, lateStudents: 0, leaveStudents: 0 })
+    expect(studentDayStatusById(rows).get('s1')).toBe('present')
+    expect(studentDayStatusById(rows).get('s2')).toBe('absent')
+  })
+
+  it('counts a leave-only day as leave, not absent', () => {
+    const rows = [
+      { studentId: 's3', date: '2026-11-12', status: 'leave', period: 1 },
+      { studentId: 's3', date: '2026-11-12', status: 'leave', period: 2 },
+    ]
+    expect(studentDayHeadcount(rows).leaveStudents).toBe(1)
+    expect(studentDayStatusById(rows).get('s3')).toBe('leave')
   })
 })
 
@@ -426,6 +465,8 @@ describe('buildClassStudentSummaries', () => {
         ...base, id: `p${i}`, period: 1, date: `2026-08-0${i + 1}`, status: 'present',
       })).map((r, i) => (i === 7 ? { ...r, status: 'absent', subject: 'Science' } : r)),
     )
+    expect(rows[0].periods).toHaveLength(8)
+    expect(rows[0].periods[0].date).toBe('2026-08-01')
     expect(rows[0].recentPeriods).toHaveLength(6)
     // most recent (8th day) mark is last
     expect(rows[0].recentPeriods[5]).toEqual({ status: 'absent', subject: 'Science', date: '2026-08-08', period: 1 })

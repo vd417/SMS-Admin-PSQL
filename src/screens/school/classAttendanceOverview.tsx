@@ -96,8 +96,8 @@ function withTimetablePlaceholders(
   return [...merged, ...placeholders]
 }
 
-const PERIOD_STATUS_LABEL: Record<AttStatus, string> = { present: 'Present', late: 'Late', absent: 'Absent', half_day: 'Half day', pending: 'Pending' }
-const PERIOD_STATUS_LETTER: Record<AttStatus, string> = { present: 'P', late: 'L', absent: 'A', half_day: 'H', pending: 'N' }
+const PERIOD_STATUS_LABEL: Record<AttStatus, string> = { present: 'Present', late: 'Late', absent: 'Absent', half_day: 'Half day', pending: 'Pending', leave: 'Leave' }
+const PERIOD_STATUS_LETTER: Record<AttStatus, string> = { present: 'P', late: 'L', absent: 'A', half_day: 'H', pending: 'N', leave: 'LV' }
 /** Present = full green, Late = light green, Absent = red — status shown as a colored letter dot;
  *  subject/time only appear in the tooltip (kept off the dot to avoid repeating it per student). */
 const PERIOD_STATUS_STYLE: Record<AttStatus, { tone: BadgeTone; solid: boolean }> = {
@@ -106,6 +106,7 @@ const PERIOD_STATUS_STYLE: Record<AttStatus, { tone: BadgeTone; solid: boolean }
   absent: { tone: 'danger', solid: true },
   half_day: { tone: 'info', solid: false },
   pending: { tone: 'neutral', solid: false },
+  leave: { tone: 'brand', solid: false },
 }
 const PERIOD_DOT_STYLE: CSSProperties = {
   padding: '2px 7px', borderRadius: 5, fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap', minWidth: 18, minHeight: 18,
@@ -142,6 +143,12 @@ function periodDotCell(date: string, period: number, subject: string, timeLabel:
   )
 }
 
+/** Day columns need every mark. `recentPeriods` is only the last six, which drops the earliest
+ *  subjects on a day that has more periods than that. */
+function dayMarks(r: ClassStudentSummaryRow): ClassStudentRecentPeriod[] {
+  return r.periods?.length ? r.periods : r.recentPeriods
+}
+
 /** One column per period scheduled on `date` (per the live timetable) — subject as the column
  *  header, cell shows only the status letter (or blank) for that student/period. */
 function daySubjectColumns(classId: string, timetableSlots: TimetableSlot[], date: string): Column<ClassStudentSummaryRow>[] {
@@ -153,7 +160,7 @@ function daySubjectColumns(classId: string, timetableSlots: TimetableSlot[], dat
       render: (r: ClassStudentSummaryRow) => {
         // A mark's date can be a full UTC datetime, not a bare date — normalize before comparing
         // (same as findTimetableSlot elsewhere in this file), or every mark silently fails to match.
-        const mark = r.recentPeriods.find((p) => attendanceCalendarDate(p.date) === date && p.period === slot.period)
+        const mark = dayMarks(r).find((p) => attendanceCalendarDate(p.date) === date && p.period === slot.period)
         return periodDotCell(date, slot.period, subject, timeLabel, mark?.status ?? null)
       },
     }
@@ -244,6 +251,7 @@ const EXPORT_STATUS_COLOR: Record<AttStatus, CellColor> = {
   absent: { bg: '#FEE2E2', text: '#991B1B' },
   half_day: { bg: '#DBEAFE', text: '#1E40AF' },
   pending: { bg: '#F1F5F9', text: '#334155' },
+  leave: { bg: '#EDE9FE', text: '#5B21B6' },
 }
 const EXPORT_BLANK_COLOR: CellColor = { bg: '#F3F4F6', text: '#6B7280' }
 
@@ -271,7 +279,7 @@ function buildAttendanceReportSpec(
     const middleColor: (CellColor | undefined)[] = []
     if (mode.kind === 'daySubjects') {
       for (const slot of daySlots) {
-        const mark = r.recentPeriods.find((p) => attendanceCalendarDate(p.date) === mode.date && p.period === slot.period)
+        const mark = dayMarks(r).find((p) => attendanceCalendarDate(p.date) === mode.date && p.period === slot.period)
         middle.push(mark ? PERIOD_STATUS_LETTER[mark.status] : '-')
         middleColor.push(mark ? EXPORT_STATUS_COLOR[mark.status] : EXPORT_BLANK_COLOR)
       }
@@ -313,7 +321,7 @@ export function ClassAttendanceOverview({
       .filter((s) => studentMatchesClass(s, targetClass))
       .map((s) => marked.get(s.id) ?? {
         studentId: s.id, studentName: s.name, present: 0, absent: 0, late: 0,
-        attendancePercentage: null, recentPeriods: [], tier: 'critical' as const,
+        attendancePercentage: null, periods: [], recentPeriods: [], tier: 'critical' as const,
       })
       .sort((a, b) => a.studentName.localeCompare(b.studentName))
   }, [fullRoster, targetClass, rosterQ.data, classStudentsQ.data])

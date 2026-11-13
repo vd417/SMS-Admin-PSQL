@@ -141,7 +141,11 @@ class UnionFind {
 
 /** One parent row per shared father/mother email or shared parent phone.
     The guardian name is only a label. */
-export function groupStudentsByParent(students: RosterStudent[], organizationId?: string): LinkedParent[] {
+export function groupStudentsByParent(
+  students: RosterStudent[],
+  organizationId?: string,
+  dueByStudentId?: Map<string, number>,
+): LinkedParent[] {
   const rows = forOrganization(students, organizationId)
   const uf = new UnionFind(rows.length)
   const byEmail = new Map<string, number[]>()
@@ -188,7 +192,7 @@ export function groupStudentsByParent(students: RosterStudent[], organizationId?
       email,
       hue: head.avatarHue,
       wards,
-      due: members.reduce((sum, s) => sum + (Number(s.feeDue) || 0), 0),
+      due: members.reduce((sum, s) => sum + (dueByStudentId ? (dueByStudentId.get(s.id) ?? 0) : (Number(s.feeDue) || 0)), 0),
     }
   })
 }

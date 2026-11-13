@@ -12,6 +12,13 @@ export interface ChatThread {
   unread: number
   group: boolean
   childId: string | null
+  /** Student this parent thread is about. Empty for staff and class groups. */
+  childName: string | null
+  childClass: string | null
+  childRoll: number | null
+  /** Linked parent account, or the guardian name stored on the student. */
+  parentName: string | null
+  relationship: string | null
 }
 
 /** A file/image attached to a chat message (shown inline in the app). */
@@ -88,6 +95,17 @@ export function messageTime(iso: unknown): string {
   return sameDay ? time : `${d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: IST })}, ${time}`
 }
 
+function textOrNull(v: unknown): string | null {
+  const s = typeof v === 'string' ? v.trim() : ''
+  return s || null
+}
+
+function rollOrNull(v: unknown): number | null {
+  if (typeof v === 'number' && Number.isFinite(v) && v > 0) return v
+  if (typeof v === 'string' && v.trim() && Number.isFinite(Number(v)) && Number(v) > 0) return Number(v)
+  return null
+}
+
 export function toThread(wire: Record<string, unknown>): ChatThread {
   const t = snakeToCamel<Record<string, unknown>>(wire)
   const lastAt = (typeof t.lastAt === 'string' ? t.lastAt : null)
@@ -101,7 +119,108 @@ export function toThread(wire: Record<string, unknown>): ChatThread {
     unread: typeof t.unread === 'number' ? t.unread : 0,
     group: Boolean(t.group),
     childId: t.childId ? String(t.childId) : null,
+    childName: textOrNull(t.childName),
+    childClass: textOrNull(t.childClassLabel ?? t.childClass),
+    childRoll: rollOrNull(t.childRoll),
+    parentName: textOrNull(t.parentName),
+    relationship: textOrNull(t.relationship),
   }
+}
+
+export interface ChatStudentHint {
+  name?: string | null
+  cls?: string | null
+  grade?: string | null
+  section?: string | null
+  roll?: number | null
+  parentName?: string | null
+}
+
+export interface ChatHeading {
+  title: string
+  subtitle: string
+  /** Student name. Highlighted as the title on a student chat, and under the parent name on a parent chat. */
+  student: string | null
+}
+
+function cleanLabel(v: unknown): string {
+  return typeof v === 'string' ? v.trim() : ''
+}
+
+function stripParentSuffix(name: string): string {
+  return name.replace(/ \(parent\)$/i, '').trim()
+}
+
+function sameName(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase()
+}
+
+function looksLikeParent(thread: ChatThread): boolean {
+  if (/ \(parent\)$/i.test(thread.name)) return true
+  if (/\bparent\b/i.test(thread.role)) return true
+  return /mother|father|guardian|parent/i.test(cleanLabel(thread.relationship))
+}
+
+function looksLikeStudent(thread: ChatThread): boolean {
+  return /\bstudent\b/i.test(thread.role) && !looksLikeParent(thread)
+}
+
+/** Class, section, and roll — the same line under the student in both chats. */
+function studentFacts(thread: ChatThread, hint?: ChatStudentHint | null): string {
+  const grade = cleanLabel(hint?.grade)
+  const section = cleanLabel(hint?.section)
+  const cls = cleanLabel(thread.childClass) || cleanLabel(hint?.cls)
+  const classLabel = grade || cls
+  const roll = thread.childRoll ?? rollOrNull(hint?.roll)
+  const parts: string[] = []
+  if (classLabel) parts.push(`Class ${classLabel}`)
+  const sectionAlreadyInClass = !!section && !!classLabel && (
+    classLabel.toLowerCase() === section.toLowerCase()
+    || classLabel.toLowerCase().endsWith(`-${section.toLowerCase()}`)
+    || classLabel.toLowerCase().endsWith(` ${section.toLowerCase()}`)
+  )
+  if (section && (grade || !sectionAlreadyInClass)) parts.push(`Section ${section}`)
+  if (roll != null) parts.push(`Roll ${roll}`)
+  return parts.join(' · ')
+}
+
+function isGenericParentLabel(name: string): boolean {
+  return /^(parent|mother|father|guardian|dad|mom)$/i.test(name.trim())
+}
+
+function parentTitle(thread: ChatThread, hint: ChatStudentHint | null | undefined, studentName: string): string {
+  const namedAsParent = / \(parent\)$/i.test(thread.name)
+  const fromThread = !namedAsParent && !sameName(thread.name, studentName) ? thread.name.trim() : ''
+  const candidates = [cleanLabel(thread.parentName), fromThread, cleanLabel(hint?.parentName), cleanLabel(thread.relationship)]
+  for (const name of candidates) {
+    if (!name || / \(parent\)$/i.test(name) || isGenericParentLabel(name)) continue
+    if (studentName && sameName(stripParentSuffix(name), studentName)) continue
+    return name
+  }
+  return 'Parent'
+}
+
+/**
+ * A student chat is the student's name, then class, section, and roll.
+ * A parent chat is the parent's name, then that same student highlighted, with class, section, and roll.
+ */
+export function chatHeading(thread: ChatThread, hint?: ChatStudentHint | null): ChatHeading {
+  if (thread.group) return { title: thread.name, subtitle: thread.role, student: null }
+  const namedAsParent = / \(parent\)$/i.test(thread.name)
+  const studentName = cleanLabel(thread.childName)
+    || cleanLabel(hint?.name)
+    || (namedAsParent ? stripParentSuffix(thread.name) : '')
+    || (looksLikeStudent(thread) ? thread.name.trim() : '')
+  const nameIsStudent = !!studentName && sameName(thread.name, studentName) && !namedAsParent
+  const parentChat = looksLikeParent(thread) || (!looksLikeStudent(thread) && !!studentName && !nameIsStudent)
+  const studentChat = !parentChat && !!studentName && (looksLikeStudent(thread) || nameIsStudent || !!thread.childId)
+  if (!parentChat && !studentChat) return { title: thread.name, subtitle: thread.role, student: null }
+
+  const facts = studentFacts(thread, hint)
+  if (parentChat) {
+    return { title: parentTitle(thread, hint, studentName), subtitle: facts, student: studentName || null }
+  }
+  return { title: studentName, subtitle: facts || thread.role, student: studentName }
 }
 
 export function toMessage(wire: Record<string, unknown>): ChatMessage {

@@ -2,6 +2,7 @@
    SchoolMate — School console: live Dashboard + Approvals inbox
    ============================================================ */
 import { useEffect, useMemo, useState, type ComponentType, type CSSProperties } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useApp, useToast } from '@/lib/hooks'
 import { can } from '@/lib/gating'
 import { formatStudentRoll } from '@/lib/studentRoll'
@@ -19,21 +20,21 @@ import { useTeachers } from '@/api/hooks/useTeachers'
 import { useStaff } from '@/api/hooks/useStaff'
 import { usePrincipalAttendance } from '@/api/hooks/usePrincipalAttendance'
 import { usePeriodAttendanceRangeSummary, useDashboardAttendanceTrend } from '@/api/hooks/usePeriodAttendanceAdvanced'
-import { classWiseDayHero } from '@/api/periodAttendanceAdvanced'
+import { listAllPeriodAttendanceRecords, studentDayHeadcount, studentDayStatusById } from '@/api/periodAttendanceAdvanced'
+import { listStudentsPage } from '@/api/students'
 import { useFeeReportSummary } from '@/api/hooks/useFeeReports'
 import { useAnnouncements } from '@/api/hooks/useAnnouncements'
 import { useFeePayments } from '@/api/hooks/useFeePayments'
 import { useDashboardExamBands } from '@/api/hooks/useExams'
 import {
   countPeoplePresent, PEOPLE_ATTENDANCE_CHANGED,
-  fetchRemotePeopleAttendance, type CheckInInfo,
+  explicitPeopleStatus, fetchRemotePeopleAttendance, isPeoplePresent, type CheckInInfo,
 } from '@/api/peopleAttendance'
 import type { AttendanceStatus } from '@/api/attendance'
 import { fmtMoney, fmtNum } from '@/lib/format'
 import { principalStaffToCheckInMap } from '@/lib/geoAttendanceDemo'
-import { studentLiveAttendance } from '@/lib/studentLiveAttendance'
 import { enrollmentByStageFromCounts } from '@/lib/dashboardLive'
-import type { Approval, ApprovalStatus, Role } from '@/types'
+import type { Approval, ApprovalStatus, Role, Student } from '@/types'
 
 function announcementTone(type?: string): BadgeTone {
   const t = (type || '').toLowerCase()
@@ -55,12 +56,126 @@ function canSeeLiveAttendance(role: Role): boolean {
 /* ============================================================
    School Dashboard
    ============================================================ */
+type SplitCounts = { present: number; absent: number; late: number; leave: number; unmarked: number }
+
+function emptySplit(): SplitCounts {
+  return { present: 0, absent: 0, late: 0, leave: 0, unmarked: 0 }
+}
+
+function buildStudentSplit(
+  students: Student[],
+  status: Map<string, 'present' | 'absent' | 'late' | 'leave'>,
+) {
+  const boys = emptySplit()
+  const girls = emptySplit()
+  const classes = new Map<string, SplitCounts & { grade: string; section: string }>()
+  for (const student of students) {
+    const mark = status.get(student.id) ?? 'unmarked'
+    const gender = student.gender === 'M' ? boys : student.gender === 'F' ? girls : null
+    if (gender) gender[mark] += 1
+    const grade = student.grade || '—'
+    const section = student.section || '—'
+    const key = `${grade}\0${section}`
+    const row = classes.get(key) ?? { grade, section, ...emptySplit() }
+    row[mark] += 1
+    classes.set(key, row)
+  }
+  return {
+    boys,
+    girls,
+    classes: [...classes.values()].sort((a, b) =>
+      a.grade.localeCompare(b.grade, undefined, { numeric: true }) || a.section.localeCompare(b.section)),
+  }
+}
+
+type PeopleMark = 'present' | 'absent' | 'late' | 'leave'
+
+function peopleMarkOf(
+  person: { id: string; name: string },
+  marks: Record<string, AttendanceStatus>,
+  opts: { checkIn: Map<string, CheckInInfo>; principalKnown: boolean },
+): PeopleMark | null {
+  const mark = marks[person.id]
+  if (mark === 'late') return 'late'
+  if (mark === 'absent') return 'absent'
+  if (mark === 'leave') return 'leave'
+  if (mark === 'present' || mark === 'half_day') return 'present'
+  const status = explicitPeopleStatus(person, marks, opts)
+  if (status === 'late') return 'late'
+  if (status === 'absent') return 'absent'
+  if (status === 'present' || status === 'half_day') return 'present'
+  return null
+}
+
+function countPeopleMarks(
+  people: { id: string; name: string }[],
+  marks: Record<string, AttendanceStatus>,
+  opts: { checkIn: Map<string, CheckInInfo>; principalKnown: boolean },
+): SplitCounts {
+  const counts = emptySplit()
+  for (const person of people) {
+    const mark = peopleMarkOf(person, marks, opts)
+    if (mark) counts[mark] += 1
+    else counts.unmarked += 1
+  }
+  return counts
+}
+
+const PIE_COLOR = {
+  present: '#22C55E',
+  absent: '#DC2626',
+  late: '#D97706',
+  unmarked: '#94A3B8',
+  leave: '#7C3AED',
+  boys: '#0EA5E9',
+  girls: '#EC4899',
+} as const
+
+function markedSegments(counts: SplitCounts) {
+  return [
+    { value: counts.present, color: PIE_COLOR.present, label: 'Present' },
+    { value: counts.absent, color: PIE_COLOR.absent, label: 'Absent' },
+    { value: counts.late, color: PIE_COLOR.late, label: 'Late' },
+    { value: counts.leave, color: PIE_COLOR.leave, label: 'Leave' },
+  ].filter((part) => part.value > 0)
+}
+
+function ColorPie({ segments, caption }: { segments: { value: number; color: string; label: string }[]; caption: string }) {
+  const total = segments.reduce((sum, part) => sum + part.value, 0)
+  if (!total) {
+    return (
+      <div className="col ai-center gap8" style={{ minWidth: 140 }}>
+        <div className="t-sm fw6">{caption}</div>
+        <div className="t-xs muted3">No marks yet</div>
+      </div>
+    )
+  }
+  return (
+    <div className="col ai-center gap10" style={{ minWidth: 160 }}>
+      <Donut
+        segments={segments}
+        size={132}
+        thickness={16}
+        center={<div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 18, fontWeight: 800, fontFamily: 'var(--font-display)', lineHeight: 1 }}>{fmtNum(total)}</div>
+          <div className="t-xs muted3">{caption}</div>
+        </div>}
+      />
+      <Legend items={segments.map((part) => ({ color: part.color, label: `${part.label} — ${fmtNum(part.value)}` }))} />
+    </div>
+  )
+}
+
 function SchoolDashboard() {
   const app = useApp()
   const s = app.school
   const cur = s.currency
   const liveAtt = canSeeLiveAttendance(app.role)
   const today = todayIso()
+  const [pie, setPie] = useState<null | 'students' | 'teachers' | 'staff'>(null)
+  const [classGrade, setClassGrade] = useState<string | null>(null)
+  const [classSection, setClassSection] = useState<string | null>(null)
+  const [subjectName, setSubjectName] = useState<string | null>(null)
 
   const peopleQ = useCrmPeopleSnapshot()
   const teachersQ = useTeachers()
@@ -118,17 +233,159 @@ function SchoolDashboard() {
   const rosterLoading = teachersQ.isLoading || staffQ.isLoading
   const liveGrades = peopleQ.data?.uniqueGrades ?? 0
 
-  const studentHero = classWiseDayHero({ range: periodDayQ.data })
-  const studentAtt = studentLiveAttendance({
-    loaded: !liveAtt || periodDayQ.isSuccess || periodDayQ.isError,
-    presentTotal: studentHero.present,
-    studentTotal: studentHero.marked,
-    overallPct: studentHero.pct,
-    enrollment: liveStudents,
+  const headcountFromApi = periodDayQ.data?.presentStudents != null
+    && periodDayQ.data.absentStudents != null
+    && periodDayQ.data.lateStudents != null
+  const todayMarksQ = useQuery({
+    queryKey: ['dashboard', 'today-student-headcount', today],
+    queryFn: () => listAllPeriodAttendanceRecords({ preset: 'custom', from: today, to: today }),
+    enabled: liveAtt && periodDayQ.isSuccess && (!headcountFromApi || pie === 'students'),
+    staleTime: 15_000,
   })
-  const studentTotal = studentAtt.marked > 0 ? studentAtt.marked : liveStudents
-  const studentsPresent = studentAtt.present
-  const attendancePct = studentAtt.pct
+  const studentHead = !liveAtt ? null
+    : headcountFromApi
+      ? {
+          presentStudents: periodDayQ.data!.presentStudents!,
+          absentStudents: periodDayQ.data!.absentStudents!,
+          lateStudents: periodDayQ.data!.lateStudents!,
+          leaveStudents: 0,
+        }
+      : todayMarksQ.data
+        ? studentDayHeadcount(todayMarksQ.data)
+        : null
+  const studentHeadLoading = liveAtt && (periodDayQ.isPending || (!headcountFromApi && todayMarksQ.isLoading))
+  const studentsPresentCount = studentHead?.presentStudents ?? 0
+  const studentsAbsentCount = studentHead?.absentStudents ?? 0
+  const studentsLateCount = studentHead?.lateStudents ?? 0
+  const studentsLeaveCount = studentHead?.leaveStudents ?? 0
+  const studentsMarked = studentsPresentCount + studentsAbsentCount + studentsLateCount + studentsLeaveCount
+  const studentsUnmarked = Math.max(0, liveStudents - studentsMarked)
+  const studentHeadRate = liveStudents ? Math.round((studentsPresentCount / liveStudents) * 100) : 0
+  const rosterQ = useQuery({
+    queryKey: ['dashboard', 'student-roster'],
+    queryFn: async () => {
+      const all: Student[] = []
+      let cursor: string | undefined
+      for (let page = 0; page < 30; page++) {
+        const batch = await listStudentsPage({ limit: 200, cursor })
+        all.push(...batch.rows)
+        if (!batch.nextCursor) break
+        cursor = batch.nextCursor
+      }
+      return all
+    },
+    enabled: liveAtt,
+    staleTime: 30_000,
+  })
+  const studentStatus = useMemo(
+    () => studentDayStatusById(todayMarksQ.data ?? []),
+    [todayMarksQ.data],
+  )
+  const studentSplit = useMemo(() => buildStudentSplit(rosterQ.data ?? [], studentStatus), [rosterQ.data, studentStatus])
+  const classGroups = useMemo(() => {
+    const byGrade = new Map<string, SplitCounts>()
+    for (const row of studentSplit.classes) {
+      const cur = byGrade.get(row.grade) ?? emptySplit()
+      cur.present += row.present
+      cur.absent += row.absent
+      cur.late += row.late
+      cur.leave += row.leave
+      cur.unmarked += row.unmarked
+      byGrade.set(row.grade, cur)
+    }
+    return [...byGrade.entries()]
+      .map(([grade, counts]) => ({ grade, ...counts }))
+      .sort((a, b) => a.grade.localeCompare(b.grade, undefined, { numeric: true }))
+  }, [studentSplit])
+  const sectionSubjects = useMemo(() => {
+    if (!classGrade || !classSection) return []
+    const ids = new Set(
+      (rosterQ.data ?? [])
+        .filter((student) => student.grade === classGrade && (student.section || '—') === classSection)
+        .map((student) => student.id),
+    )
+    const bySubject = new Map<string, SplitCounts & { period: number }>()
+    for (const row of todayMarksQ.data ?? []) {
+      const inSection = ids.has(row.studentId)
+        || (row.grade === classGrade && (row.section || '—') === classSection)
+      if (!inSection) continue
+      const status = String(row.status ?? '').trim().toLowerCase().replace(/-/g, '_')
+      const bucket = status === 'present' || status === 'half_day' ? 'present'
+        : status === 'late' ? 'late'
+        : status === 'absent' ? 'absent'
+        : status === 'leave' ? 'leave'
+        : null
+      if (!bucket) continue
+      const subject = row.subject.trim() || '—'
+      const cur = bySubject.get(subject) ?? { ...emptySplit(), period: row.period }
+      cur[bucket] += 1
+      cur.period = Math.min(cur.period, row.period || cur.period)
+      bySubject.set(subject, cur)
+    }
+    return [...bySubject.entries()]
+      .map(([subject, counts]) => ({ subject, ...counts }))
+      .sort((a, b) => a.period - b.period || a.subject.localeCompare(b.subject))
+  }, [classGrade, classSection, rosterQ.data, todayMarksQ.data])
+  const subjectStudents = useMemo(() => {
+    if (!classGrade || !classSection || !subjectName) return []
+    const roster = rosterQ.data ?? []
+    const byId = new Map(roster.map((student) => [student.id, student]))
+    const ids = new Set(
+      roster
+        .filter((student) => student.grade === classGrade && (student.section || '—') === classSection)
+        .map((student) => student.id),
+    )
+    const seen = new Map<string, { id: string; name: string; roll: number; period: number; status: 'present' | 'absent' | 'late' | 'leave' }>()
+    for (const row of todayMarksQ.data ?? []) {
+      const inSection = ids.has(row.studentId)
+        || (row.grade === classGrade && (row.section || '—') === classSection)
+      if (!inSection || (row.subject.trim() || '—') !== subjectName) continue
+      const status = String(row.status ?? '').trim().toLowerCase().replace(/-/g, '_')
+      const bucket = status === 'present' || status === 'half_day' ? 'present'
+        : status === 'late' ? 'late'
+        : status === 'absent' ? 'absent'
+        : status === 'leave' ? 'leave'
+        : null
+      if (!bucket) continue
+      const student = byId.get(row.studentId)
+      const cur = seen.get(row.studentId)
+      if (cur && cur.period > row.period) continue
+      seen.set(row.studentId, {
+        id: row.studentId,
+        name: student?.name || row.studentName || '—',
+        roll: student?.roll ?? 0,
+        period: row.period,
+        status: bucket,
+      })
+    }
+    return [...seen.values()].sort((a, b) => (a.roll || 9999) - (b.roll || 9999) || a.name.localeCompare(b.name))
+  }, [classGrade, classSection, subjectName, rosterQ.data, todayMarksQ.data])
+  const peopleOpts = useMemo(
+    () => ({
+      checkIn: attQ.isSuccess ? principalStaffToCheckInMap(attQ.data?.staff ?? []) : new Map<string, CheckInInfo>(),
+      principalKnown: attQ.isSuccess,
+    }),
+    [attQ.data, attQ.isSuccess],
+  )
+  const teacherSplit = useMemo(
+    () => countPeopleMarks(teachersQ.data ?? [], teacherMarks, peopleOpts),
+    [teachersQ.data, teacherMarks, peopleOpts],
+  )
+  const staffSplit = useMemo(
+    () => countPeopleMarks(staffQ.data ?? [], staffMarks, peopleOpts),
+    [staffQ.data, staffMarks, peopleOpts],
+  )
+  const peopleDetail = useMemo(() => {
+    const marks = pie === 'teachers' ? teacherMarks : staffMarks
+    const roster = pie === 'teachers'
+      ? (teachersQ.data ?? []).map((person) => ({ id: person.id, code: person.code?.trim() || person.id, name: person.name }))
+      : pie === 'staff'
+        ? (staffQ.data ?? []).map((person) => ({ id: person.id, code: person.code?.trim() || person.id, name: person.name }))
+        : []
+    return roster
+      .map((person) => ({ ...person, status: peopleMarkOf(person, marks, peopleOpts) }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [pie, teachersQ.data, staffQ.data, teacherMarks, staffMarks, peopleOpts])
 
   /* Teachers & staff: app check-in OR CRM mark — same rule as Attendance roster. */
   const teachersPresent = useMemo(() => {
@@ -204,10 +461,10 @@ function SchoolDashboard() {
         text: `Fees · collected today ${fmtMoney(feesToday, cur)} · outstanding ${fmtMoney(outstanding, cur)} · ${fmtNum(defaulters)} due`,
       })
     }
-    if (periodDayQ.isSuccess && attendancePct != null) {
+    if (studentHead && !studentHeadLoading) {
       rows.push({
         time: 'today',
-        text: `Students · ${studentAtt.footnote} (${attendancePct}%)`,
+        text: `Students · ${fmtNum(studentsPresentCount)} of ${fmtNum(liveStudents)} present today`,
       })
     }
     if (teachersQ.isSuccess) {
@@ -226,7 +483,7 @@ function SchoolDashboard() {
   }, [
     recentPayments, latestPayment, cur, feeReady, feeLoading,
     feesToday, outstanding, defaulters,
-    periodDayQ.isSuccess, attendancePct, studentAtt.footnote,
+    studentHead, studentHeadLoading, studentsPresentCount, liveStudents,
     teachersQ.isSuccess, teachersPresent, liveTeachers, teacherRate,
     staffQ.isSuccess, supportPresent, liveSupport, supportRate,
   ])
@@ -276,9 +533,12 @@ function SchoolDashboard() {
         />
         <Kpi
           icon="check" iconBg="color-mix(in srgb, #22C55E 12%, white)" iconColor="#22C55E"
-          label="Today's attendance" value={attendancePct == null ? '—' : `${attendancePct}%`}
-          delta={attLiveLabel} deltaDir="up"
-          foot={studentAtt.footnote}
+          label="Today's attendance"
+          value={studentHeadLoading || countsLoading ? '—' : `${fmtNum(studentsPresentCount)}/${fmtNum(liveStudents)}`}
+          delta={!studentHeadLoading && liveStudents ? `${studentHeadRate}%` : attLiveLabel} deltaDir="up"
+          foot={studentHeadLoading || countsLoading
+            ? 'Loading today’s students…'
+            : `${fmtNum(studentsAbsentCount)} absent · ${fmtNum(studentsLateCount)} late · ${fmtNum(studentsLeaveCount)} leave`}
           spark={attSpark.length >= 2 ? attSpark : undefined} sparkColor="#166534"
         />
         <Kpi
@@ -307,10 +567,9 @@ function SchoolDashboard() {
       <div className="sm-grid-3">
         <PeopleCard
           icon="users" tone="var(--brand-600)" label="Students"
-          count={liveStudents} sub={liveTeachers ? `Student–teacher ratio ${ratio}:1 · ${attLiveLabel}` : attLiveLabel}
-          rate={studentAtt.meter} present={studentsPresent} total={studentTotal}
-          foot={studentAtt.footnote}
-          loading={liveAtt && periodDayQ.isPending}
+          count={liveStudents} sub={liveTeachers ? `Student–teacher ratio ${ratio}:1 · today` : 'Today · one count per student'}
+          rate={studentHeadRate} present={studentsPresentCount} total={liveStudents}
+          loading={studentHeadLoading || countsLoading}
           onClick={() => app.go('school.attendance')}
         />
         <PeopleCard
@@ -328,6 +587,191 @@ function SchoolDashboard() {
           onClick={() => app.go('school.attendance')}
         />
       </div>
+
+      <div className="sm-grid-3">
+        <AttendanceDonut
+          title="Students today"
+          present={studentsPresentCount}
+          absent={studentsAbsentCount}
+          late={studentsLateCount}
+          leave={studentsLeaveCount}
+          unmarked={studentsUnmarked}
+          showAway={false}
+          showMarks
+          boys={rosterQ.isSuccess ? studentSplit.boys.present : undefined}
+          girls={rosterQ.isSuccess ? studentSplit.girls.present : undefined}
+          loading={studentHeadLoading || countsLoading}
+          onClick={() => { setClassGrade(null); setClassSection(null); setSubjectName(null); setPie('students') }}
+        />
+        <AttendanceDonut
+          title="Teachers today"
+          present={teacherSplit.present}
+          absent={teacherSplit.absent}
+          late={teacherSplit.late}
+          leave={teacherSplit.leave}
+          unmarked={teacherSplit.unmarked}
+          showAway={false}
+          showMarks
+          loading={rosterLoading || !peopleMarksReady}
+          onClick={() => setPie('teachers')}
+        />
+        <AttendanceDonut
+          title="Staff today"
+          present={staffSplit.present}
+          absent={staffSplit.absent}
+          late={staffSplit.late}
+          leave={staffSplit.leave}
+          unmarked={staffSplit.unmarked}
+          showAway={false}
+          showMarks
+          loading={rosterLoading || !peopleMarksReady}
+          onClick={() => setPie('staff')}
+        />
+      </div>
+
+      <Modal
+        open={pie != null}
+        onClose={() => { setPie(null); setClassGrade(null); setClassSection(null); setSubjectName(null) }}
+        size="xl"
+        icon="users"
+        title={pie === 'teachers' ? 'Teachers today' : pie === 'staff' ? 'Staff today' : subjectName ? `${subjectName} · Class ${classGrade} ${classSection}` : classSection ? `Class ${classGrade} · Section ${classSection}` : classGrade ? `Class ${classGrade}` : 'Classes today'}
+        sub={pie === 'students'
+          ? (subjectName
+            ? 'Roll and name for this subject period'
+            : classSection
+            ? 'Click a subject to see students'
+            : classGrade
+              ? 'Click a section to see each subject'
+              : 'Click a class to see its sections')
+          : 'ID and name · green present, red absent, amber late, purple leave'}
+      >
+        {pie === 'students' && (
+          rosterQ.isLoading || (todayMarksQ.isLoading && !todayMarksQ.data) ? (
+            <Empty icon="users" title="Loading students…" body="Reading today’s class attendance." />
+          ) : classGrade == null ? (
+            <div className="col gap16">
+              <Legend items={[
+                { color: PIE_COLOR.present, label: 'Present' },
+                { color: PIE_COLOR.absent, label: 'Absent' },
+                { color: PIE_COLOR.late, label: 'Late' },
+                { color: PIE_COLOR.leave, label: 'Leave' },
+                { color: PIE_COLOR.boys, label: 'Boys' },
+                { color: PIE_COLOR.girls, label: 'Girls' },
+              ]} />
+              <div className="row wrap gap16">
+                <ColorPie caption="Boys" segments={markedSegments(studentSplit.boys)} />
+                <ColorPie caption="Girls" segments={markedSegments(studentSplit.girls)} />
+              </div>
+              {classGroups.length === 0 ? (
+                <Empty icon="users" title="No classes yet" body="Class pies appear after students are on the roster." />
+              ) : (
+              <div className="row wrap gap16">
+                {classGroups.map((row) => (
+                  <button key={row.grade} type="button" onClick={() => { setSubjectName(null); setClassSection(null); setClassGrade(row.grade) }} style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: 12, cursor: 'pointer', padding: 8 }}>
+                    <ColorPie caption={`Class ${row.grade}`} segments={markedSegments(row)} />
+                  </button>
+                ))}
+              </div>
+              )}
+            </div>
+          ) : classSection == null ? (
+            <div className="col gap16">
+              <Btn size="sm" variant="ghost" icon="arrowLeft" onClick={() => { setSubjectName(null); setClassSection(null); setClassGrade(null) }}>All classes</Btn>
+              <Legend items={[
+                { color: PIE_COLOR.present, label: 'Present' },
+                { color: PIE_COLOR.absent, label: 'Absent' },
+                { color: PIE_COLOR.late, label: 'Late' },
+                { color: PIE_COLOR.leave, label: 'Leave' },
+              ]} />
+              <div className="row wrap gap16">
+                {studentSplit.classes.filter((row) => row.grade === classGrade).map((row) => (
+                  <button key={row.section} type="button" onClick={() => { setSubjectName(null); setClassSection(row.section) }} style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: 12, cursor: 'pointer', padding: 8 }}>
+                    <ColorPie caption={`Section ${row.section}`} segments={markedSegments(row)} />
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            subjectName == null ? (
+            <div className="col gap16">
+              <Btn size="sm" variant="ghost" icon="arrowLeft" onClick={() => { setSubjectName(null); setClassSection(null) }}>Sections</Btn>
+              <Legend items={[
+                { color: PIE_COLOR.present, label: 'Present' },
+                { color: PIE_COLOR.absent, label: 'Absent' },
+                { color: PIE_COLOR.late, label: 'Late' },
+                { color: PIE_COLOR.leave, label: 'Leave' },
+              ]} />
+              {sectionSubjects.length === 0 ? (
+                <Empty icon="check" title="No period marks" body="Subject pies appear after this section is marked today." />
+              ) : (
+                <div className="row wrap gap16">
+                  {sectionSubjects.map((row) => (
+                    <button key={row.subject} type="button" onClick={() => setSubjectName(row.subject)} style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: 12, cursor: 'pointer', padding: 8 }}>
+                      <ColorPie caption={row.subject} segments={markedSegments(row)} />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="col gap12">
+              <Btn size="sm" variant="ghost" icon="arrowLeft" onClick={() => setSubjectName(null)}>Subjects</Btn>
+              {subjectStudents.length === 0 ? (
+                <Empty icon="users" title="No students" body="No period mark for this subject." />
+              ) : (
+                <div className="col gap8">
+                  <div className="row ai-center gap12 t-xs muted3">
+                    <div style={{ width: 56 }}>Roll</div>
+                    <div style={{ flex: 1 }}>Name</div>
+                    <div>Status</div>
+                  </div>
+                  {subjectStudents.map((student) => (
+                    <div key={student.id} className="row ai-center gap12">
+                      <div className="t-sm fw6" style={{ width: 56 }}>{formatStudentRoll(student.roll)}</div>
+                      <div className="t-md" style={{ flex: 1 }}>{student.name}</div>
+                      <Badge tone={student.status === 'present' ? 'success' : student.status === 'absent' ? 'danger' : student.status === 'late' ? 'warning' : 'brand'}>
+                        {student.status === 'present' ? 'Present' : student.status === 'absent' ? 'Absent' : student.status === 'late' ? 'Late' : 'Leave'}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+          )
+        )}
+        {(pie === 'teachers' || pie === 'staff') && (
+          <div className="col gap16">
+            <Legend items={[
+              { color: PIE_COLOR.present, label: 'Present' },
+              { color: PIE_COLOR.absent, label: 'Absent' },
+              { color: PIE_COLOR.late, label: 'Late' },
+              { color: PIE_COLOR.leave, label: 'Leave' },
+            ]} />
+            <ColorPie caption={pie === 'teachers' ? 'Teachers' : 'Staff'} segments={markedSegments(pie === 'teachers' ? teacherSplit : staffSplit)} />
+            {peopleDetail.length === 0 ? (
+              <Empty icon="users" title="No one on the roster" body="Names appear when people are added." />
+            ) : (
+              <div className="col gap8">
+                <div className="row ai-center gap12 t-xs muted3">
+                  <div style={{ width: 140 }}>ID</div>
+                  <div style={{ flex: 1 }}>Name</div>
+                  <div>Status</div>
+                </div>
+                {peopleDetail.map((person) => (
+                  <div key={person.id} className="row ai-center gap12">
+                    <div className="t-sm fw6" style={{ width: 140 }}>{person.code}</div>
+                    <div className="t-md" style={{ flex: 1 }}>{person.name}</div>
+                    <Badge tone={person.status === 'present' ? 'success' : person.status === 'absent' ? 'danger' : person.status === 'late' ? 'warning' : person.status === 'leave' ? 'brand' : 'neutral'}>
+                      {person.status === 'present' ? 'Present' : person.status === 'absent' ? 'Absent' : person.status === 'late' ? 'Late' : person.status === 'leave' ? 'Leave' : 'Not marked'}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
 
       {/* ---- Trends: attendance line + fee donut ---- */}
       <div className="sm-grid-2">
@@ -550,6 +994,81 @@ function SchoolDashboard() {
         </Card>
       </div>
     </div>
+  )
+}
+
+/* Present / absent / not-marked pie. Teachers and staff use unmarked as away. */
+function AttendanceDonut({
+  title, present, absent = 0, late = 0, leave = 0, unmarked, awayLabel = 'Not marked', showAway = true, showMarks = false, boys, girls, loading, onClick,
+}: {
+  title: string
+  present: number
+  absent?: number
+  late?: number
+  leave?: number
+  unmarked: number
+  awayLabel?: string
+  showAway?: boolean
+  showMarks?: boolean
+  boys?: number
+  girls?: number
+  loading?: boolean
+  onClick: () => void
+}) {
+  const total = present + absent + late + leave + unmarked
+  const rate = total ? Math.round((present / total) * 100) : 0
+  const segments = [
+    ...(present ? [{ value: present, color: 'var(--success)', label: 'Present' }] : []),
+    ...(absent ? [{ value: absent, color: 'var(--danger)', label: 'Absent' }] : []),
+    ...(late ? [{ value: late, color: '#D97706', label: 'Late' }] : []),
+    ...(leave ? [{ value: leave, color: PIE_COLOR.leave, label: 'Leave' }] : []),
+    ...(showAway && unmarked ? [{ value: unmarked, color: 'var(--surface-3)', label: awayLabel }] : []),
+  ]
+  const legend = showMarks
+    ? [
+        { color: 'var(--success)', label: `Present — ${fmtNum(present)}` },
+        { color: 'var(--danger)', label: `Absent — ${fmtNum(absent)}` },
+        { color: '#D97706', label: `Late — ${fmtNum(late)}` },
+        { color: PIE_COLOR.leave, label: `Leave — ${fmtNum(leave)}` },
+        ...(boys != null ? [{ color: PIE_COLOR.boys, label: `Boys — ${fmtNum(boys)}` }] : []),
+        ...(girls != null ? [{ color: PIE_COLOR.girls, label: `Girls — ${fmtNum(girls)}` }] : []),
+      ]
+    : [
+        { color: 'var(--success)', label: `Present — ${fmtNum(present)}` },
+        ...(late ? [{ color: '#D97706', label: `Late — ${fmtNum(late)}` }] : []),
+        ...(absent ? [{ color: 'var(--danger)', label: `Absent — ${fmtNum(absent)}` }] : []),
+        ...(showAway && unmarked ? [{ color: 'var(--surface-3)', label: `${awayLabel} — ${fmtNum(unmarked)}` }] : []),
+      ]
+  return (
+    <Card hover onClick={onClick}>
+      <CardHead title={title} sub={loading ? 'Loading…' : `${fmtNum(present)} present · ${rate}%`} icon="users" />
+      {loading ? (
+        <Empty icon="users" title="Loading attendance…" body="Counting who is present today." />
+      ) : total === 0 ? (
+        <Empty icon="users" title="No one on the roster" body="Present and absent appear after people are added." />
+      ) : (
+        <>
+          <div className="row ai-center jc-center" style={{ margin: '8px 0 14px' }}>
+            {segments.length > 0 ? (
+              <Donut
+                segments={segments}
+                size={138} thickness={16}
+                center={<div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 20, fontWeight: 800, fontFamily: 'var(--font-display)', lineHeight: 1 }}>{fmtNum(present)}</div>
+                  <div className="t-xs muted3">present</div>
+                </div>}
+              />
+            ) : (
+              <div style={{ textAlign: 'center', padding: '28px 0' }}>
+                <div style={{ fontSize: 20, fontWeight: 800, fontFamily: 'var(--font-display)', lineHeight: 1 }}>{fmtNum(present)}</div>
+                <div className="t-xs muted3">present</div>
+              </div>
+            )}
+          </div>
+          <Legend items={legend} />
+        </>
+      )}
+    </Card>
   )
 }
 

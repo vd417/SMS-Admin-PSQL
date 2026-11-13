@@ -55,6 +55,22 @@ function stubFetch(role: string, usersRows: UserRow[]) {
     const method = (init?.method ?? 'GET').toUpperCase()
     const auth = authAndSchoolResponse(url, method, role)
     if (auth) return Promise.resolve(auth)
+    if (url.includes('/staff-attendance') && method === 'GET') {
+      return Promise.resolve(jsonResponse({
+        data: [
+          { person_id: 'S1', date: '2026-11-01', status: 'present' },
+          { person_id: 'S1', date: '2026-11-02', status: 'absent' },
+        ],
+      }))
+    }
+    if (url.includes('/transport/buses') && method === 'GET') {
+      return Promise.resolve(jsonResponse({
+        data: [{
+          bus_id: 'b1', bus_no: 'BUS-1', route_name: 'North Loop',
+          driver_staff_id: 'S1', stop_count: 0, students_assigned: 0,
+        }],
+      }))
+    }
     if (url.includes('/teachers') && method === 'GET') {
       return Promise.resolve(jsonResponse({ data: [TEACHER], next_cursor: null }))
     }
@@ -198,6 +214,7 @@ describe('Teacher roster row — Suspend action', () => {
     const row = screen.getAllByText('Meera Rao')[1].closest('tr')
     if (!row) throw new Error('roster row not found')
     expect(within(row).getByText('Suspend')).toBeInTheDocument()
+    expect(within(row).getByText('Overall 97%')).toBeInTheDocument()
   })
 
   it('does not show Suspend in the roster row when there is no linked account', async () => {
@@ -218,5 +235,7 @@ describe('Staff roster row — Suspend action', () => {
     const row = screen.getAllByText('Suresh Raina')[0].closest('tr')
     if (!row) throw new Error('roster row not found')
     expect(within(row).getByText('Suspend')).toBeInTheDocument()
+    expect(within(row).getByText('North Loop')).toBeInTheDocument()
+    await waitFor(() => expect(within(row).getByText('50%')).toBeInTheDocument())
   })
 })

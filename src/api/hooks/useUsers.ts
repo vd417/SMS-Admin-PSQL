@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useQuery, type UseQueryResult } from '@tanstack/react-query'
-import { listSchoolUsers, fromApiRole, leadershipRoleLabel, type SchoolUserDto } from '../users'
+import { listSchoolUsers, listParentLogins, fromApiRole, leadershipRoleLabel, type SchoolUserDto } from '../users'
 import { queryKeys } from '../queryKeys'
 
 /** CRM login accounts for this school — owner/admin/principal/vice_principal, plus any
@@ -45,6 +45,23 @@ export function useSchoolUserByEmail(email: string | undefined): SchoolUserDto |
 
 /** Lowercased email → linked login account, for every person in this school — lets a
  *  Teacher/Staff list row show a Suspend/Unsuspend action without a per-row lookup. */
+/** Parent app logins, keyed by email, for soft suspend on the Parents list. */
+export function useParentLogins(): Map<string, SchoolUserDto> {
+  const { data } = useQuery({
+    queryKey: [...queryKeys.users.all, 'parents'],
+    queryFn: () => listParentLogins(),
+    staleTime: 30_000,
+  })
+  return useMemo(() => {
+    const map = new Map<string, SchoolUserDto>()
+    for (const u of data ?? []) {
+      const email = u.email?.trim().toLowerCase()
+      if (email) map.set(email, u)
+    }
+    return map
+  }, [data])
+}
+
 export function useAccountByEmail(): Map<string, SchoolUserDto> {
   const { data } = useSchoolUsers()
   return useMemo(() => {

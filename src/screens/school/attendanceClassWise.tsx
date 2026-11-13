@@ -17,7 +17,8 @@ import { usePrincipalAttendance } from '@/api/hooks/usePrincipalAttendance'
 import { usePeriodAttendanceRangeSummary } from '@/api/hooks/usePeriodAttendanceAdvanced'
 import { studentPhotoUrl } from '@/api/studentExtras'
 import { compareClassesAscending, gradeRank } from '@/lib/defaultClasses'
-import { listClassAttendanceRange, mapPool, ATTENDANCE_CHANGED, ATTENDANCE_SAVED_EVENT, type AttendanceStatus, type AttendanceRecord } from '@/api/attendance'
+import { listClassAttendanceRange, mapPool, getPeriodAttendanceBackup, ATTENDANCE_CHANGED, ATTENDANCE_SAVED_EVENT, type AttendanceStatus, type AttendanceRecord } from '@/api/attendance'
+import { attendanceBackupKey, readAttendanceBackup, writeAttendanceBackup } from '@/lib/attendanceCorrection'
 import { listPeopleAttendanceRange, PEOPLE_ATTENDANCE_CHANGED } from '@/api/peopleAttendance'
 import {
   listAllPeriodAttendanceRecords,
@@ -51,8 +52,8 @@ type AttStatus = AttendanceStatus
 /** Present/absent tallied from locally-saved marks for one class on a given day. */
 export interface LocalCount { present: number; absent: number; total: number }
 
-const STATUS_TONE: Record<AttStatus, BadgeTone> = { present: 'success', late: 'warning', absent: 'danger', half_day: 'warning', pending: 'neutral' }
-const STATUS_LABEL: Record<AttStatus, string> = { present: 'Present', late: 'Late', absent: 'Absent', half_day: 'Half day', pending: 'Pending' }
+const STATUS_TONE: Record<AttStatus, BadgeTone> = { present: 'success', late: 'warning', absent: 'danger', half_day: 'warning', pending: 'neutral', leave: 'brand' }
+const STATUS_LABEL: Record<AttStatus, string> = { present: 'Present', late: 'Late', absent: 'Absent', half_day: 'Half day', pending: 'Pending', leave: 'Leave' }
 const STATUS_OPTS = [
   { value: 'present', label: 'Present' },
   { value: 'late', label: 'Late' },
@@ -122,6 +123,7 @@ function ClassPanel({
   date,
   students,
   editable,
+  canRevise,
   open,
   onToggle,
   summaryPresent,
@@ -134,6 +136,8 @@ function ClassPanel({
   date: string
   students: Student[]
   editable: boolean
+  /** Owner, admin, principal, and vice principal may change attendance that is already saved. */
+  canRevise: boolean
   open: boolean
   onToggle: () => void
   summaryPresent?: number
@@ -165,6 +169,10 @@ function ClassPanel({
   const periodQ = usePeriodAttendance(open ? classId : null, date, period, subject)
   const savePeriod = useSavePeriodAttendance()
   const [draft, setDraft] = useState<Record<string, AttStatus>>({})
+  const [revising, setRevising] = useState(false)
+  const [confirm, setConfirm] = useState<'save' | 'restore' | null>(null)
+  const [heldBackup, setHeldBackup] = useState<Record<string, AttStatus> | null>(null)
+  const [serverBackup, setServerBackup] = useState<Record<string, AttStatus> | null>(null)
   const canEditAttendance = Boolean(editable && selected?.canMark)
 
   const savedMap = useMemo(() => {
@@ -175,7 +183,10 @@ function ClassPanel({
     return m
   }, [periodQ.data])
 
-  useEffect(() => { setDraft({}) }, [classId, date, selectedSlotId, periodQ.dataUpdatedAt])
+  useEffect(() => {
+    setDraft({})
+    setRevising(false)
+  }, [classId, date, selectedSlotId, periodQ.dataUpdatedAt])
 
   const roster = useMemo(
     () => students
@@ -198,6 +209,28 @@ function ClassPanel({
   const hasDraft = Object.keys(draft).length > 0
   const periodsMarked = slots.filter((s) => s.marked).length
   const periodSaved = Boolean(fromServer || selected?.marked)
+  const canChangeMarks = canEditAttendance && (!periodSaved || (canRevise && revising))
+  const backupKey = selected && subject ? attendanceBackupKey(classId, date, selected.period, subject) : ''
+
+  useEffect(() => {
+    if (!open || !canRevise || !periodSaved || !selected || !subject) {
+      setServerBackup(null)
+      return
+    }
+    let cancel = false
+    void getPeriodAttendanceBackup(classId, { date, period: selected.period, subject }).then((rows) => {
+      if (cancel) return
+      if (!rows?.length) {
+        const local = backupKey ? readAttendanceBackup(backupKey) : null
+        setServerBackup(local as Record<string, AttStatus> | null)
+        return
+      }
+      const map: Record<string, AttStatus> = {}
+      for (const row of rows) map[row.studentId] = row.status
+      setServerBackup(map)
+    })
+    return () => { cancel = true }
+  }, [open, canRevise, periodSaved, classId, date, selected, subject, backupKey, periodQ.dataUpdatedAt])
   const periodPct = periodMarkedCount
     ? Math.round(((periodPresent) / periodMarkedCount) * 100)
     : null
@@ -236,7 +269,32 @@ function ClassPanel({
   const markAllAbsent = () =>
     setDraft((d) => ({ ...d, ...Object.fromEntries(roster.map((s) => [s.id, 'absent' as AttStatus])) }))
 
-  const submit = async () => {
+  const previousMarks = (): Record<string, AttStatus> | null => {
+    if (revising && heldBackup) return heldBackup
+    return serverBackup ?? heldBackup ?? (backupKey ? readAttendanceBackup(backupKey) as Record<string, AttStatus> | null : null)
+  }
+
+  const saveRecords = async (records: { studentId: string; status: AttStatus }[], restored: boolean) => {
+    if (!selected || !subject) return
+    await savePeriod.mutateAsync({
+      classId,
+      date,
+      period: selected.period,
+      subject,
+      subjectId: selected.subjectId,
+      periodId: selected.id,
+      records,
+    })
+    toast.success(
+      restored ? 'Previous attendance restored' : 'Attendance saved',
+      `${classLabel(cls)} · P${selected.period} ${subject}`,
+    )
+    setDraft({})
+    setRevising(false)
+    window.dispatchEvent(new Event(ATTENDANCE_SAVED_EVENT))
+  }
+
+  const submit = async (confirmed = false) => {
     if (!selected || !subject) {
       toast.danger('Pick a period', 'Select a timetable period before saving.')
       return
@@ -252,21 +310,45 @@ function ClassPanel({
       toast.danger('Nothing to save', 'Mark at least one student before submitting.')
       return
     }
+    if (periodSaved && !confirmed) {
+      setConfirm('save')
+      return
+    }
     try {
-      await savePeriod.mutateAsync({
-        classId,
-        date,
-        period: selected.period,
-        subject,
-        subjectId: selected.subjectId,
-        periodId: selected.id,
-        records,
-      })
-      toast.success('Attendance saved', `${classLabel(cls)} · P${selected.period} ${subject} · ${periodPresent}/${roster.length} present`)
-      setDraft({})
-      window.dispatchEvent(new Event(ATTENDANCE_SAVED_EVENT))
+      await saveRecords(records, false)
     } catch (err) {
       toast.danger('Could not save', err instanceof Error ? err.message : 'Try again')
+    }
+  }
+
+  const startRevise = () => {
+    const snap = { ...savedMap }
+    setHeldBackup(snap)
+    if (backupKey) writeAttendanceBackup(backupKey, snap)
+    setRevising(true)
+  }
+
+  const restorePrevious = async () => {
+    if (!selected || !subject) return
+    const source = previousMarks()
+    if (!source || !Object.keys(source).length) {
+      toast.danger('Nothing to get back', 'No earlier copy of this period is stored yet.')
+      return
+    }
+    const changed = roster.some((s) => source[s.id] && source[s.id] !== savedMap[s.id])
+    if (!changed) {
+      setDraft({})
+      setRevising(false)
+      toast.success('Back to saved attendance', 'The marks on screen match the last saved copy.')
+      return
+    }
+    const records = roster
+      .filter((s) => source[s.id])
+      .map((s) => ({ studentId: s.id, status: source[s.id] }))
+    try {
+      await saveRecords(records, true)
+    } catch (err) {
+      toast.danger('Could not restore', err instanceof Error ? err.message : 'Try again')
     }
   }
 
@@ -455,19 +537,35 @@ function ClassPanel({
                       : periodSaved
                         ? <Badge tone="success" icon="check">Saved</Badge>
                         : <Badge tone="neutral" dot>Not marked</Badge>}
-                    {canEditAttendance && (
+                    {canChangeMarks && (
                       <>
                         <Btn size="sm" variant="secondary" onClick={markAllPresent}>All present</Btn>
                         <Btn size="sm" variant="ghost" onClick={markAllAbsent}>All absent</Btn>
+                      </>
+                    )}
+                    {periodSaved && canRevise && (
+                      <>
+                        {!revising && <Btn size="sm" variant="secondary" onClick={startRevise}>Modify</Btn>}
+                        <Btn size="sm" variant="ghost" onClick={() => setConfirm('restore')} disabled={!previousMarks()}>Get back</Btn>
                       </>
                     )}
                   </div>
                 </div>
               )}
 
-              {selected && !selected.canMark && (
+              {selected && !selected.canMark && !canRevise && (
                 <div className="t-xs muted" style={{ padding: '0 16px 10px' }}>
                   View only — {selected.teacherName || 'the assigned teacher'} marks this period
+                </div>
+              )}
+              {periodSaved && !canRevise && (
+                <div className="t-xs muted" style={{ padding: '0 16px 10px' }}>
+                  Saved. The owner, admin, or principal can change it.
+                </div>
+              )}
+              {periodSaved && canRevise && !revising && (
+                <div className="t-xs muted" style={{ padding: '0 16px 10px' }}>
+                  Saved. Modify to change it. Get back puts the previous marks in place. Two changes a month stay on record. From the third, the owner is emailed.
                 </div>
               )}
 
@@ -487,7 +585,7 @@ function ClassPanel({
                             <div className="t-xs muted3">{rollLabel(s.roll)}</div>
                           </div>
                         </div>
-                        {canEditAttendance
+                        {canChangeMarks
                           ? <Segmented value={st ?? ''} onChange={(v) => setStatus(s.id, v as AttStatus)} options={STATUS_OPTS} />
                           : st
                             ? <Badge tone={STATUS_TONE[st]} dot>{STATUS_LABEL[st]}</Badge>
@@ -497,11 +595,12 @@ function ClassPanel({
                   })}
                 </div>
               )}
-              {canEditAttendance && (
+              {canChangeMarks && (
                 <div className="sm-att-save-bar">
                   <span className="t-xs muted3">
                     {periodMarkedCount}/{roster.length} marked
                     {hasDraft ? ' · unsaved' : ''}
+                    {periodSaved ? ' · previous marks are kept' : ''}
                   </span>
                   <Btn
                     variant="primary"
@@ -511,10 +610,41 @@ function ClassPanel({
                   >
                     {savePeriod.isPending
                       ? 'Saving…'
-                      : `Save P${selected?.period ?? ''} attendance`}
+                      : periodSaved
+                        ? `Save change to P${selected?.period ?? ''}`
+                        : `Save P${selected?.period ?? ''} attendance`}
                   </Btn>
                 </div>
               )}
+              <Modal
+                open={confirm != null}
+                onClose={() => setConfirm(null)}
+                size="sm"
+                icon="alert"
+                title={confirm === 'restore' ? 'Get back previous attendance?' : 'Change saved attendance?'}
+                footer={(
+                  <>
+                    <Btn variant="ghost" onClick={() => setConfirm(null)}>Cancel</Btn>
+                    <Btn
+                      variant="primary"
+                      disabled={savePeriod.isPending}
+                      onClick={() => {
+                        const mode = confirm
+                        setConfirm(null)
+                        if (mode === 'restore') void restorePrevious()
+                        else void submit(true)
+                      }}
+                    >
+                      {confirm === 'restore' ? 'Get back' : 'Save change'}
+                    </Btn>
+                  </>
+                )}
+              >
+                <p className="t-sm" style={{ margin: 0 }}>
+                  The marks from before this save are kept. Two changes in a month are stored only.
+                  From the third change on, the owner is emailed with who saved it and what changed.
+                </p>
+              </Modal>
             </>
           )}
         </div>
@@ -550,13 +680,14 @@ function sectionCounts(
    Grade group — shows a grade first; expands to its sections (A/B/C).
    ============================================================ */
 function GradeGroup({
-  grade, sections, date, students, editable, summaryById, localByClass, open, onToggle, openClassId, onToggleClass,
+  grade, sections, date, students, editable, canRevise, summaryById, localByClass, open, onToggle, openClassId, onToggleClass,
 }: {
   grade: string
   sections: SchoolClass[]
   date: string
   students: Student[]
   editable: boolean
+  canRevise: boolean
   summaryById: Map<string, ClassSummary>
   localByClass: Map<string, LocalCount>
   open: boolean
@@ -669,6 +800,7 @@ function GradeGroup({
                   date={date}
                   students={students}
                   editable={editable}
+                  canRevise={canRevise}
                   open={openClassId === c.id}
                   onToggle={() => onToggleClass(c.id!)}
                   summaryPresent={sum?.present}
@@ -1745,6 +1877,7 @@ export function ClassWiseStudents({ editable, leadership }: { editable: boolean;
               date={date}
               students={students}
               editable={editable}
+              canRevise={leadership}
               summaryById={summaryById}
               localByClass={localByClass}
               open={searching || openGradeId === grade}
