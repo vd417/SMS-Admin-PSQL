@@ -546,6 +546,7 @@ function AttendanceScreen() {
         presentStudents: overviewQ.data!.presentStudents!,
         absentStudents: overviewQ.data!.absentStudents!,
         lateStudents: overviewQ.data!.lateStudents!,
+        leaveStudents: 0,
       }
     : todayMarksQ.data
       ? studentDayHeadcount(todayMarksQ.data)

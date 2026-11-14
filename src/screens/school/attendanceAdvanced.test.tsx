@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { PeriodAttendanceAdvancedFilters } from '@/api/periodAttendanceAdvanced'
@@ -352,7 +353,14 @@ describe('AttendanceAdvanced subviews', () => {
 describe('Attendance screen Advanced wiring', () => {
   it('keeps the Students mark path and mounts the Advanced list from its tab', () => {
     const AttendanceScreen = attendanceScreens['school.attendance']
-    render(<AttendanceScreen />)
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AttendanceScreen />
+      </QueryClientProvider>,
+    )
 
     expect(screen.getByText('Students mark path')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Advanced' }))

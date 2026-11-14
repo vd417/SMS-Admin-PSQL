@@ -570,6 +570,9 @@ describe('classWiseDayHero', () => {
         late: 2,
         leave: 0,
         attendancePercentage: 85,
+        presentStudents: null,
+        absentStudents: null,
+        lateStudents: null,
       },
     })
     expect(hero).toEqual({ present: 34, marked: 40, absent: 6, pct: 85 })
@@ -581,7 +584,7 @@ describe('classWiseDayHero', () => {
       ['c2', { present: 8, absent: 0, total: 8 }],
     ])
     const hero = classWiseDayHero({
-      range: { totalMarkedPeriods: 0, present: 0, absent: 0, late: 0, leave: 0, attendancePercentage: null },
+      range: { totalMarkedPeriods: 0, present: 0, absent: 0, late: 0, leave: 0, attendancePercentage: null, presentStudents: null, absentStudents: null, lateStudents: null },
       localByClass,
     })
     expect(hero).toEqual({ present: 18, marked: 20, absent: 2, pct: 90 })

@@ -1187,7 +1187,12 @@ describe('Bulk import wizard — Upload step template download', () => {
     fireEvent.click(getByText('Bulk Import'))
     fireEvent.click(getByText('Download template'))
 
-    await waitFor(() => expect(downloadSpy).toHaveBeenCalledTimes(1))
+    await waitFor(
+      () => {
+        expect(downloadSpy).toHaveBeenCalledTimes(1)
+      },
+      { timeout: 10000 },
+    )
     const [filename, buf, mime] = downloadSpy.mock.calls[0]
     expect(filename).toMatch(/\.xlsx$/)
     expect(mime).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')

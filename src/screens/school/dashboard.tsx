@@ -28,7 +28,7 @@ import { useFeePayments } from '@/api/hooks/useFeePayments'
 import { useDashboardExamBands } from '@/api/hooks/useExams'
 import {
   countPeoplePresent, PEOPLE_ATTENDANCE_CHANGED,
-  explicitPeopleStatus, fetchRemotePeopleAttendance, isPeoplePresent, type CheckInInfo,
+  explicitPeopleStatus, fetchRemotePeopleAttendance, type CheckInInfo,
 } from '@/api/peopleAttendance'
 import type { AttendanceStatus } from '@/api/attendance'
 import { fmtMoney, fmtNum } from '@/lib/format'

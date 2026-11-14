@@ -1,7 +1,7 @@
 /* ============================================================
    SchoolMate — Toast notifications
    ============================================================ */
-import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Icon } from '@/components/ui/Icon'
 
 type ToastTone = 'success' | 'info' | 'danger'
@@ -18,11 +18,32 @@ const ToastCtx = createContext<ToastApi | null>(null)
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
   const idRef = useRef(0)
+  const timersRef = useRef(new Map<number, ReturnType<typeof setTimeout>>())
+
+  const dismiss = useCallback((id: number) => {
+    const timer = timersRef.current.get(id)
+    if (timer !== undefined) {
+      clearTimeout(timer)
+      timersRef.current.delete(id)
+    }
+    setToasts((list) => list.filter((x) => x.id !== id))
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      timersRef.current.forEach((timer) => clearTimeout(timer))
+      timersRef.current.clear()
+    }
+  }, [])
 
   const push = useCallback((tone: ToastTone, title: string, sub?: string) => {
     const id = ++idRef.current
     setToasts((t) => [...t, { id, tone, title, sub }])
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4000)
+    const timer = setTimeout(() => {
+      timersRef.current.delete(id)
+      setToasts((t) => t.filter((x) => x.id !== id))
+    }, 4000)
+    timersRef.current.set(id, timer)
   }, [])
 
   const api: ToastApi = {
@@ -44,7 +65,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               <div className="sm-toast-title">{t.title}</div>
               {t.sub && <div className="sm-toast-sub">{t.sub}</div>}
             </div>
-            <button className="sm-toast-x" onClick={() => setToasts((list) => list.filter((x) => x.id !== t.id))}><Icon name="x" size={15} /></button>
+            <button className="sm-toast-x" onClick={() => dismiss(t.id)}><Icon name="x" size={15} /></button>
           </div>
         ))}
       </div>
