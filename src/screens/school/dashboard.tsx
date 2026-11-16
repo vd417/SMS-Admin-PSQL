@@ -509,16 +509,18 @@ function SchoolDashboard() {
   const examBands = examBandsQ.data?.bands ?? []
   const attLiveLabel = periodDayQ.isFetching ? 'Refreshing…' : (periodDayQ.isSuccess ? 'Live today' : 'Live roster')
 
+  const placeLine = [s.city, s.tz].filter((v) => v && v !== '—').join(' · ')
+
   return (
-    <div className="col gap20">
-      <div className="row ai-center gap16 wrap" style={{ marginBottom: 4 }}>
+    <div className="sm-dash col gap20">
+      <div className="sm-dash-head row ai-center gap16 wrap" style={{ marginBottom: 4 }}>
         <SchoolPhoto school={s} size={88} />
-        <div style={{ flex: 1, minWidth: 180 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div className="t-xs muted3" style={{ letterSpacing: '0.04em', textTransform: 'uppercase', fontWeight: 600 }}>
             Dashboard
           </div>
           <h1 className="sm-pagehead-title" style={{ margin: '2px 0 4px' }}>{s.name}</h1>
-          <div className="t-sm muted">{s.city}{s.tz ? ` · ${s.tz}` : ''}</div>
+          {placeLine ? <div className="t-sm muted">{placeLine}</div> : null}
         </div>
       </div>
 
@@ -1092,11 +1094,11 @@ function PeopleCard({ icon, tone, label, count, sub, rate, present, total, foot,
         <Icon name="chevRight" size={18} className="sm-people-chev" />
       </div>
       <div className="t-sm sm-people-sub" style={{ marginTop: 10 }}>{sub}</div>
-      <div className="row ai-center gap8" style={{ marginTop: 10 }}>
-        <div className="sm-meter sm-people-meter" style={{ flex: 1, width: 'auto' }}>
+      <div className="row ai-center gap8 wrap" style={{ marginTop: 10 }}>
+        <div className="sm-meter sm-people-meter" style={{ flex: '1 1 80px', width: 'auto', minWidth: 64 }}>
           <span style={{ width: `${loading ? 0 : rate}%` }} />
         </div>
-        <span className="t-xs sm-kpi-foot" style={{ whiteSpace: 'nowrap', marginTop: 0 }}>
+        <span className="t-xs sm-kpi-foot" style={{ marginTop: 0 }}>
           {loading ? 'Loading…' : (foot ?? `${fmtNum(present)} of ${fmtNum(total)} present`)}
         </span>
       </div>

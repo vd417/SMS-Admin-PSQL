@@ -50,8 +50,8 @@ export function Kpi({ icon, iconBg, iconColor, label, value, delta, deltaDir, fo
 }) {
   return (
     <div className="sm-kpi" style={iconColor ? ({ '--kpi-accent': iconColor } as CSSProperties) : undefined}>
-      <div className="row ai-center jc-between">
-        <div className="row ai-center gap10">
+      <div className="row ai-center jc-between wrap gap8">
+        <div className="row ai-center gap10" style={{ minWidth: 0, flex: '1 1 auto' }}>
           <span className="sm-kpi-ic" style={{ background: iconBg, color: iconColor }}><Icon name={icon} size={18} /></span>
           <div className="sm-kpi-label">{label}</div>
         </div>
@@ -62,7 +62,7 @@ export function Kpi({ icon, iconBg, iconColor, label, value, delta, deltaDir, fo
         )}
       </div>
       <div className="sm-kpi-val" style={{ marginTop: 12 }}>{value}</div>
-      {spark && <div style={{ marginTop: 8 }}><Spark data={spark} w={160} h={32} color={sparkColor || 'var(--brand-600)'} /></div>}
+      {spark && <div className="sm-kpi-spark" style={{ marginTop: 8 }}><Spark data={spark} w={160} h={32} color={sparkColor || 'var(--brand-600)'} /></div>}
       {foot && <div className="sm-kpi-foot">{foot}</div>}
     </div>
   )

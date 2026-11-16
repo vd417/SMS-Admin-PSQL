@@ -4,6 +4,7 @@ import type { RouteStop, RouteGeometry } from '@/api/transport'
 import { Checkbox } from '@/components/ui'
 import { decodePolyline } from '@/lib/decodePolyline'
 import { useInterpolatedPosition } from '@/lib/useInterpolatedPosition'
+import { tripIsLive } from '@/lib/busTrip'
 
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
 const MAP_ID = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID
@@ -383,6 +384,8 @@ export function FleetLiveMap({
   routeGeometryByRouteId = {},
   onStopClick,
   onBusClick,
+  selectedBusIds: selectedBusIdsProp,
+  onSelectedBusIdsChange,
 }: {
   fleet: { busId: string; busNo: string; routeId?: string | null; routeName?: string | null; driver?: string | null; lat?: number | null; lng?: number | null; speedKmh?: number | null; heading?: number | null; status?: string }[]
   routeStopsByRouteId: Record<string, RouteStop[]>
@@ -396,11 +399,15 @@ export function FleetLiveMap({
   onStopClick?: (stopId: string) => void
   /** Called with a bus's id when its marker is clicked — parent decides what to reveal (e.g. a bus info panel). */
   onBusClick?: (busId: string) => void
+  selectedBusIds?: string[]
+  onSelectedBusIdsChange?: (ids: string[]) => void
 }) {
-  const [selectedBusIds, setSelectedBusIds] = useState<string[]>([])
-  const toggleBus = (id: string) => setSelectedBusIds((prev) => (
-    prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-  ))
+  const [uncontrolledIds, setUncontrolledIds] = useState<string[]>([])
+  const selectedBusIds = selectedBusIdsProp ?? uncontrolledIds
+  const setSelectedBusIds = onSelectedBusIdsChange ?? setUncontrolledIds
+  const toggleBus = (id: string) => setSelectedBusIds(
+    selectedBusIds.includes(id) ? selectedBusIds.filter((x) => x !== id) : [...selectedBusIds, id],
+  )
 
   const [routeFilter, setRouteFilter] = useState('')
   // Distinguishes "the filter is untouched" (still hide routes by default, to avoid
@@ -452,17 +459,21 @@ export function FleetLiveMap({
 
   const busPoints = visibleFleet
     .filter((b) => b.lat != null && b.lng != null)
-    .map((b) => ({
-      id: b.busId,
-      busNo: b.busNo,
-      lat: b.lat as number,
-      lng: b.lng as number,
-      speedKmh: b.speedKmh ?? null,
-      heading: b.heading ?? null,
-      // Always surface speed when GPS reports it — not only when legacy status is "moving".
-      moving: b.speedKmh != null && b.speedKmh > 3,
-      showSpeed: b.speedKmh != null,
-    }))
+    .map((b) => {
+      const live = b.status ? tripIsLive(b.status) : true
+      return {
+        id: b.busId,
+        busNo: b.busNo,
+        lat: b.lat as number,
+        lng: b.lng as number,
+        speedKmh: b.speedKmh ?? null,
+        heading: b.heading ?? null,
+        live,
+        // Always surface speed when GPS reports it — not only when legacy status is "moving".
+        moving: live && b.speedKmh != null && b.speedKmh > 3,
+        showSpeed: live && b.speedKmh != null,
+      }
+    })
 
   // No selection and no route filter -> no routes at all (just live locations). Selecting
   // buses, or picking a route in the filter, draws only the route(s) currently in view.
@@ -506,21 +517,34 @@ export function FleetLiveMap({
               <Checkbox
                 checked={selectedBusIds.includes(b.busId)}
                 onChange={() => toggleBus(b.busId)}
-                label={b.busNo}
+                label={`${b.busNo}${tripIsLive(b.status) ? ' · live' : b.lat != null ? ' · last' : ''}`}
               />
             </div>
           ))}
-          {selectedBusIds.length > 0 && (
+          {filteredFleet.length > 0 && (
             <button
               type="button"
-              onClick={() => setSelectedBusIds([])}
+              onClick={() => setSelectedBusIds(filteredFleet.map((b) => b.busId))}
               style={{
                 display: 'block', width: '100%', textAlign: 'left', fontSize: 12, color: '#2563eb',
                 background: 'none', border: 'none', borderTop: '1px solid var(--border)', cursor: 'pointer',
                 padding: '6px 4px 2px', marginTop: 4,
               }}
             >
-              Clear (show all)
+              Select all
+            </button>
+          )}
+          {selectedBusIds.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setSelectedBusIds([])}
+              style={{
+                display: 'block', width: '100%', textAlign: 'left', fontSize: 12, color: '#2563eb',
+                background: 'none', border: 'none', borderTop: selectedBusIds.length && filteredFleet.length ? 'none' : '1px solid var(--border)', cursor: 'pointer',
+                padding: '6px 4px 2px', marginTop: 0,
+              }}
+            >
+              Unselect all (show every last location)
             </button>
           )}
         </div>
@@ -613,9 +637,9 @@ export function FleetLiveMap({
               busId={b.id}
               lat={b.lat}
               lng={b.lng}
-              heading={b.heading}
-              color={b.moving ? '#16a34a' : '#64748b'}
-              label={`${b.busNo}${b.showSpeed ? ` · ${Math.round(b.speedKmh!)} km/h` : ''}`}
+              heading={b.live ? b.heading : null}
+              color={b.live ? (b.moving ? '#16a34a' : '#2563eb') : '#64748b'}
+              label={`${b.busNo}${b.showSpeed ? ` · ${Math.round(b.speedKmh!)} km/h` : b.live ? '' : ' · last'}`}
               onClick={onBusClick ? () => onBusClick(b.id) : undefined}
             />
           ))}
@@ -640,8 +664,8 @@ export function FleetLiveMap({
       </APIProvider>
       {busPoints.length === 0 && routePaths.length === 0 && (
         <div className="col ai-center jc-center" style={{ position: 'absolute', inset: 0, gap: 8, textAlign: 'center', padding: 24, pointerEvents: 'none', background: 'rgba(0,0,0,0.03)' }}>
-          <div className="fw6">Waiting for live GPS</div>
-          <div className="t-sm muted">Assign routes to buses and start a trip to see polylines and positions.</div>
+          <div className="fw6">No bus location yet</div>
+          <div className="t-sm muted">Last location stays on the map after a trip. The driver app sends live GPS when pickup or drop is running.</div>
         </div>
       )}
       {selectedBusIds.length > 0 && routePaths.some((r) => routeGeometryByRouteId[r.routeId]?.status === 'unavailable') && (

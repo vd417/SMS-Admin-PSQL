@@ -85,7 +85,8 @@ html[data-theme=dark] .sm-badge.soft.sm-badge-brand{ color:var(--brand-300); }
 .sm-card:hover { box-shadow:var(--sh-md); }
 .sm-card.hover { cursor:pointer; }
 .sm-card.hover:hover { box-shadow:var(--sh-lg); border-color:var(--border-2); transform:translateY(-3px); }
-.sm-card-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; gap:12px; }
+.sm-card-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; gap:12px; flex-wrap:wrap; min-width:0; }
+.sm-card-head > .row { min-width:0; flex:1 1 12rem; }
 .sm-card-ic { display:inline-flex; width:36px; height:36px; align-items:center; justify-content:center;
   border-radius:var(--r-md); background:var(--brand-50); color:var(--brand-600); box-shadow:var(--sh-xs); }
 html[data-theme=dark] .sm-card-ic{ background:var(--surface-3); }
@@ -277,8 +278,10 @@ html[data-theme=dark] .sm-tab.on{ color:var(--brand-300); }
 .sm-empty-body{ font-size:13px; color:var(--text-2); margin-top:5px; max-width:340px; }
 
 /* ---------- Overlay / Modal / Drawer ---------- */
-.sm-overlay{ position:fixed; inset:0; background:rgba(15,23,42,.45); backdrop-filter:blur(2px); z-index:var(--z-modal);
+.sm-overlay{ position:fixed; inset:0; background:rgba(15,23,42,.55); z-index:400;
   display:flex; align-items:center; justify-content:center; padding:24px; }
+/* Opening click is ignored until is-ready (no blur — blur + Maps tiles flicker the dialog). */
+.sm-overlay.sm-overlay-delay:not(.is-ready){ pointer-events:none; }
 html[data-theme=dark] .sm-overlay{ background:rgba(0,0,0,.6); }
 .sm-overlay-r{ justify-content:flex-end; padding:0; }
 .sm-modal{ background:var(--bg-elev); border:1px solid var(--border); border-radius:var(--r-xl); box-shadow:var(--sh-xl);

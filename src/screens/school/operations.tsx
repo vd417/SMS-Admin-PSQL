@@ -37,7 +37,7 @@ import { fromApiRole, leadershipRoleLabel } from '@/api/users'
 import { collectAudienceContacts } from '@/lib/collectAudienceEmails'
 import { gradeRank } from '@/lib/defaultClasses'
 import { shouldPublishGps } from '@/lib/gpsThrottle'
-import { tripIsLive } from '@/lib/busTrip'
+import { tripIsLive, withMapPosition } from '@/lib/busTrip'
 import { validatePhone } from '@/lib/validation'
 import { groupStudentsByStop } from '@/lib/transportStops'
 import {
@@ -2732,25 +2732,29 @@ function BusNotifyModal({ bus, onClose }: { bus: FleetBus; onClose: () => void }
 /* ============================================================
    DRIVER MODE PANEL
    ============================================================ */
-function DriverModePanel({ fleet, onLocate }: { fleet: FleetBus[]; onLocate: (busId: string) => void }) {
+function DriverModePanel({ fleet, selectedBusIds, onSelectedBusIdsChange, onLocate }: {
+  fleet: FleetBus[]
+  selectedBusIds: string[]
+  onSelectedBusIdsChange: (ids: string[]) => void
+  onLocate: (busId: string) => void
+}) {
   const toast = useToast()
   const pingTrip = usePingBusTrip()
-  const [driverBusId, setDriverBusId] = useState('')
   const [tracking, setTracking] = useState(false)
   const [lastPush, setLastPush] = useState<string | null>(null)
   const watchRef = useRef<number | null>(null)
   const lastSampleRef = useRef<{ lat: number; lng: number; at: number } | null>(null)
   const pendingPingRef = useRef<{ lat: number; lng: number; speedKmh?: number; at: string } | null>(null)
-  const driverBusIdRef = useRef(driverBusId)
+  const selectedIdsRef = useRef(selectedBusIds)
   const toldPingFail = useRef(false)
-  driverBusIdRef.current = driverBusId
+  selectedIdsRef.current = selectedBusIds
 
-  const selected = fleet.find((b) => b.busId === driverBusId)
-  const live = tripIsLive(selected?.status)
+  const selected = fleet.filter((b) => selectedBusIds.includes(b.busId))
+  const liveOne = selected.length === 1 && tripIsLive(selected[0]?.status)
 
   const flushPing = () => {
     const ping = pendingPingRef.current
-    const busId = driverBusIdRef.current
+    const busId = selectedIdsRef.current.length === 1 ? selectedIdsRef.current[0] : ''
     if (!ping || !busId) return
     pendingPingRef.current = null
     pingTrip.mutate({
@@ -2794,19 +2798,29 @@ function DriverModePanel({ fleet, onLocate }: { fleet: FleetBus[]; onLocate: (bu
     )
   }
 
+  const toggleBus = (id: string, on: boolean) => {
+    if (tracking && liveOne) return
+    onSelectedBusIdsChange(on ? [...selectedBusIds.filter((x) => x !== id), id] : selectedBusIds.filter((x) => x !== id))
+  }
+
   const start = () => {
-    if (!driverBusId) { toast.danger('Select a bus', 'Pick the bus whose location you want to check.'); return }
-    onLocate(driverBusId)
+    if (selectedBusIds.length === 0) {
+      toast.danger('Select a bus', 'Tick one or more buses to check on the map.')
+      return
+    }
+    if (selectedBusIds.length === 1) onLocate(selectedBusIds[0])
     setTracking(true)
-    if (tripIsLive(fleet.find((b) => b.busId === driverBusId)?.status)) beginWatch()
+    if (liveOne) beginWatch()
     else toast.info(
-      'Location only',
-      'Bus started is sent when the driver app starts pickup or drop. This button does not send it.',
+      'Location on map',
+      selectedBusIds.length > 1
+        ? 'Selected buses show live GPS when a trip is running, or last location after the last trip.'
+        : 'Bus started is sent when the driver app starts pickup or drop. This button does not send it.',
     )
   }
 
   const closeCheck = () => {
-    if (live) return
+    if (liveOne) return
     stopWatch()
     setTracking(false)
     setLastPush(null)
@@ -2814,7 +2828,7 @@ function DriverModePanel({ fleet, onLocate }: { fleet: FleetBus[]; onLocate: (bu
 
   useEffect(() => {
     if (!tracking) return
-    if (live) {
+    if (liveOne) {
       beginWatch()
       return
     }
@@ -2824,41 +2838,58 @@ function DriverModePanel({ fleet, onLocate }: { fleet: FleetBus[]; onLocate: (bu
       setLastPush(null)
       toast.info('Trip ended', 'Location check stopped.')
     }
-  }, [tracking, live])
+  }, [tracking, liveOne])
 
   useEffect(() => () => { if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current) }, [])
 
+  const allIds = fleet.map((b) => b.busId)
+  const allOn = allIds.length > 0 && allIds.every((id) => selectedBusIds.includes(id))
+
   return (
     <Card>
-      <CardHead title="Check live location" sub="See where the bus is. Bus started is sent only by the driver app." icon="pin" />
+      <CardHead title="Check live location" sub="See where each bus is. Bus started is sent only by the driver app." icon="pin" />
       <div className="col gap14" style={{ marginTop: 14 }}>
-        <div className="row ai-end gap10 wrap">
-          <div style={{ flex: '0 0 240px' }}>
-            <Field label="Bus">
-              <Select value={driverBusId} onChange={(e) => setDriverBusId(e.target.value)} disabled={tracking}
-                options={[
-                  { value: '', label: 'Select bus…' },
-                  ...fleet.map((b) => ({ value: b.busId, label: `Bus ${b.busNo}${b.routeName ? ` · ${b.routeName}` : ''}` })),
-                ]} />
-            </Field>
+        <div className="row ai-center jc-between wrap gap8">
+          <span className="t-sm fw6">Buses</span>
+          <div className="row gap8">
+            <Btn variant="ghost" disabled={tracking && liveOne} onClick={() => onSelectedBusIdsChange(allIds)}>Select all</Btn>
+            <Btn variant="ghost" disabled={tracking && liveOne} onClick={() => onSelectedBusIdsChange([])}>Unselect all</Btn>
           </div>
+        </div>
+        <div className="col gap8" style={{ maxHeight: 220, overflowY: 'auto' }}>
+          {fleet.length === 0 ? (
+            <div className="t-sm muted3">No buses registered yet.</div>
+          ) : fleet.map((b) => (
+            <Checkbox
+              key={b.busId}
+              checked={selectedBusIds.includes(b.busId)}
+              onChange={(on) => toggleBus(b.busId, on)}
+              label={`Bus ${b.busNo}${b.routeName ? ` · ${b.routeName}` : ''}${tripIsLive(b.status) ? ' · live' : b.lat != null ? ' · last location' : ''}`}
+            />
+          ))}
+        </div>
+        <div className="row ai-center gap10 wrap">
           {!tracking
             ? <Btn variant="primary" icon="zap" onClick={start}>Start tracking</Btn>
-            : live
+            : liveOne
               ? <Badge tone="success" soft dot>On until the trip ends</Badge>
               : <Btn variant="secondary" icon="x" onClick={closeCheck}>Close</Btn>}
-          {tracking && live && (
+          {tracking && liveOne && (
             <div className="row ai-center gap8">
               <span className="sm-dot-live" />
               <span className="t-sm">{lastPush ? `Last location: ${lastPush}` : 'Waiting for GPS…'}</span>
             </div>
           )}
+          {tracking && selectedBusIds.length > 1 && (
+            <Badge tone="info" soft>{selectedBusIds.length} buses on map</Badge>
+          )}
         </div>
         <div className="t-xs muted3">
-          {tracking && live
+          {tracking && liveOne
             ? 'Pickup or drop is already running in the driver app. This shares location only and cannot be stopped until that trip ends.'
-            : 'Start tracking only checks the bus location. Clicking the bus or its route does the same. The Bus started notice is sent when the driver app starts pickup or drop, and that trip runs until it ends.'}
+            : 'Tick buses, then Start tracking. The map shows live GPS for a running trip, or last location from the last trip. Unselect to hide a bus. Bus started is sent only from the driver app.'}
         </div>
+        {allOn ? <div className="t-xs muted3">All buses selected.</div> : null}
       </div>
     </Card>
   )
@@ -2885,17 +2916,15 @@ function GpsScreenBody() {
   const viewStopTitle = viewStopName ? `${viewStopName} · ${viewStopStudents.length} students` : 'Stop students'
   const [viewBusId, setViewBusId] = useState<string | null>(null)
   const viewBus = viewBusId ? fleet.find((b) => b.busId === viewBusId) ?? null : null
+  const [selectedBusIds, setSelectedBusIds] = useState<string[]>([])
 
   const onRoute = fleet.filter((b) => tripIsLive(b.status)).length
   const delayed = fleet.filter((b) => b.status === 'delayed').length
   const riding = fleet.reduce((n, b) => n + b.studentsRiding, 0)
-  const mapFleet = fleet.map((b) => {
-    const zero = b.lat === 0 && b.lng === 0
-    // A running pickup or drop keeps its last location. It is not dropped until the trip ends.
-    if (!tripIsLive(b.status) || zero) return { ...b, lat: null, lng: null }
-    return b
-  })
+  const mapFleet = fleet.map(withMapPosition)
   const located = mapFleet.filter((b) => b.lat != null && b.lng != null)
+  const liveLocated = located.filter((b) => tripIsLive(b.status)).length
+  const lastLocated = located.length - liveLocated
 
   const highlightStop = (() => {
     const stu = mapped.find((s) => s.studentId === highlightStudentId)
@@ -2927,10 +2956,15 @@ function GpsScreenBody() {
 
         <Card pad={false}><BusFleet fleet={fleet} loading={fleetQ.isLoading} error={fleetQ.isError} onLocate={setViewBusId} /></Card>
 
-        <DriverModePanel fleet={fleet} onLocate={setViewBusId} />
+        <DriverModePanel
+          fleet={fleet}
+          selectedBusIds={selectedBusIds}
+          onSelectedBusIdsChange={setSelectedBusIds}
+          onLocate={setViewBusId}
+        />
 
         <Card>
-          <CardHead title="Live map" sub="Real-time vehicle positions · optional student stop ★"
+          <CardHead title="Live map" sub="Live GPS when a trip is running · last location for every other bus · optional student stop ★"
             action={
               <div className="row gap8 ai-center">
                 <Select
@@ -2947,7 +2981,9 @@ function GpsScreenBody() {
                   ]}
                   style={{ minWidth: 200 }}
                 />
-                {located.length > 0 ? <Badge tone="success" soft dot>{located.length} live</Badge> : <Badge tone="neutral" soft>No live GPS</Badge>}
+                {located.length > 0
+                  ? <Badge tone="success" soft dot>{liveLocated} live{lastLocated > 0 ? ` · ${lastLocated} last` : ''}</Badge>
+                  : <Badge tone="neutral" soft>No GPS yet</Badge>}
               </div>
             } />
           <FleetLiveMap
@@ -2957,6 +2993,8 @@ function GpsScreenBody() {
             routeGeometryByRouteId={routeGeometryByRouteId}
             onStopClick={setViewStopId}
             onBusClick={setViewBusId}
+            selectedBusIds={selectedBusIds}
+            onSelectedBusIdsChange={setSelectedBusIds}
           />
         </Card>
       </div>

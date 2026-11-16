@@ -4,13 +4,14 @@
 import { useEffect, useState } from 'react'
 import { useToast } from '@/lib/hooks'
 import {
-  Card, CardHead, Btn, Badge, Icon, Input, Field, Segmented,
+  Card, CardHead, Btn, Badge, Input, Field, Segmented,
 } from '@/components/ui'
 import type { BadgeTone } from '@/components/ui'
 import { useSchoolLocation, useUpsertSchoolLocation, useDeleteSchoolLocation } from '@/api/hooks/useSchoolLocation'
+import { CampusGeofenceMap } from '@/components/maps/CampusGeofenceMap'
 import {
   RADIUS_PRESETS, validateGeofenceInput, formatCoords, googleMapsUrl,
-  testPositionInFence, nearestRadiusPreset, fencePreviewDiameterPx,
+  testPositionInFence, nearestRadiusPreset,
   type FenceTestResult,
 } from '@/lib/geofence'
 
@@ -23,29 +24,6 @@ function RadiusPresets({ value, onChange }: { value: string; onChange: (v: strin
         onChange={onChange}
         options={RADIUS_PRESETS.map((m) => ({ value: String(m), label: `${m} m` }))}
       />
-    </div>
-  )
-}
-
-function CampusMapMini({ lat, lng, radiusMeters, name }: { lat: number; lng: number; radiusMeters: number; name: string | null }) {
-  const diameter = fencePreviewDiameterPx(radiusMeters)
-  return (
-    <div style={{
-      position: 'relative', minHeight: 140, borderRadius: 10, overflow: 'hidden',
-      background: 'radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--brand-600) 16%, var(--surface-2)), var(--surface-2))',
-      border: '1px solid var(--border)',
-    }}>
-      <div style={{
-        position: 'absolute', inset: '50% auto auto 50%', transform: 'translate(-50%,-50%)',
-        width: diameter, height: diameter, borderRadius: '50%',
-        border: '2px dashed var(--brand-600)', opacity: 0.75,
-      }} />
-      <div style={{ position: 'absolute', inset: '50% auto auto 50%', transform: 'translate(-50%,-50%)', color: 'var(--brand-600)' }}>
-        <Icon name="pin" size={22} />
-      </div>
-      <span className="t-xs muted3" style={{ position: 'absolute', bottom: 8, left: 10 }}>
-        {name || 'Campus'} · {radiusMeters} m · {formatCoords(lat, lng)}
-      </span>
     </div>
   )
 }
@@ -246,6 +224,16 @@ export function CampusGeofenceSettings({
   }, [autoPromptGps, autoTried, configured, canConfigure])
 
   const showForm = editing || !configured
+  const previewLat = Number(lat)
+  const previewLng = Number(lng)
+  const previewRadius = Number(radius)
+  const mapLat = Number.isFinite(previewLat) ? previewLat : null
+  const mapLng = Number.isFinite(previewLng) ? previewLng : null
+  const mapRadius = Number.isFinite(previewRadius) && previewRadius > 0 ? previewRadius : 250
+  const pickOnMap = (plat: number, plng: number) => {
+    setLat(plat.toFixed(6))
+    setLng(plng.toFixed(6))
+  }
   const statusBadge = configured
     ? <Badge tone="success" icon="checkCircle">Active</Badge>
     : <Badge tone="neutral" icon="alert">Inactive</Badge>
@@ -266,6 +254,14 @@ export function CampusGeofenceSettings({
               Stand at the school gate, capture GPS, choose a radius, and save. Teacher &amp; staff app check-ins verify against this zone.
             </div>
           </div>
+          <CampusGeofenceMap
+            lat={mapLat}
+            lng={mapLng}
+            radiusMeters={mapRadius}
+            name={name.trim() || schoolName}
+            height={compact ? 240 : 280}
+            onPick={pickOnMap}
+          />
           <Field label="Campus label">
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={schoolName} />
           </Field>
@@ -307,7 +303,13 @@ export function CampusGeofenceSettings({
 
       {configured && location && canConfigure && !showForm && (
         <div className="col gap12" style={{ padding: compact ? '16px 0 0' : '12px 16px' }}>
-          <CampusMapMini lat={location.lat} lng={location.lng} radiusMeters={location.radiusMeters} name={location.name} />
+          <CampusGeofenceMap
+            lat={location.lat}
+            lng={location.lng}
+            radiusMeters={location.radiusMeters}
+            name={location.name || schoolName}
+            height={compact ? 240 : 320}
+          />
           <div className="row ai-center jc-between wrap gap8">
             <div>
               <div className="t-md fw6">{location.name || schoolName}</div>
@@ -346,7 +348,13 @@ export function CampusGeofenceSettings({
 
       {configured && location && !canConfigure && (
         <div className="col gap8" style={{ padding: compact ? '12px 0 0' : '12px 16px' }}>
-          <CampusMapMini lat={location.lat} lng={location.lng} radiusMeters={location.radiusMeters} name={location.name} />
+          <CampusGeofenceMap
+            lat={location.lat}
+            lng={location.lng}
+            radiusMeters={location.radiusMeters}
+            name={location.name || schoolName}
+            height={compact ? 220 : 280}
+          />
           <div className="row ai-center jc-between">
             <span className="t-sm muted">{location.name || schoolName} · {location.radiusMeters} m</span>
             {statusBadge}

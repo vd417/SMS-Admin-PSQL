@@ -6,6 +6,9 @@ dist-ssr
 .DS_Store
 *.log
 coverage
+.vitest-localstorage
+.vitest-localstorage-shm
+.vitest-localstorage-wal
 
 # build info
 *.tsbuildinfo

@@ -30,8 +30,22 @@ export async function verifySchoolRazorpay(): Promise<{ status: RazorpayStatus }
   return request<{ status: RazorpayStatus }>('/school/integrations/razorpay/verify', { method: 'POST' })
 }
 
-export async function testSchoolEmailConnection(): Promise<{ status: string; lastTestAt?: string }> {
-  const wire = await request<Record<string, unknown>>('/school/integrations/email/test-connection', { method: 'POST' })
+export type TestSchoolEmailConnectionInput = Partial<{
+  smtpHost: string
+  smtpPort: number
+  encryption: string
+  smtpUsername: string
+  smtpPassword: string
+  enabled: boolean
+}>
+
+export async function testSchoolEmailConnection(
+  draft?: TestSchoolEmailConnectionInput,
+): Promise<{ status: string; lastTestAt?: string }> {
+  const wire = await request<Record<string, unknown>>('/school/integrations/email/test-connection', {
+    method: 'POST',
+    body: camelToSnake(draft ?? {}),
+  })
   return snakeToCamel<{ status: string; lastTestAt?: string }>(wire)
 }
 

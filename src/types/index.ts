@@ -131,6 +131,7 @@ export interface SchoolEmailSettings {
   status?: 'connected' | 'failed' | 'not_configured'
   lastTestAt?: string | null
   lastError?: string
+  catreMailConfigured?: boolean
 }
 
 export interface SchoolSmsSettings {

@@ -301,6 +301,31 @@ describe('FleetLiveMap route geometry', () => {
     expect(screen.queryByText('12')).not.toBeInTheDocument()
   })
 
+  it('shows last known position for an idle bus, not only a live trip', () => {
+    const idleFleet = [
+      { busId: 'b2', busNo: 'BUS-02', routeId: 'r1', lat: 12.5, lng: 77.5, speedKmh: null, status: 'idle' },
+    ]
+    render(<FleetLiveMap fleet={idleFleet} routeStopsByRouteId={routeStopsByRouteId} />)
+    expect(screen.getByText('BUS-02 · last')).toBeInTheDocument()
+    expect(screen.queryByText(/waiting for live gps/i)).not.toBeInTheDocument()
+  })
+
+  it('selects and unselects every bus from the picker', async () => {
+    const user = userEvent.setup()
+    const twoBusFleet = [
+      { busId: 'b1', busNo: 'BUS-01', routeId: 'r1', lat: 12.1, lng: 77.1, status: 'on_route' },
+      { busId: 'b2', busNo: 'BUS-02', routeId: 'r1', lat: 12.5, lng: 77.5, status: 'idle' },
+    ]
+    render(<FleetLiveMap fleet={twoBusFleet} routeStopsByRouteId={routeStopsByRouteId} />)
+    await user.click(screen.getByRole('button', { name: /all buses/i }))
+    await user.click(screen.getByRole('button', { name: /select all/i }))
+    expect(screen.getByRole('button', { name: /2 buses selected/i })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /unselect all/i }))
+    expect(screen.getByRole('button', { name: /all buses/i })).toBeInTheDocument()
+    expect(screen.getAllByText(/BUS-01/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/BUS-02 · last/).length).toBeGreaterThan(0)
+  })
+
   it('calls onStopClick with the stop id when a stop marker is clicked', async () => {
     const user = userEvent.setup()
     const onStopClick = vi.fn()

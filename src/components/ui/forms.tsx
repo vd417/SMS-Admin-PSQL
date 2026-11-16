@@ -75,9 +75,17 @@ export function Select({ options, className, ref, ...rest }: SelectProps) {
   )
 }
 
-export function Toggle({ checked, onChange, label }: { checked: boolean; onChange?: () => void; label?: ReactNode }) {
+export function Toggle({ checked, onChange, label, disabled }: {
+  checked: boolean; onChange?: () => void; label?: ReactNode; disabled?: boolean
+}) {
   return (
-    <button type="button" className={['sm-toggle', checked && 'on'].filter(Boolean).join(' ')} onClick={onChange} aria-pressed={checked}>
+    <button
+      type="button"
+      className={['sm-toggle', checked && 'on'].filter(Boolean).join(' ')}
+      onClick={onChange}
+      aria-pressed={checked}
+      disabled={disabled}
+    >
       <span className="sm-toggle-knob" />
       {label && <span className="sm-toggle-label">{label}</span>}
     </button>

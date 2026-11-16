@@ -20,6 +20,7 @@ import {
   useSchoolIntegrations, useSaveSchoolIntegrations, useVerifySchoolRazorpay,
 } from '@/api/hooks/useSchoolIntegrations'
 import { sendSchoolTestEmail, testSchoolEmailConnection } from '@/api/schoolIntegrations'
+import { queryKeys } from '@/api/queryKeys'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   assignableSchoolRoles,
@@ -273,12 +274,68 @@ function IntegrationFold({ title, hint, children }: { title: string; hint?: stri
   )
 }
 
+function EmailOffDialog({
+  open, busy, onClose, onConfirm,
+}: {
+  open: boolean
+  busy: boolean
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  const [step, setStep] = useState<1 | 2>(1)
+  const [yes, setYes] = useState('')
+  useEffect(() => {
+    if (!open) return
+    setStep(1)
+    setYes('')
+  }, [open])
+  const canTurnOff = yes.trim().toLowerCase() === 'yes'
+  return (
+    <Modal
+      open={open}
+      closeOnOverlay={false}
+      icon="alert"
+      title={step === 1 ? 'Turn school email off?' : 'Type yes to confirm'}
+      sub={`Step ${step} of 2. Mail will send from Catre. School SMTP stays saved.`}
+      onClose={() => { if (!busy) onClose() }}
+      footer={
+        <div className="row gap8 jc-end">
+          <Btn type="button" variant="ghost" onClick={onClose} disabled={busy}>Cancel</Btn>
+          {step === 1 ? (
+            <Btn type="button" variant="danger" onClick={() => setStep(2)}>Continue</Btn>
+          ) : (
+            <Btn type="button" variant="danger" disabled={busy || !canTurnOff} onClick={onConfirm}>
+              {busy ? 'Turning off…' : 'Turn off'}
+            </Btn>
+          )}
+        </div>
+      }
+    >
+      {step === 1 ? (
+        <div className="t-sm muted">
+          Do you want to turn school email off? Reports, OTP and other mail will send from Catre.
+          Click Continue, then type yes.
+        </div>
+      ) : (
+        <div className="col gap12">
+          <p className="t-sm muted">
+            Type <span className="fw7" style={{ color: 'var(--text)' }}>yes</span> to turn school email off.
+          </p>
+          <Field label='Type "yes" to confirm'>
+            <Input value={yes} placeholder="yes" autoComplete="off" onChange={(e) => setYes(e.target.value)} />
+          </Field>
+        </div>
+      )}
+    </Modal>
+  )
+}
+
 function IntegrationsCard({ canEdit }: { canEdit: boolean }) {
   const toast = useToast()
+  const qc = useQueryClient()
   const { data, isLoading } = useSchoolIntegrations()
   const saveMut = useSaveSchoolIntegrations()
   const verifyMut = useVerifySchoolRazorpay()
-
   const [emailEnabled, setEmailEnabled] = useState(false)
   const [fromName, setFromName] = useState('')
   const [fromAddress, setFromAddress] = useState('')
@@ -306,6 +363,7 @@ function IntegrationsCard({ canEdit }: { canEdit: boolean }) {
   const [testRecipient, setTestRecipient] = useState('')
   const [preview, setPreview] = useState('')
   const [testingEmail, setTestingEmail] = useState(false)
+  const [emailOffOpen, setEmailOffOpen] = useState(false)
 
   const [smsEnabled, setSmsEnabled] = useState(false)
   const [senderId, setSenderId] = useState('')
@@ -426,14 +484,86 @@ function IntegrationsCard({ canEdit }: { canEdit: boolean }) {
     }
   }
 
+  const closeEmailOff = () => setEmailOffOpen(false)
+
+  const persistEmailEnabled = async (on: boolean) => {
+    if (on && !smtpHost.trim() && !smtpUsername.trim() && !smtpPasswordSet && !smtpPassword.trim()) {
+      toast.danger('Turn email on', 'Test SMTP first, then turn this on.')
+      return
+    }
+    try {
+      const updated = await saveMut.mutateAsync({
+        email: {
+          enabled: on,
+          fromName: fromName.trim(),
+          fromAddress: fromAddress.trim() || smtpUsername.trim(),
+          replyTo: replyTo.trim() || undefined,
+          receiptTemplate: emailReceiptTpl.trim() || undefined,
+          reminderTemplate: emailReminderTpl.trim() || undefined,
+          overdueTemplate: emailOverdueTpl.trim() || undefined,
+          provider: emailProvider,
+          smtpHost: smtpHost.trim(),
+          smtpPort: Number(smtpPort) || 587,
+          encryption: smtpEncryption,
+          smtpUsername: smtpUsername.trim(),
+          ...(smtpPassword.trim() ? { smtpPassword: smtpPassword.trim() } : {}),
+          notifyLoginOtp, notifyForgotOtp, notifyFeeReceipt, notifyFeeDue, notifyFeeOverdue, notifyGeneral,
+        },
+      })
+      setEmailEnabled(!!updated.email?.enabled)
+      setEmailStatus(updated.email?.status ?? 'not_configured')
+      setEmailLastError(updated.email?.lastError ?? '')
+      setEmailLastTestAt(updated.email?.lastTestAt ?? '')
+      setFromAddress(updated.email?.fromAddress ?? fromAddress)
+      setSmtpPasswordSet(!!updated.email?.smtpPasswordSet)
+      if (on && !updated.email?.enabled) {
+        toast.danger('School email stayed off', updated.email?.lastError || 'Test SMTP first, then turn this on.')
+        return
+      }
+      closeEmailOff()
+      toast.success(
+        on ? 'School email on' : 'School email off',
+        on ? 'Reports and OTP will send from this mailbox.' : 'Reports and OTP will send from Catre.',
+      )
+    } catch (e) {
+      toast.danger('Could not update email', e instanceof ApiError ? e.message : 'Try again.')
+    }
+  }
+
+  const toggleSchoolEmail = () => {
+    if (disabled || emailOffOpen) return
+    if (emailEnabled) {
+      setEmailOffOpen(true)
+      return
+    }
+    void persistEmailEnabled(true)
+  }
+
   const testSmtp = async () => {
+    const host = smtpHost.trim()
+    const user = smtpUsername.trim()
+    const password = smtpPassword.trim()
+    if (!host || !user || (!password && !smtpPasswordSet)) {
+      toast.danger('SMTP failed', 'Enter the SMTP host, username and password in this form, then test again.')
+      return
+    }
     setTestingEmail(true)
     try {
-      const res = await testSchoolEmailConnection()
+      const res = await testSchoolEmailConnection({
+        smtpHost: host,
+        smtpPort: Number(smtpPort) || 587,
+        encryption: smtpEncryption,
+        smtpUsername: user,
+        enabled: true,
+        ...(password ? { smtpPassword: password } : {}),
+      })
       setEmailStatus('connected')
+      setEmailEnabled(true)
       setEmailLastError('')
       if (res.lastTestAt) setEmailLastTestAt(res.lastTestAt)
-      toast.success('SMTP connected', 'The school mailbox accepted the sign-in.')
+      setSmtpPasswordSet(true)
+      await qc.invalidateQueries({ queryKey: queryKeys.school.integrations })
+      toast.success('SMTP connected', 'School email is on. Reports and OTP send from this mailbox.')
     } catch (e) {
       setEmailStatus('failed')
       const message = e instanceof ApiError ? e.message : 'Could not connect.'
@@ -456,8 +586,16 @@ function IntegrationsCard({ canEdit }: { canEdit: boolean }) {
     }
   }
 
-  const emailStatusTone = emailStatus === 'connected' ? 'success' as const : emailStatus === 'failed' ? 'danger' as const : 'neutral' as const
-  const emailStatusLabel = emailStatus === 'connected' ? 'Connected' : emailStatus === 'failed' ? 'Failed' : 'Not configured'
+  const emailStatusTone = emailEnabled && emailStatus === 'connected'
+    ? 'success' as const
+    : emailStatus === 'failed' ? 'danger' as const : 'neutral' as const
+  const emailStatusLabel = emailEnabled
+    ? (emailStatus === 'connected' ? 'Connected' : emailStatus === 'failed' ? 'Failed' : 'Not configured')
+    : (emailStatus === 'failed' ? 'Failed' : 'Off')
+  const lastTestNote = emailLastTestAt ? ` Last test ${new Date(emailLastTestAt).toLocaleString('en-IN')}.` : ''
+  const emailBlurb = emailEnabled
+    ? `On. Reports, OTP, invites and receipts send from this school mailbox.${lastTestNote}`
+    : `Off. Mail sends from Catre. Turn this on to use the school mailbox.${lastTestNote}`
 
   return (
     <Card pad={false}>
@@ -482,19 +620,12 @@ function IntegrationsCard({ canEdit }: { canEdit: boolean }) {
                     <Badge tone={emailStatusTone}>{emailStatusLabel}</Badge>
                   </div>
                   <div className="t-xs muted3">
-                    {emailEnabled
-                      ? 'School mailbox for OTP, invites, receipts and reminders. A switch that is off still sends from Catre.'
-                      : 'Off. Messages are sent from Catre Technology.'}
-                    {emailLastTestAt ? ` Last test ${new Date(emailLastTestAt).toLocaleString('en-IN')}.` : ''}
-                    {emailLastError ? ` ${emailLastError}` : ''}
+                    {emailBlurb}
+                    {emailLastError && emailStatus === 'failed' ? ` ${emailLastError}` : ''}
                   </div>
                 </div>
               </div>
-              <Toggle checked={emailEnabled} onChange={() => {
-                if (disabled) return
-                if (emailEnabled && !window.confirm('School email will turn off. OTP, receipts and reminders will be sent from Catre. Continue?')) return
-                setEmailEnabled((v) => !v)
-              }} />
+              <Toggle checked={emailEnabled} onChange={() => { void toggleSchoolEmail() }} disabled={disabled || emailOffOpen} />
             </div>
             <fieldset disabled={disabled} style={{ border: 'none', padding: 0, margin: '12px 0 0' }}>
               <div className="integration-grid" style={{ marginTop: 0 }}>
@@ -550,19 +681,55 @@ function IntegrationsCard({ canEdit }: { canEdit: boolean }) {
                 </div>
               </fieldset>
             </IntegrationFold>
-            <IntegrationFold title="Notifications" hint="Choose the school mailbox for each message">
+            <IntegrationFold title="Catre mailbox" hint="Used automatically when school Email is off">
+              <div className="t-sm">
+                Mail from Catre is the CRM mailbox. You do not set it here. Turn school Email off and send uses Catre.
+              </div>
+            </IntegrationFold>
+            <IntegrationFold title="Mail services" hint="On = school mailbox. Off = Catre mailbox">
               <div className="integration-switches">
                 {([
-                  ['Login OTP', notifyLoginOtp, setNotifyLoginOtp],
-                  ['Forgot password OTP', notifyForgotOtp, setNotifyForgotOtp],
-                  ['Fee payment receipt', notifyFeeReceipt, setNotifyFeeReceipt],
-                  ['Fee due reminder', notifyFeeDue, setNotifyFeeDue],
-                  ['Overdue fee reminder', notifyFeeOverdue, setNotifyFeeOverdue],
-                  ['General school notifications', notifyGeneral, setNotifyGeneral],
-                ] as const).map(([label, checked, set]) => (
+                  ['Login OTP', notifyLoginOtp, setNotifyLoginOtp, 'notifyLoginOtp'],
+                  ['Forgot password OTP', notifyForgotOtp, setNotifyForgotOtp, 'notifyForgotOtp'],
+                  ['Fee payment receipt', notifyFeeReceipt, setNotifyFeeReceipt, 'notifyFeeReceipt'],
+                  ['Fee due reminder', notifyFeeDue, setNotifyFeeDue, 'notifyFeeDue'],
+                  ['Overdue fee reminder', notifyFeeOverdue, setNotifyFeeOverdue, 'notifyFeeOverdue'],
+                  ['Reports, invites, attendance alerts, announcements', notifyGeneral, setNotifyGeneral, 'notifyGeneral'],
+                ] as const).map(([label, checked, set, key]) => (
                   <div key={label} className="integration-switch">
                     <span className="t-sm">{label}</span>
-                    <Toggle checked={checked} onChange={() => { if (!disabled) set((v) => !v) }} />
+                    <Toggle checked={checked} onChange={() => {
+                      if (disabled) return
+                      const next = !checked
+                      set(next)
+                      void saveMut.mutateAsync({
+                        email: {
+                          enabled: emailEnabled,
+                          fromName: fromName.trim(),
+                          fromAddress: fromAddress.trim() || smtpUsername.trim(),
+                          replyTo: replyTo.trim() || undefined,
+                          receiptTemplate: emailReceiptTpl.trim() || undefined,
+                          reminderTemplate: emailReminderTpl.trim() || undefined,
+                          overdueTemplate: emailOverdueTpl.trim() || undefined,
+                          provider: emailProvider,
+                          smtpHost: smtpHost.trim(),
+                          smtpPort: Number(smtpPort) || 587,
+                          encryption: smtpEncryption,
+                          smtpUsername: smtpUsername.trim(),
+                          notifyLoginOtp: key === 'notifyLoginOtp' ? next : notifyLoginOtp,
+                          notifyForgotOtp: key === 'notifyForgotOtp' ? next : notifyForgotOtp,
+                          notifyFeeReceipt: key === 'notifyFeeReceipt' ? next : notifyFeeReceipt,
+                          notifyFeeDue: key === 'notifyFeeDue' ? next : notifyFeeDue,
+                          notifyFeeOverdue: key === 'notifyFeeOverdue' ? next : notifyFeeOverdue,
+                          notifyGeneral: key === 'notifyGeneral' ? next : notifyGeneral,
+                        },
+                      }).then((updated) => {
+                        setEmailEnabled(!!updated.email?.enabled)
+                      }).catch((e: unknown) => {
+                        set(!next)
+                        toast.danger('Could not save', e instanceof ApiError ? e.message : 'Try again.')
+                      })
+                    }} />
                   </div>
                 ))}
               </div>
@@ -698,6 +865,12 @@ function IntegrationsCard({ canEdit }: { canEdit: boolean }) {
           </div>
         )}
       </div>
+      <EmailOffDialog
+        open={emailOffOpen}
+        busy={saveMut.isPending}
+        onClose={closeEmailOff}
+        onConfirm={() => { void persistEmailEnabled(false) }}
+      />
     </Card>
   )
 }

@@ -834,7 +834,7 @@ export function SchoolReportsScreen() {
         }
       }
       setMailStatus(notes.join(' · '))
-      if (failed) toast.danger('Some emails failed', `${failed} not sent`)
+      if (failed) toast.danger('Some emails failed', notes.join(' · ') || `${failed} not sent`)
       else toast.success('Reports emailed', `${items.length} sent`)
     } finally {
       setSendingMail(false)

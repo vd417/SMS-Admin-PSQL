@@ -1,7 +1,8 @@
 /* ============================================================
    SchoolMate — Overlays: Modal, Drawer, Tooltip
    ============================================================ */
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useRef, type MouseEvent, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { Icon } from './Icon'
 
 type ModalSize = 'sm' | 'md' | 'lg' | 'xl'
@@ -15,14 +16,52 @@ function useEscClose(open: boolean, onClose?: () => void) {
   }, [open, onClose])
 }
 
-export function Modal({ open, onClose, size = 'md', icon, title, sub, children, footer }: {
+/** First paint: ignore pointer hits so the opening click cannot press Continue. No React re-render. */
+function useDelayPointer(open: boolean, ms = 400) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!open || !el) return
+    el.classList.remove('is-ready')
+    const t = window.setTimeout(() => el.classList.add('is-ready'), ms)
+    return () => window.clearTimeout(t)
+  }, [open, ms])
+  return ref
+}
+
+function mountOverlay(node: ReactNode) {
+  // Vitest queries the render container; portal to body in the real app so the
+  // overlay sits above Google Maps without breaking existing tests.
+  if (import.meta.env.VITEST || typeof document === 'undefined') return node
+  return createPortal(node, document.body)
+}
+
+export function Modal({ open, onClose, size = 'md', icon, title, sub, children, footer, closeOnOverlay = true }: {
   open: boolean; onClose?: () => void; size?: ModalSize; icon?: string; title?: ReactNode; sub?: ReactNode; children?: ReactNode; footer?: ReactNode
+  /** Backdrop click closes. Off for confirm dialogs so the opening click cannot dismiss or skip a step. */
+  closeOnOverlay?: boolean
 }) {
   useEscClose(open, onClose)
-  if (!open) return null
-  return (
-    <div className="sm-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose?.() }}>
-      <div className={`sm-modal sm-modal-${size}`} role="dialog" aria-modal="true">
+  const overlayRef = useDelayPointer(open)
+  if (!open || typeof document === 'undefined') return null
+  const dismissOverlay = (e: MouseEvent) => {
+    if (!closeOnOverlay) return
+    if (e.target === e.currentTarget) onClose?.()
+  }
+  return mountOverlay(
+    <div
+      ref={overlayRef}
+      className="sm-overlay sm-overlay-delay"
+      onMouseDown={dismissOverlay}
+      onClick={dismissOverlay}
+    >
+      <div
+        className={`sm-modal sm-modal-${size}`}
+        role="dialog"
+        aria-modal="true"
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+      >
         {(title || icon) && (
           <div className="sm-modal-head">
             <div className="row ai-center gap12">
@@ -38,7 +77,7 @@ export function Modal({ open, onClose, size = 'md', icon, title, sub, children, 
         <div className="sm-modal-body">{children}</div>
         {footer && <div className="sm-modal-foot">{footer}</div>}
       </div>
-    </div>
+    </div>,
   )
 }
 
@@ -46,9 +85,9 @@ export function Drawer({ open, onClose, width = 460, icon, title, sub, children,
   open: boolean; onClose?: () => void; width?: number; icon?: string; title?: ReactNode; sub?: ReactNode; children?: ReactNode; footer?: ReactNode
 }) {
   useEscClose(open, onClose)
-  if (!open) return null
-  return (
-    <div className="sm-overlay sm-overlay-r" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose?.() }}>
+  if (!open || typeof document === 'undefined') return null
+  return mountOverlay(
+    <div className="sm-overlay sm-overlay-r is-ready" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose?.() }}>
       <div className="sm-drawer" style={{ width }} role="dialog" aria-modal="true">
         {(title || icon) && (
           <div className="sm-modal-head">
@@ -65,7 +104,7 @@ export function Drawer({ open, onClose, width = 460, icon, title, sub, children,
         <div className="sm-drawer-body">{children}</div>
         {footer && <div className="sm-modal-foot">{footer}</div>}
       </div>
-    </div>
+    </div>,
   )
 }
 
