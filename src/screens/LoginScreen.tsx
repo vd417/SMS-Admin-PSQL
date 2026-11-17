@@ -294,23 +294,23 @@ export function LoginScreen() {
                   <p className="lead">
                     {viaLink
                       ? 'You\'re verified via your login link — create new password (at least 8 characters) and you\'re in.'
-                      : `Enter the 6-digit code we sent to ${resetId.trim()}, then set a new password (at least 8 characters).`}
+                      : looksLikePhone(resetId.trim())
+                        ? `Enter the 6-digit code from the WhatsApp message to ${resetId.trim()}, then set a new password (at least 8 characters).`
+                        : `Enter the 6-digit code we sent to ${resetId.trim()}, then set a new password (at least 8 characters).`}
                   </p>
                   {!viaLink && (
                     <Field
                       label="6-digit code"
                       error={resetCode.length > 0 && resetCode.length < 6 ? 'Enter all 6 digits of the code.' : undefined}
-                      hint={resetCode.length > 0 && resetCode.length < 6 ? undefined : 'Enter all 6 digits of the code.'}
                     >
                       <Input icon="key" inputMode="numeric" maxLength={6} value={resetCode}
                         onChange={(e) => { setResetCode(e.target.value.replace(/\D/g, '').slice(0, 6)); setResetErr(null) }}
-                        placeholder="••••••" style={{ letterSpacing: '4px' }} />
+                        placeholder="6-digit code" style={{ letterSpacing: '4px' }} />
                     </Field>
                   )}
                   <Field
                     label={viaLink ? 'Create new password' : 'New password'}
                     error={resetPw.length > 0 && resetPw.length < 8 ? 'Must be at least 8 characters.' : undefined}
-                    hint={resetPw.length > 0 && resetPw.length < 8 ? undefined : 'Must be at least 8 characters.'}
                   >
                     <div style={{ position: 'relative' }}>
                       <Input icon="lock" type={showResetPw ? 'text' : 'password'} value={resetPw}
