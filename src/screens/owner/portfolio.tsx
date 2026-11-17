@@ -36,6 +36,7 @@ import { deleteMySchool } from '@/api/mySchools'
 import { deleteClient } from '@/api/clients'
 import { updateSchoolProfile } from '@/api/schoolProfile'
 import { validateGeofenceInput, RADIUS_PRESETS } from '@/lib/geofence'
+import { capturePreciseGps, gpsFailureMessage } from '@/lib/deviceGps'
 import { useQueryClient } from '@tanstack/react-query'
 
 const FEE_COLORS = ['#4f46e5', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#14b8a6']
@@ -835,6 +836,7 @@ function CreateSchoolWizard() {
   const publishedPlans = plansQuery.data ?? []
   const [step, setStep] = useState(0)
   const [paying, setPaying] = useState(false)
+  const [gpsBusy, setGpsBusy] = useState(false)
   const [data, setData] = useState<WizardData>({
     name: '', schoolId: '', address: '', district: '', city: '', state: '', pincode: '',
     tz: 'Asia/Kolkata',
@@ -843,7 +845,7 @@ function CreateSchoolWizard() {
     board: '',
     strength: 800, tier: 'gold', planId: '', cycle: 'yearly', payChoice: 'offline',
     modules: new Set(['sis', 'attendance', 'exams', 'fees', 'communication']),
-    geofenceLat: '', geofenceLng: '', geofenceRadius: '250',
+    geofenceLat: '', geofenceLng: '', geofenceRadius: '200',
   })
 
   // Default to the first published plan once catalog loads.
@@ -1084,7 +1086,7 @@ function CreateSchoolWizard() {
       if (data.modules.has('attendance.geofence') && data.geofenceLat && data.geofenceLng) {
         const lat = Number(data.geofenceLat)
         const lng = Number(data.geofenceLng)
-        const radius = Number(data.geofenceRadius) || 250
+        const radius = Number(data.geofenceRadius) || 200
         if (!validateGeofenceInput(lat, lng, radius)) {
           try {
             await updateSchoolProfile(tenantId, {
@@ -1395,47 +1397,49 @@ function CreateSchoolWizard() {
                   <Btn
                     variant="primary"
                     icon="pin"
+                    disabled={gpsBusy}
                     onClick={() => {
-                      if (!navigator.geolocation) {
-                        toast.danger('GPS unavailable', 'Enter coordinates manually or set up later in Attendance.')
-                        return
-                      }
-                      navigator.geolocation.getCurrentPosition(
-                        (pos) => {
-                          setData((d) => ({
-                            ...d,
-                            geofenceLat: String(pos.coords.latitude.toFixed(6)),
-                            geofenceLng: String(pos.coords.longitude.toFixed(6)),
-                          }))
-                          toast.success('Campus GPS captured', 'Will be saved when the school is created.')
-                        },
-                        () => toast.danger('Location denied', 'Allow GPS or set the fence later in Settings → Geo-fence.'),
-                        { enableHighAccuracy: true, timeout: 15000 },
-                      )
+                      void (async () => {
+                        setGpsBusy(true)
+                        const result = await capturePreciseGps()
+                        setGpsBusy(false)
+                        if (!result.ok) {
+                          const copy = gpsFailureMessage(result)
+                          if (copy) toast.danger(copy.title, copy.body)
+                          return
+                        }
+                        setData((d) => ({
+                          ...d,
+                          geofenceLat: result.fix.lat.toFixed(6),
+                          geofenceLng: result.fix.lng.toFixed(6),
+                        }))
+                        toast.success('Campus GPS captured', 'Will be saved when the school is created.')
+                      })()
                     }}
                   >
-                    Set school location (GPS)
+                    {gpsBusy ? 'Getting GPS…' : 'Set school location (GPS)'}
                   </Btn>
                   <Btn
                     variant="secondary"
                     icon="pin"
+                    disabled={gpsBusy}
                     onClick={() => {
-                      if (!navigator.geolocation) {
-                        toast.danger('GPS unavailable', 'Enter coordinates manually or set up later in Attendance.')
-                        return
-                      }
-                      navigator.geolocation.getCurrentPosition(
-                        (pos) => {
-                          setData((d) => ({
-                            ...d,
-                            geofenceLat: String(pos.coords.latitude.toFixed(6)),
-                            geofenceLng: String(pos.coords.longitude.toFixed(6)),
-                          }))
-                          toast.success('Campus GPS captured', 'Will be saved when the school is created.')
-                        },
-                        () => toast.danger('Location denied', 'Allow GPS or set the fence later in Settings → Geo-fence.'),
-                        { enableHighAccuracy: true, timeout: 15000 },
-                      )
+                      void (async () => {
+                        setGpsBusy(true)
+                        const result = await capturePreciseGps()
+                        setGpsBusy(false)
+                        if (!result.ok) {
+                          const copy = gpsFailureMessage(result)
+                          if (copy) toast.danger(copy.title, copy.body)
+                          return
+                        }
+                        setData((d) => ({
+                          ...d,
+                          geofenceLat: result.fix.lat.toFixed(6),
+                          geofenceLng: result.fix.lng.toFixed(6),
+                        }))
+                        toast.success('Location captured', 'Adjust the radius, then continue. Nothing is saved yet.')
+                      })()
                     }}
                   >
                     Capture GPS only

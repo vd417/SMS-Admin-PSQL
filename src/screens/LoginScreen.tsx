@@ -43,11 +43,19 @@ function looksLikePhone(v: string): boolean {
   return /^[\d+\-\s()]+$/.test(v)
 }
 
+function formatWait(seconds: number): string {
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  if (m <= 0) return `${s}s`
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
 /** Map a thrown error to friendly copy by the backend's error code. */
 function apiErrorMessage(e: unknown, fallback: string): string {
   if (e instanceof ApiError) {
     switch (e.code) {
       case 'not_registered': return 'No account is registered for this email/mobile.'
+      case 'otp_cooldown':   return e.message
       case 'invalid_code':   return 'That code is invalid or expired. Request a new one.'
       case 'weak_password':  return 'Password is too weak — use at least 8 characters.'
       case 'rate_limited':   return 'Too many requests — please wait a minute and try again.'
@@ -127,6 +135,20 @@ export function LoginScreen() {
      token carried silently, not something the person types, so the code field and
      its 6-digit shape are skipped for this path. */
   const [viaLink, setViaLink] = useState(false)
+  const [resendUntil, setResendUntil] = useState(0)
+  const [resendNow, setResendNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (resendUntil <= Date.now()) return
+    const id = window.setInterval(() => setResendNow(Date.now()), 1000)
+    return () => window.clearInterval(id)
+  }, [resendUntil])
+  const resendLeft = Math.max(0, Math.ceil((resendUntil - resendNow) / 1000))
+  const armResend = (identifier: string) => {
+    const seconds = looksLikePhone(identifier) ? 300 : 60
+    const at = Date.now()
+    setResendNow(at)
+    setResendUntil(at + seconds * 1000)
+  }
 
   const openReset = () => {
     setResetOpen(true); setResetStep('id'); setResetDone(false); setShowResetPw(false)
@@ -161,6 +183,7 @@ export function LoginScreen() {
     setResetBusy(true)
     try {
       await passwordForgot(v)
+      armResend(v)
       setResetCode(''); setResetPw(''); setResetPw2('')
       setResetStep('reset')
     } catch (e) {
@@ -177,11 +200,12 @@ export function LoginScreen() {
 
   /* Resend the code from the reset step. */
   const resendCode = async () => {
-    if (resetBusy) return
+    if (resetBusy || resendLeft > 0) return
     setResetErr(null)
     setResetBusy(true)
     try {
       await passwordForgot(resetId.trim())
+      armResend(resetId.trim())
     } catch (e) {
       setResetErr(apiErrorMessage(e, 'Could not resend the code. Try again.'))
     } finally {
@@ -310,8 +334,8 @@ export function LoginScreen() {
                       : <>{viaLink ? 'Create new password' : 'Set password'} <Icon name="arrowRight" size={16} /></>}
                   </Btn>
                   {!viaLink && (
-                    <button type="button" className="sm-login-link" onClick={() => { void resendCode() }}>
-                      Resend code
+                    <button type="button" className="sm-login-link" disabled={resetBusy || resendLeft > 0} onClick={() => { void resendCode() }}>
+                      {resendLeft > 0 ? `Resend code in ${formatWait(resendLeft)}` : 'Resend code'}
                     </button>
                   )}
                   <button type="button" className="sm-login-link" onClick={() => { setResetStep('id'); setResetErr(null); setViaLink(false) }}>

@@ -1,7 +1,7 @@
 /* ============================================================
    Campus geo-fence settings — shared by Attendance & Settings
    ============================================================ */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useToast } from '@/lib/hooks'
 import {
   Card, CardHead, Btn, Badge, Input, Field, Segmented,
@@ -11,9 +11,10 @@ import { useSchoolLocation, useUpsertSchoolLocation, useDeleteSchoolLocation } f
 import { CampusGeofenceMap } from '@/components/maps/CampusGeofenceMap'
 import {
   RADIUS_PRESETS, validateGeofenceInput, formatCoords, googleMapsUrl,
-  testPositionInFence, nearestRadiusPreset,
+  testPositionInFence,
   type FenceTestResult,
 } from '@/lib/geofence'
+import { capturePreciseGps, gpsFailureMessage, type GpsFix } from '@/lib/deviceGps'
 
 function RadiusPresets({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
@@ -71,7 +72,7 @@ export function CampusGeofenceSettings({
   const [pendingCoords, setPendingCoords] = useState<{ lat: number; lng: number } | null>(null)
   const [lat, setLat] = useState('')
   const [lng, setLng] = useState('')
-  const [radius, setRadius] = useState('250')
+  const [radius, setRadius] = useState('200')
   const [name, setName] = useState('')
   const [locating, setLocating] = useState(false)
   const [testing, setTesting] = useState(false)
@@ -86,42 +87,58 @@ export function CampusGeofenceSettings({
     if (!configured && canConfigure) setEditing(true)
   }, [configured, canConfigure])
 
+  // Hydrate from the saved fence once per server value. A fresh GPS capture sets
+  // unsavedGps so a refetch cannot put the old centre back on the map.
+  const hydratedKey = useRef<string | null>(null)
+  const unsavedGps = useRef(false)
+  const gpsAbort = useRef<AbortController | null>(null)
+  useEffect(() => () => gpsAbort.current?.abort(), [])
   useEffect(() => {
-    if (!location) return
+    if (!location) {
+      hydratedKey.current = null
+      return
+    }
+    if (unsavedGps.current) return
+    const key = `${location.lat},${location.lng},${location.radiusMeters}`
+    if (hydratedKey.current === key) return
+    hydratedKey.current = key
     setLat(String(location.lat))
     setLng(String(location.lng))
-    setRadius(String(nearestRadiusPreset(location.radiusMeters)))
+    setRadius(String(location.radiusMeters))
     setName(location.name ?? '')
   }, [location])
 
-  const captureGps = (): Promise<{ lat: number; lng: number; accuracy: number } | null> => new Promise((resolve) => {
-    if (!navigator.geolocation) {
-      toast.danger('GPS unavailable', 'This browser does not support location.')
-      resolve(null)
-      return
-    }
+  const captureGps = async (): Promise<GpsFix | null> => {
+    gpsAbort.current?.abort()
+    const controller = new AbortController()
+    gpsAbort.current = controller
     setLocating(true)
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLocating(false)
-        resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy })
-      },
-      () => {
-        setLocating(false)
-        toast.danger('Location denied', 'Allow location access or enter coordinates manually.')
-        resolve(null)
-      },
-      { enableHighAccuracy: true, timeout: 15000 },
-    )
-  })
+    try {
+      const result = await capturePreciseGps({ signal: controller.signal })
+      if (result.ok) return result.fix
+      const copy = gpsFailureMessage(result)
+      if (copy) toast.danger(copy.title, copy.body)
+      return null
+    } finally {
+      if (gpsAbort.current === controller) setLocating(false)
+    }
+  }
+
+  const applyGpsFix = (pos: GpsFix) => {
+    unsavedGps.current = true
+    const latStr = pos.lat.toFixed(6)
+    const lngStr = pos.lng.toFixed(6)
+    setLat(latStr)
+    setLng(lngStr)
+    return { lat: Number(latStr), lng: Number(lngStr), accuracy: pos.accuracy }
+  }
 
   const useDeviceLocation = async () => {
     const pos = await captureGps()
     if (!pos) return
-    setLat(String(pos.lat.toFixed(6)))
-    setLng(String(pos.lng.toFixed(6)))
-    toast.success('Location captured', 'Adjust radius if needed, then save.')
-    return pos
+    const fix = applyGpsFix(pos)
+    toast.success('Location captured', `${fix.lat.toFixed(6)}, ${fix.lng.toFixed(6)} · ±${Math.round(fix.accuracy)} m. Save when the pin looks right.`)
+    return fix
   }
 
   // Changing an existing fence moves the zone every staff/teacher check-in verifies
@@ -167,6 +184,7 @@ export function CampusGeofenceSettings({
         radius_meters: Math.round(radiusN),
         name: name.trim() || schoolName,
       })
+      unsavedGps.current = false
       setEditing(false)
       setTestResult(null)
       toast.success('Campus geo-fence saved', `${Math.round(radiusN)} m radius · app check-ins verify against this zone.`)
@@ -178,9 +196,8 @@ export function CampusGeofenceSettings({
   const setFenceFromDevice = async () => {
     const pos = await captureGps()
     if (!pos) return
-    setLat(String(pos.lat.toFixed(6)))
-    setLng(String(pos.lng.toFixed(6)))
-    requestSave({ lat: pos.lat, lng: pos.lng })
+    const fix = applyGpsFix(pos)
+    requestSave({ lat: fix.lat, lng: fix.lng })
   }
 
   const runTest = async () => {
@@ -203,12 +220,13 @@ export function CampusGeofenceSettings({
   const resetFence = async () => {
     try {
       await deleteMut.mutateAsync()
+      unsavedGps.current = false
       setEditing(true)
       setConfirmReset(false)
       setTestResult(null)
       setLat('')
       setLng('')
-      setRadius('250')
+      setRadius('200')
       setName('')
       toast.success('Geo-fence reset', 'Campus location removed. Configure again to enable GPS check-in.')
     } catch (e) {
@@ -229,7 +247,7 @@ export function CampusGeofenceSettings({
   const previewRadius = Number(radius)
   const mapLat = Number.isFinite(previewLat) ? previewLat : null
   const mapLng = Number.isFinite(previewLng) ? previewLng : null
-  const mapRadius = Number.isFinite(previewRadius) && previewRadius > 0 ? previewRadius : 250
+  const mapRadius = Number.isFinite(previewRadius) && previewRadius > 0 ? previewRadius : 200
   const pickOnMap = (plat: number, plng: number) => {
     setLat(plat.toFixed(6))
     setLng(plng.toFixed(6))

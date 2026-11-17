@@ -1,7 +1,7 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { APIProvider, Map, AdvancedMarker, useMap } from '@vis.gl/react-google-maps'
 import { Icon } from '@/components/ui'
-import { formatCoords } from '@/lib/geofence'
+import { circleBounds, formatCoords, readMapLatLng } from '@/lib/geofence'
 
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
 const MAP_ID = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID
@@ -25,12 +25,16 @@ function campusPoint(lat: number | null, lng: number | null): { lat: number; lng
 
 function FenceCircle({ lat, lng, radiusMeters }: { lat: number; lng: number; radiusMeters: number }) {
   const map = useMap()
+  // Fit the camera when the centre moves, not when only the radius changes.
+  // Fitting every radius made 100 m, 200 m and 300 m fill the same box.
+  const fittedCentre = useRef<string | null>(null)
   useEffect(() => {
     if (!map || typeof google === 'undefined') return
+    const radius = Math.max(30, radiusMeters)
     const circle = new google.maps.Circle({
       map,
       center: { lat, lng },
-      radius: Math.max(30, radiusMeters),
+      radius,
       strokeColor: '#2563eb',
       strokeOpacity: 0.9,
       strokeWeight: 2,
@@ -38,11 +42,16 @@ function FenceCircle({ lat, lng, radiusMeters }: { lat: number; lng: number; rad
       fillOpacity: 0.18,
       clickable: false,
     })
-    const bounds = circle.getBounds()
-    if (bounds) map.fitBounds(bounds, 36)
-    else {
+    const centreKey = `${lat.toFixed(6)},${lng.toFixed(6)}`
+    if (fittedCentre.current !== centreKey) {
+      fittedCentre.current = centreKey
       map.setCenter({ lat, lng })
-      map.setZoom(16)
+      // Frame at least 300 m so the three presets stay on screen and look different.
+      const frame = circleBounds(lat, lng, Math.max(radius, 300))
+      map.fitBounds(new google.maps.LatLngBounds(
+        { lat: frame.south, lng: frame.west },
+        { lat: frame.north, lng: frame.east },
+      ), 36)
     }
     return () => circle.setMap(null)
   }, [map, lat, lng, radiusMeters])
@@ -51,7 +60,7 @@ function FenceCircle({ lat, lng, radiusMeters }: { lat: number; lng: number; rad
 
 function CampusPin({ name }: { name: string }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translateY(-6px)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
       <span
         style={{
           background: 'var(--surface, #fff)', color: 'var(--text, #111)',
@@ -101,15 +110,22 @@ export function CampusGeofenceMap({
           clickableIcons={false}
           style={{ width: '100%', height: '100%' }}
           onClick={(e) => {
-            const p = e.detail.latLng
-            if (!p || !onPick) return
+            if (!onPick) return
+            const p = readMapLatLng(e.detail.latLng)
+            if (!p) return
             onPick(p.lat, p.lng)
           }}
         >
           {placed && (
             <>
               <FenceCircle lat={placed.lat} lng={placed.lng} radiusMeters={radiusMeters} />
-              <AdvancedMarker position={placed} title={label}>
+              <AdvancedMarker
+                position={placed}
+                title={label}
+                clickable={false}
+                anchorLeft="-50%"
+                anchorTop="-100%"
+              >
                 <CampusPin name={label} />
               </AdvancedMarker>
             </>

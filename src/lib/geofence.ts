@@ -1,8 +1,8 @@
 import type { Role } from '@/types'
 import { can } from './gating'
 
-/** Recommended campus radius presets (metres). */
-export const RADIUS_PRESETS = [100, 200, 250, 500] as const
+/** Campus radius presets (metres). Exact values — do not snap a saved fence onto a neighbour. */
+export const RADIUS_PRESETS = [100, 200, 300] as const
 
 /** Validate campus geo-fence inputs before save. */
 export function validateGeofenceInput(lat: number, lng: number, radiusMeters: number): string | null {
@@ -63,10 +63,39 @@ export function googleMapsUrl(lat: number, lng: number): string {
   return `https://www.google.com/maps?q=${lat},${lng}`
 }
 
-/** Visual circle size (px) scaled from radius — clamped for the admin preview card. */
+/** Visual circle size (px). Linear in metres so 100 / 200 / 300 m are easy to tell apart. */
 export function fencePreviewDiameterPx(radiusMeters: number): number {
-  const scaled = 80 + Math.sqrt(Math.min(radiusMeters, 1000) / 1000) * 120
-  return Math.round(Math.min(220, Math.max(90, scaled)))
+  const clamped = Math.min(Math.max(radiusMeters, 0), 500)
+  const scaled = 70 + (clamped / 300) * 110
+  return Math.round(Math.min(220, Math.max(72, scaled)))
+}
+
+/**
+ * Click payloads are either `{ lat, lng }` or a Maps `LatLng` whose `lat`/`lng` are methods.
+ * Passing the methods through makes the campus pin land off the click.
+ */
+export function readMapLatLng(
+  point: { lat: number | (() => number); lng: number | (() => number) } | null | undefined,
+): { lat: number; lng: number } | null {
+  if (!point) return null
+  const lat = typeof point.lat === 'function' ? point.lat() : point.lat
+  const lng = typeof point.lng === 'function' ? point.lng() : point.lng
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+  return { lat, lng }
+}
+
+/** Bounding box of a circle on the ground. 300 m is three times 100 m, not the same box. */
+export function circleBounds(lat: number, lng: number, radiusMeters: number): {
+  north: number
+  south: number
+  east: number
+  west: number
+} {
+  const radius = Math.max(radiusMeters, 1)
+  const dLat = radius / 111_320
+  const cos = Math.cos((lat * Math.PI) / 180)
+  const dLng = radius / (111_320 * Math.max(Math.abs(cos), 0.01))
+  return { north: lat + dLat, south: lat - dLat, east: lng + dLng, west: lng - dLng }
 }
 
 export function formatCoords(lat: number, lng: number): string {
