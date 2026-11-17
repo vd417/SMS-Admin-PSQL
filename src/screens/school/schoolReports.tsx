@@ -11,6 +11,7 @@ import {
 import { rangeForPreset, type ReportPreset } from '@/lib/reportRange'
 import { listClasses, type SchoolClass } from '@/api/classes'
 import { AttendanceRegister } from './attendanceRegister'
+import { ClassAttendanceView } from './attendance'
 import { HBars, Donut, Legend } from '@/components/charts/Charts'
 import {
   PageHead, Card, CardHead, Btn, Badge, Search, Select, Field, Input, Textarea, DataTable, Icon, Skeleton,
@@ -563,11 +564,18 @@ export function SchoolReportsScreen() {
       items.push(
         { value: 'attendance_overview', label: 'Attendance Overview', group: group.label },
         { value: 'attendance_register', label: 'Daily Attendance Register', group: group.label },
+        { value: 'class_attendance_daily', label: 'Student daily attendance', group: group.label },
       )
     }
     return items
   })
-  const attendanceScreen = reportKey === 'attendance_overview' ? 'overview' as const : reportKey === 'attendance_register' ? 'register' as const : null
+  const attendanceScreen = reportKey === 'attendance_overview'
+    ? 'overview' as const
+    : reportKey === 'attendance_register'
+      ? 'register' as const
+      : reportKey === 'class_attendance_daily'
+        ? 'class' as const
+        : null
 
   const loadSchedules = useCallback(async (keys: string[]) => {
     const unique = [...new Set(keys.filter(Boolean))]
@@ -801,7 +809,9 @@ export function SchoolReportsScreen() {
       ? 'student_attendance'
       : reportKey === 'attendance_overview'
         ? 'student_attendance_summary'
-        : reportKey
+        : reportKey === 'class_attendance_daily'
+          ? 'student_attendance_daily'
+          : reportKey
     return catalog.filter((item) => item.key === key)
   }
 
@@ -910,7 +920,15 @@ export function SchoolReportsScreen() {
         sub="Open a report, set the dates, then download or schedule it to email"
       />
       <Card style={{ marginTop: 14 }}>
-        <CardHead title={attendanceScreen === 'overview' ? 'Attendance Overview' : attendanceScreen === 'register' ? 'Daily Attendance Register' : (report?.title ?? 'Report')} sub={attendanceScreen ? 'Same layout as the attendance screens, with an Excel file of these columns.' : report?.note} icon="doc" />
+        <CardHead
+          title={attendanceScreen === 'overview' ? 'Attendance Overview' : attendanceScreen === 'register' ? 'Daily Attendance Register' : attendanceScreen === 'class' ? 'Student daily attendance' : (report?.title ?? 'Report')}
+          sub={attendanceScreen === 'class'
+            ? 'Same daily section report as Class Attendance. Pick a class, section, and date, then export PDF or Excel.'
+            : attendanceScreen
+              ? 'Same layout as the attendance screens, with an Excel file of these columns.'
+              : report?.note}
+          icon="doc"
+        />
         <div className="report-filter-grid">
           <Field label="Report type">
             <CompactSelect
@@ -918,7 +936,7 @@ export function SchoolReportsScreen() {
               searchable
               value={reportKey}
               onChange={(value) => {
-                if (value === 'attendance_overview' || value === 'attendance_register') {
+                if (value === 'attendance_overview' || value === 'attendance_register' || value === 'class_attendance_daily') {
                   setReportKey(value)
                   setResult(null)
                   return
@@ -1011,7 +1029,13 @@ export function SchoolReportsScreen() {
         )}
       </Card>
 
-      {attendanceScreen && (
+      {attendanceScreen === 'class' && (
+        <div style={{ marginTop: 14 }}>
+          <ClassAttendanceView />
+        </div>
+      )}
+
+      {(attendanceScreen === 'overview' || attendanceScreen === 'register') && (
         <div style={{ marginTop: 14 }}>
           <AttendanceRegister canMark={false} screen={attendanceScreen} />
         </div>

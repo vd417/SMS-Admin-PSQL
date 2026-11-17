@@ -437,7 +437,7 @@ function StaffRoster({ group, editable }: { group: 'teachers' | 'staff'; editabl
    Class Attendance — simple Class + Section pick, then trend/subjects/table
    (no other filters — a lighter-weight sibling to Advanced > Class subview)
    ============================================================ */
-function ClassAttendanceView() {
+export function ClassAttendanceView() {
   const classesQ = useClasses()
   const classes = classesQ.data ?? []
   const grades = useMemo(
