@@ -5,7 +5,7 @@
 import { useMemo, type ComponentType } from 'react'
 import { useApp } from '@/lib/hooks'
 import {
-  PageHead, Card, CardHead, Kpi, Btn, Badge, Donut, HBars, Legend, DataTable, Empty, Spinner,
+  PageHead, Card, CardHead, Btn, Badge, Donut, HBars, Legend, DataTable, Empty, Spinner,
   type Column,
 } from '@/components/ui'
 import { fmtMoney, fmtNum } from '@/lib/format'
@@ -14,6 +14,12 @@ import { clientToSchool } from '@/api/ownerMap'
 import type { FeeSchoolSummary } from '@/api/ownerTypes'
 import type { School } from '@/types'
 import { SchoolMark } from '@/components/SchoolMark'
+import { DashFold, DashStat } from '@/screens/school/dashFold'
+import dashFeeHead from '@/assets/dash-fee-head.jpg'
+import dashFees from '@/assets/dash-fees.jpg'
+import dashFeeDue from '@/assets/dash-fee-due.jpg'
+import dashFeeTerm from '@/assets/dash-fee-term.jpg'
+import dashSchool from '@/assets/dash-school.jpg'
 
 const COLORS = ['#4f46e5', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#14b8a6', '#ef4444']
 
@@ -150,28 +156,16 @@ function OwnerRevenue() {
         }
       />
 
-      <div className="sm-kpi-grid">
-        <Kpi
-          icon="rupee" iconBg="var(--success-bg)" iconColor="var(--success)"
-          label="Fee collected" value={fmtMoney(Number(totals.collected))}
-          foot={`${fmtNum(totals.payment_count)} payments this period`}
-        />
-        <Kpi
-          icon="alert" iconBg="var(--warning-bg)" iconColor="var(--warning)"
-          label="Outstanding" value={fmtMoney(Number(totals.outstanding))}
-          foot={`${fmtNum(totals.invoice_count)} open invoices`}
-        />
-        <Kpi
-          icon="trend" iconBg="var(--brand-50)" iconColor="var(--brand-600)"
-          label="Collection rate" value={`${collectionRate}%`}
-          foot="Collected / (collected + outstanding)"
-        />
-        <Kpi
-          icon="building" iconBg="var(--info-bg)" iconColor="var(--info)"
-          label="Schools with cash" value={fmtNum(schoolsWithCash)}
-          foot={`of ${fmtNum(schools.length)} in portfolio`}
-        />
-      </div>
+      <DashFold title="Fee Collection" sub={periodLabel} art={<img className="sd-fold-art" src={dashFeeHead} alt="" />}>
+        <DashStat tone="green" label="Fee collected" art={<img className="sd-art sd-art-people" src={dashFees} alt="" />}
+          value={fmtMoney(Number(totals.collected))} sub={`${fmtNum(totals.payment_count)} payments this period`} />
+        <DashStat tone="peach" label="Outstanding" art={<img className="sd-art sd-art-people" src={dashFeeDue} alt="" />}
+          value={fmtMoney(Number(totals.outstanding))} sub={`${fmtNum(totals.invoice_count)} open invoices`} />
+        <DashStat tone="violet" label="Collection rate" art={<img className="sd-art sd-art-people" src={dashFeeTerm} alt="" />}
+          value={`${collectionRate}%`} sub="Collected / (collected + outstanding)" />
+        <DashStat tone="blue" label="Schools with cash" art={<img className="sd-art sd-art-people" src={dashSchool} alt="" />}
+          value={fmtNum(schoolsWithCash)} sub={`of ${fmtNum(schools.length)} in portfolio`} />
+      </DashFold>
 
       <div className="sm-grid-2">
         <Card>

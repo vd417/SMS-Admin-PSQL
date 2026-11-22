@@ -123,7 +123,7 @@ export function Topbar() {
           <div style={{ marginTop: 6 }}><Badge tone="brand">{isOwner ? 'Owner' : ROLE_META[app.role].label}</Badge></div>
         </div>
         <MenuSep />
-        <MenuItem icon="user" onClick={() => app.go(isOwner ? 'owner.settings' : 'school.settings')}>Profile & settings</MenuItem>
+        <MenuItem icon="user" onClick={() => app.go(isOwner ? 'owner.settings' : app.role === 'receptionist' ? 'school.front.profile' : 'school.settings')}>{app.role === 'receptionist' ? 'Profile' : 'Profile & settings'}</MenuItem>
         <MenuItem icon="logout" danger onClick={app.logout}>Sign out</MenuItem>
       </Popover>
     </header>

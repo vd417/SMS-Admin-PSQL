@@ -39,12 +39,23 @@ import { openMailCompose, guardianEmailsFromStudent } from '@/lib/composeMail'
 import { can } from '@/lib/gating'
 import { newIdempotencyKey } from '@/lib/idempotencyKey'
 import {
-  PageHead, Card, CardHead, Kpi, Btn, Badge, Avatar, Search, Select, Field, Input,
+  PageHead, Card, CardHead, Btn, Badge, Avatar, Search, Select, Field, Input,
   Modal, Tabs, Icon, Empty, Bars, DataTable, Checkbox, type Column, type BadgeTone,
 } from '@/components/ui'
 import { TierGate } from '@/components/shell/gates'
 import { gradeRank } from '@/lib/defaultClasses'
 import { fmtMoney, fmtNum, feeInvoiceNo } from '@/lib/format'
+import { DashFold, DashStat } from './dashFold'
+import dashFees from '@/assets/dash-fees.jpg'
+import dashFeeHead from '@/assets/dash-fee-head.jpg'
+import dashFeeTerm from '@/assets/dash-fee-term.jpg'
+import dashFeeDue from '@/assets/dash-fee-due.jpg'
+import dashFeePending from '@/assets/dash-fee-pending.jpg'
+import dashHr from '@/assets/dash-hr.jpg'
+import dashPayHead from '@/assets/dash-pay-head.jpg'
+import dashPayGross from '@/assets/dash-pay-gross.jpg'
+import dashPayNet from '@/assets/dash-pay-net.jpg'
+import dashPayPending from '@/assets/dash-pay-pending.jpg'
 import { properName } from '@/lib/properCase'
 import { localDateIso, paymentDateIso } from '@/api/feeReports'
 import { currentPeriod, periodLabel, computeSalary, toAmount, type SalaryComponents } from '@/lib/payroll'
@@ -2516,13 +2527,17 @@ function FeesScreen() {
         </Card>
       )}
 
-      {/* KPIs */}
-      <div className="sm-kpi-grid" style={{ marginBottom: 16 }}>
-        <Kpi icon="rupee" iconBg="var(--success-bg)" iconColor="var(--success)" label="Collected today" value={fmtMoney(summary?.collectedToday ?? 0, cur)} foot="so far today" />
-        <Kpi icon="wallet" iconBg="var(--brand-50)" iconColor="var(--brand-600)" label="Collected this term" value={fmtMoney(summary?.collectedTerm ?? 0, cur)} delta={`${summary?.pct ?? 0}%`} deltaDir="up" foot={`of ${fmtMoney(summary?.billedTerm ?? 0, cur)} billed`} />
-        <Kpi icon="alert" iconBg="var(--warning-bg)" iconColor="var(--warning)" label="Outstanding dues" value={fmtMoney(summary?.outstanding ?? 0, cur)} foot="across all classes" />
-        <Kpi icon="users" iconBg="var(--danger-bg)" iconColor="var(--danger)" label="Pending dues" value={fmtNum(summary?.defaulters ?? 0)} foot="students with unpaid fees" />
-      </div>
+      <DashFold title="Fee collection" sub="Today and this term" art={<img className="sd-fold-art" src={dashFeeHead} alt="" />}>
+        <DashStat tone="peach" label="Collected today" art={<img className="sd-art sd-art-people" src={dashFees} alt="" />}
+          value={summaryQ.isLoading ? '—' : fmtMoney(summary?.collectedToday ?? 0, cur)} sub="so far today" />
+        <DashStat tone="violet" label="Collected this term" art={<img className="sd-art sd-art-people" src={dashFeeTerm} alt="" />}
+          value={summaryQ.isLoading ? '—' : `${summary?.pct ?? 0}%`}
+          sub={summaryQ.isLoading ? 'Loading…' : `${fmtMoney(summary?.collectedTerm ?? 0, cur)} of ${fmtMoney(summary?.billedTerm ?? 0, cur)} billed`} />
+        <DashStat tone="green" label="Outstanding dues" art={<img className="sd-art sd-art-people" src={dashFeeDue} alt="" />}
+          value={summaryQ.isLoading ? '—' : fmtMoney(summary?.outstanding ?? 0, cur)} sub="across all classes" />
+        <DashStat tone="blue" label="Pending dues" art={<img className="sd-art sd-art-people" src={dashFeePending} alt="" />}
+          value={summaryQ.isLoading ? '—' : fmtNum(summary?.defaulters ?? 0)} sub="students with unpaid fees" />
+      </DashFold>
 
       {/* Collection by class */}
       <Card style={{ marginBottom: 16 }}>
@@ -2705,6 +2720,7 @@ function PayrollRunTab() {
     ded: view?.deductions ?? 0,
     net: view?.net ?? 0,
   }
+  const payLoading = runQuery.isLoading || (ran && !approved && previewQ.isLoading && !preview)
 
   // Revenue vs payroll — fees collected this term against this month's net payroll.
   const revenue = summaryQ.data?.collectedTerm ?? 0
@@ -2861,13 +2877,18 @@ function PayrollRunTab() {
         </div>
       </Card>
 
-      {/* KPIs */}
-      <div className="sm-kpi-grid" style={{ marginBottom: 16 }}>
-        <Kpi icon="users" iconBg="var(--brand-50)" iconColor="var(--brand-600)" label="Staff on payroll" value={fmtNum(totals.count)} foot="teaching + support" />
-        <Kpi icon="wallet" iconBg="var(--info-bg)" iconColor="var(--info)" label="Gross payroll" value={fmtMoney(totals.gross, cur)} foot="before deductions" />
-        <Kpi icon="rupee" iconBg="var(--success-bg)" iconColor="var(--success)" label="Net payable" value={fmtMoney(totals.net, cur)} foot={`${fmtMoney(totals.ded, cur)} deductions`} />
-        <Kpi icon="clock" iconBg="var(--warning-bg)" iconColor="var(--warning)" label="Pending" value={approved ? fmtMoney(0, cur) : fmtMoney(totals.net, cur)} foot={approved ? 'cleared' : ran ? (canApprove ? 'ready to approve' : 'awaiting approval') : (canRun ? 'ready to run' : 'awaiting Admin to run')} />
-      </div>
+      <DashFold title="HR & Payroll" sub={periodLabel(period)} art={<img className="sd-fold-art" src={dashPayHead} alt="" />}>
+        <DashStat tone="violet" label="Staff on payroll" art={<img className="sd-art sd-art-people" src={dashHr} alt="" />}
+          value={payLoading ? '—' : fmtNum(totals.count)} sub="teaching + support" />
+        <DashStat tone="peach" label="Gross payroll" art={<img className="sd-art sd-art-people" src={dashPayGross} alt="" />}
+          value={payLoading ? '—' : fmtMoney(totals.gross, cur)} sub="before deductions" />
+        <DashStat tone="green" label="Net payable" art={<img className="sd-art sd-art-people" src={dashPayNet} alt="" />}
+          value={payLoading ? '—' : fmtMoney(totals.net, cur)}
+          sub={payLoading ? 'Loading…' : `${fmtMoney(totals.ded, cur)} deductions`} />
+        <DashStat tone="blue" label="Pending" art={<img className="sd-art sd-art-people" src={dashPayPending} alt="" />}
+          value={payLoading ? '—' : (approved ? fmtMoney(0, cur) : fmtMoney(totals.net, cur))}
+          sub={payLoading ? 'Loading…' : approved ? 'cleared' : ran ? (canApprove ? 'ready to approve' : 'awaiting approval') : (canRun ? 'ready to run' : 'awaiting Admin to run')} />
+      </DashFold>
 
       {/* Run table */}
       <Card pad={false}>

@@ -19,6 +19,14 @@ import {
   Segmented, DataTable, type Column, type BadgeTone,
 } from '@/components/ui'
 import { TierGate } from '@/components/shell/gates'
+import { DashFold, DashStat } from './dashFold'
+import dashTransport from '@/assets/dash-transport.jpg'
+import dashVehicle from '@/assets/dash-vehicle.jpg'
+import dashRoute from '@/assets/dash-route.jpg'
+import dashStudents from '@/assets/dash-students.jpg'
+import dashStop from '@/assets/dash-stop.jpg'
+import dashGps from '@/assets/dash-gps.jpg'
+import dashAttLate from '@/assets/dash-att-late.jpg'
 import { FleetLiveMap } from '@/components/maps/RouteBuilderMap'
 import { useComplaints, useCreateComplaint, useUpdateComplaint } from '@/api/hooks/useComplaints'
 import { useIssues, useIssue, useUpdateIssue } from '@/api/hooks/useIssues'
@@ -2144,12 +2152,16 @@ function TransportTab() {
   const [manage, setManage] = useState(false)
   return (
     <div className="col gap16">
-      <div className="sm-kpi-grid" style={{ gridTemplateColumns: 'repeat(4,1fr)' }}>
-        <Kpi icon="bus" label="Vehicles" value={kpiVal(s, (d) => d.vehicles.toLocaleString())} />
-        <Kpi icon="pin" iconBg="var(--info-bg)" iconColor="var(--info)" label="Routes" value={kpiVal(s, (d) => d.routes.toLocaleString())} />
-        <Kpi icon="users" iconBg="var(--success-bg)" iconColor="var(--success)" label="Students" value={kpiVal(s, (d) => d.students.toLocaleString())} />
-        <Kpi icon="clock" iconBg="var(--warning-bg)" iconColor="var(--warning)" label="Stops" value={kpiVal(s, (d) => d.stops.toLocaleString())} />
-      </div>
+      <DashFold title="Transport" sub="Vehicles, routes, students and stops" art={<img className="sd-fold-art" src={dashTransport} alt="" />}>
+        <DashStat tone="blue" label="Vehicles" art={<img className="sd-art sd-art-people" src={dashVehicle} alt="" />}
+          value={kpiVal(s, (d) => d.vehicles.toLocaleString())} sub="On the fleet" />
+        <DashStat tone="violet" label="Routes" art={<img className="sd-art sd-art-people" src={dashRoute} alt="" />}
+          value={kpiVal(s, (d) => d.routes.toLocaleString())} sub="On the board" />
+        <DashStat tone="green" label="Students" art={<img className="sd-art sd-art-people" src={dashStudents} alt="" />}
+          value={kpiVal(s, (d) => d.students.toLocaleString())} sub="Assigned to a bus" />
+        <DashStat tone="peach" label="Stops" art={<img className="sd-art sd-art-people" src={dashStop} alt="" />}
+          value={kpiVal(s, (d) => d.stops.toLocaleString())} sub="Along the routes" />
+      </DashFold>
       <Card pad={false}>
         <div className="row ai-center jc-between" style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
           <CardHead title="Fleet & routes" sub="Registered buses and route assignments" icon="bus" />
@@ -2947,12 +2959,16 @@ function GpsScreenBody() {
           </div>
         } />
       <div className="col gap16">
-        <div className="sm-kpi-grid" style={{ gridTemplateColumns: 'repeat(4,1fr)' }}>
-          <Kpi icon="bus" label="Vehicles" value={fleet.length} />
-          <Kpi icon="zap" iconBg="var(--success-bg)" iconColor="var(--success)" label="On route" value={onRoute} />
-          <Kpi icon="alert" iconBg="var(--danger-bg)" iconColor="var(--danger)" label="Delayed" value={delayed} />
-          <Kpi icon="users" iconBg="var(--info-bg)" iconColor="var(--info)" label="Students riding" value={riding} />
-        </div>
+        <DashFold title="Live bus tracking" sub="Buses on the map right now" art={<img className="sd-fold-art" src={dashGps} alt="" />}>
+          <DashStat tone="blue" label="Vehicles" art={<img className="sd-art sd-art-people" src={dashVehicle} alt="" />}
+            value={fleetQ.isLoading ? '…' : String(fleet.length)} sub="On the fleet" />
+          <DashStat tone="green" label="On route" art={<img className="sd-art sd-art-people" src={dashTransport} alt="" />}
+            value={fleetQ.isLoading ? '…' : String(onRoute)} sub="Trips running" />
+          <DashStat tone="peach" label="Delayed" art={<img className="sd-art sd-art-people" src={dashAttLate} alt="" />}
+            value={fleetQ.isLoading ? '…' : String(delayed)} sub="Running late" />
+          <DashStat tone="violet" label="Students riding" art={<img className="sd-art sd-art-people" src={dashStudents} alt="" />}
+            value={fleetQ.isLoading ? '…' : String(riding)} sub="On a bus now" />
+        </DashFold>
 
         <Card pad={false}><BusFleet fleet={fleet} loading={fleetQ.isLoading} error={fleetQ.isError} onLocate={setViewBusId} /></Card>
 

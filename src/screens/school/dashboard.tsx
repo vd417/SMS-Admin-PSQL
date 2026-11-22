@@ -1,17 +1,23 @@
 /* ============================================================
    SchoolMate — School console: live Dashboard + Approvals inbox
    ============================================================ */
-import { useEffect, useMemo, useState, type ComponentType, type CSSProperties } from 'react'
+import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useApp, useToast } from '@/lib/hooks'
 import { can } from '@/lib/gating'
 import { formatStudentRoll } from '@/lib/studentRoll'
 import {
-  Card, CardHead, Kpi, PageHead, Badge, Btn, Icon, Avatar,
-  Donut, Bars, LineChart, Legend, Empty, Modal, Field, Textarea, Segmented,
+  Card, PageHead, Badge, Btn, Icon, Avatar,
+  Donut, LineChart, Legend, Empty, Modal, Field, Textarea, Segmented,
 } from '@/components/ui'
 import type { BadgeTone } from '@/components/ui'
-import { SchoolPhoto } from '@/components/SchoolMark'
+import { Spark } from '@/components/charts/Charts'
+import { academicYearStart } from '@/api/studentAttendance'
+import dashSchool from '@/assets/dash-school.jpg'
+import dashStudents from '@/assets/dash-students.jpg'
+import dashTeachers from '@/assets/dash-teachers.jpg'
+import dashStaff from '@/assets/dash-staff.jpg'
+import './dashboardBoard.css'
 import { useApprovals } from '@/api/hooks/useApprovals'
 import { inboxApprovals, type ApprovalFilter } from '@/api/approvals'
 import { useActOnApproval } from '@/api/hooks/useApprovalMutations'
@@ -228,6 +234,8 @@ function SchoolDashboard() {
 
   const liveStudents = peopleQ.data?.studentCount ?? 0
   const liveTeachers = peopleQ.data?.teacherCount ?? 0
+  const teacherMen = (teachersQ.data ?? []).filter((t) => t.gender === 'M').length
+  const teacherWomen = (teachersQ.data ?? []).filter((t) => t.gender === 'F').length
   const liveSupport = peopleQ.data?.staffCount ?? 0
   const countsLoading = peopleQ.isLoading
   const rosterLoading = teachersQ.isLoading || staffQ.isLoading
@@ -414,18 +422,11 @@ function SchoolDashboard() {
 
   const supportRate = liveSupport ? Math.round((supportPresent / liveSupport) * 100) : 0
 
-  const peoplePresent = teachersPresent + supportPresent
-  const peopleTotal = liveTeachers + liveSupport
-  const peopleRate = peopleTotal ? Math.round((peoplePresent / peopleTotal) * 100) : 0
-  const staffAway = Math.max(0, peopleTotal - peoplePresent)
-
   const feesToday = feeQ.data?.collectedToday ?? 0
   const outstanding = feeQ.data?.outstanding ?? 0
   const collectedPct = feeQ.data?.pct ?? 0
   const collectedTerm = feeQ.data?.collectedTerm ?? 0
-  const billedTerm = feeQ.data?.billedTerm ?? 0
   const defaulters = feeQ.data?.defaulters ?? 0
-  const feeByClass = feeQ.data?.byClass ?? []
   const latestPayment = feeQ.data?.latestPayment
   const feeLoading = feeQ.isLoading
   const feeReady = Boolean(feeQ.data) || feeQ.isError
@@ -507,125 +508,134 @@ function SchoolDashboard() {
     unspecified: peopleQ.data?.unspecified ?? 0,
   }
   const examBands = examBandsQ.data?.bands ?? []
-  const attLiveLabel = periodDayQ.isFetching ? 'Refreshing…' : (periodDayQ.isSuccess ? 'Live today' : 'Live roster')
-
-  const placeLine = [s.city, s.tz].filter((v) => v && v !== '—').join(' · ')
+  const greetName = (app.user?.name || '').trim().split(/\s+/)[0] || 'there'
+  const yearStart = academicYearStart()
+  const yearLabel = `${yearStart} – ${String(yearStart + 1).slice(-2)}`
+  const dateLabel = new Date().toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+  const feeSpark = recentPayments.map((p) => p.amount).reverse()
 
   return (
     <div className="sm-dash col gap20">
-      <div className="sm-dash-head row ai-center gap16 wrap" style={{ marginBottom: 4 }}>
-        <SchoolPhoto school={s} size={88} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="t-xs muted3" style={{ letterSpacing: '0.04em', textTransform: 'uppercase', fontWeight: 600 }}>
-            Dashboard
-          </div>
-          <h1 className="sm-pagehead-title" style={{ margin: '2px 0 4px' }}>{s.name}</h1>
-          {placeLine ? <div className="t-sm muted">{placeLine}</div> : null}
+      <section className="sd-welcome">
+        <SchoolArt school={s} />
+        <div className="sd-welcome-copy" style={{ flex: 1 }}>
+          <h1>Welcome back, {greetName}!</h1>
+          <p>Have a great day at {s.name}</p>
         </div>
+        <div className="sd-date">
+          <span className="ic"><Icon name="calendar" size={18} /></span>
+          <div>
+            <b>{dateLabel}</b>
+            <span>Academic year {yearLabel}</span>
+          </div>
+        </div>
+      </section>
+
+      <div className="sd-kpis">
+        <button type="button" className="sd-kpi blue" onClick={() => app.go('school.sis')}>
+          <div className="sd-kpi-top">
+            <span className="sd-kpi-ic"><Icon name="users" size={16} /></span>
+            <span className="sd-kpi-label">Total enrolment</span>
+            <Icon name="chevRight" size={16} className="sd-kpi-go" />
+          </div>
+          <div className="sd-kpi-val">{countsLoading ? '—' : fmtNum(liveStudents)}</div>
+          <div className="sd-kpi-delta up">{countsLoading ? 'Loading roster…' : `${fmtNum(liveGrades)} grade${liveGrades === 1 ? '' : 's'}`}</div>
+        </button>
+        <button type="button" className="sd-kpi green" onClick={() => app.go('school.attendance')}>
+          <div className="sd-kpi-top">
+            <span className="sd-kpi-ic"><Icon name="calendar" size={16} /></span>
+            <span className="sd-kpi-label">Today's attendance</span>
+            <Icon name="chevRight" size={16} className="sd-kpi-go" />
+          </div>
+          <div className="sd-kpi-val">{studentHeadLoading || countsLoading ? '—' : `${fmtNum(studentsPresentCount)}/${fmtNum(liveStudents)}`}</div>
+          <div className={studentHeadRate > 0 ? 'sd-kpi-delta up' : 'sd-kpi-delta down'}>
+            {studentHeadLoading || countsLoading ? 'Loading…' : `${studentHeadRate}%`}
+          </div>
+          {attSpark.length >= 2 ? <div className="sd-kpi-spark"><Spark data={attSpark} w={180} h={36} color="#16a34a" /></div> : null}
+        </button>
+        <button type="button" className="sd-kpi violet" onClick={() => app.go('school.fees')}>
+          <div className="sd-kpi-top">
+            <span className="sd-kpi-ic"><Icon name="rupee" size={16} /></span>
+            <span className="sd-kpi-label">Fees collected today</span>
+            <Icon name="chevRight" size={16} className="sd-kpi-go" />
+          </div>
+          <div className="sd-kpi-val">{feeLoading ? '—' : fmtMoney(feesToday, cur)}</div>
+          <div className={collectedPct > 0 ? 'sd-kpi-delta up' : 'sd-kpi-delta down'}>
+            {feeLoading ? 'Loading…' : `${collectedPct}% of term`}
+          </div>
+          {feeSpark.length >= 2 ? <div className="sd-kpi-spark"><Spark data={feeSpark} w={180} h={36} color="#7c3aed" /></div> : null}
+        </button>
+        <button type="button" className="sd-kpi peach" onClick={() => app.go('school.fees')}>
+          <div className="sd-kpi-top">
+            <span className="sd-kpi-ic"><Icon name="wallet" size={16} /></span>
+            <span className="sd-kpi-label">Outstanding dues</span>
+            <Icon name="chevRight" size={16} className="sd-kpi-go" />
+          </div>
+          <div className="sd-kpi-val">{feeLoading ? '—' : fmtMoney(outstanding, cur)}</div>
+          <div className={defaulters > 0 ? 'sd-kpi-delta down' : 'sd-kpi-delta up'}>
+            {feeLoading ? 'Loading…' : `${fmtNum(defaulters)} due`}
+          </div>
+        </button>
       </div>
 
-      {/* ---- KPI row ---- */}
-      <div className="sm-kpi-grid">
-        <Kpi
-          icon="users" iconBg="color-mix(in srgb, #635BFF 12%, white)" iconColor="#635BFF"
-          label="Total enrollment" value={countsLoading ? '—' : fmtNum(liveStudents)}
-          foot={countsLoading
-            ? 'Loading roster…'
-            : `${fmtNum(liveGrades)} grade${liveGrades === 1 ? '' : 's'} · ${fmtNum(peopleTotal)} staff`}
-        />
-        <Kpi
-          icon="check" iconBg="color-mix(in srgb, #22C55E 12%, white)" iconColor="#22C55E"
-          label="Today's attendance"
-          value={studentHeadLoading || countsLoading ? '—' : `${fmtNum(studentsPresentCount)}/${fmtNum(liveStudents)}`}
-          delta={!studentHeadLoading && liveStudents ? `${studentHeadRate}%` : attLiveLabel} deltaDir="up"
-          foot={studentHeadLoading || countsLoading
-            ? 'Loading today’s students…'
-            : `${fmtNum(studentsAbsentCount)} absent · ${fmtNum(studentsLateCount)} late · ${fmtNum(studentsLeaveCount)} leave`}
-          spark={attSpark.length >= 2 ? attSpark : undefined} sparkColor="#166534"
-        />
-        <Kpi
-          icon="rupee" iconBg="color-mix(in srgb, #0EA5E9 12%, white)" iconColor="#0EA5E9"
-          label="Fees collected today" value={feeLoading ? '—' : fmtMoney(feesToday, cur)}
-          foot={feeLoading
-            ? 'Loading…'
-            : `Term ${fmtMoney(collectedTerm, cur)} · ${collectedPct}% of ${fmtMoney(billedTerm, cur)} billed`}
-        />
-        <Kpi
-          icon="wallet" iconBg="color-mix(in srgb, #F93016 12%, white)" iconColor="#F93016"
-          label="Outstanding dues" value={feeLoading ? '—' : fmtMoney(outstanding, cur)}
-          foot={feeLoading ? 'Loading…' : `${fmtNum(defaulters)} student invoice(s) due / partial`}
-        />
-        <Kpi
-          icon="briefcase" iconBg="color-mix(in srgb, #A855F7 12%, white)" iconColor="#A855F7"
-          label="Teachers & staff" value={rosterLoading || !peopleMarksReady ? '—' : `${fmtNum(peoplePresent)}/${fmtNum(peopleTotal)}`}
-          delta={peopleTotal ? `${peopleRate}%` : undefined} deltaDir="up"
-          foot={rosterLoading || !peopleMarksReady
-            ? 'Loading staff…'
-            : `Teachers ${fmtNum(teachersPresent)}/${fmtNum(liveTeachers)} · Staff ${fmtNum(supportPresent)}/${fmtNum(liveSupport)} · ${fmtNum(staffAway)} away`}
-        />
-      </div>
-
-      {/* ---- People at a glance ---- */}
-      <div className="sm-grid-3">
+      <div className="sd-people">
         <PeopleCard
-          icon="users" tone="var(--brand-600)" label="Students"
-          count={liveStudents} sub={liveTeachers ? `Student–teacher ratio ${ratio}:1 · today` : 'Today · one count per student'}
-          rate={studentHeadRate} present={studentsPresentCount} total={liveStudents}
-          loading={studentHeadLoading || countsLoading}
-          onClick={() => app.go('school.attendance')}
+          tone="violet" label="Students" art={<ArtStudents />}
+          count={liveStudents}
+          sub={liveTeachers ? `Student–teacher ratio ${ratio}:1` : 'On the school roster'}
+          present={studentsPresentCount}
+          loading={countsLoading}
+          onClick={() => app.go('school.sis')}
         />
         <PeopleCard
-          icon="cap" tone="var(--success)" label="Teachers"
-          count={liveTeachers} sub="Teacher app check-in + Attendance marks"
-          rate={teacherRate} present={teachersPresent} total={liveTeachers}
+          tone="green" label="Teachers" art={<ArtTeacher />}
+          count={liveTeachers} sub={`Male ${fmtNum(teacherMen)} · Female ${fmtNum(teacherWomen)}`}
+          present={teachersPresent}
           loading={rosterLoading || !peopleMarksReady}
-          onClick={() => app.go('school.attendance')}
+          onClick={() => app.go('school.teachers')}
         />
         <PeopleCard
-          icon="briefcase" tone="var(--info)" label="Support staff"
-          count={liveSupport} sub="From Attendance · Staff tab"
-          rate={supportRate} present={supportPresent} total={liveSupport}
+          tone="blue" label="Support staff" art={<ArtStaff />}
+          count={liveSupport} sub="From attendance"
+          present={supportPresent}
           loading={rosterLoading || !peopleMarksReady}
-          onClick={() => app.go('school.attendance')}
+          onClick={() => app.go('school.staff')}
         />
       </div>
 
-      <div className="sm-grid-3">
+      <div className="sd-atts">
         <AttendanceDonut
-          title="Students today"
+          title="Students attendance"
+          icon="users"
           present={studentsPresentCount}
           absent={studentsAbsentCount}
           late={studentsLateCount}
           leave={studentsLeaveCount}
           unmarked={studentsUnmarked}
-          showAway={false}
-          showMarks
-          boys={rosterQ.isSuccess ? studentSplit.boys.present : undefined}
-          girls={rosterQ.isSuccess ? studentSplit.girls.present : undefined}
+          boys={studentSplit.boys.present}
+          girls={studentSplit.girls.present}
           loading={studentHeadLoading || countsLoading}
           onClick={() => { setClassGrade(null); setClassSection(null); setSubjectName(null); setPie('students') }}
         />
         <AttendanceDonut
-          title="Teachers today"
+          title="Teachers attendance"
+          icon="cap"
           present={teacherSplit.present}
           absent={teacherSplit.absent}
           late={teacherSplit.late}
           leave={teacherSplit.leave}
           unmarked={teacherSplit.unmarked}
-          showAway={false}
-          showMarks
           loading={rosterLoading || !peopleMarksReady}
           onClick={() => setPie('teachers')}
         />
         <AttendanceDonut
-          title="Staff today"
+          title="Staff attendance"
+          icon="briefcase"
           present={staffSplit.present}
           absent={staffSplit.absent}
           late={staffSplit.late}
           leave={staffSplit.leave}
           unmarked={staffSplit.unmarked}
-          showAway={false}
-          showMarks
           loading={rosterLoading || !peopleMarksReady}
           onClick={() => setPie('staff')}
         />
@@ -775,243 +785,182 @@ function SchoolDashboard() {
         )}
       </Modal>
 
-      {/* ---- Trends: attendance line + fee donut ---- */}
-      <div className="sm-grid-2">
-        <Card>
-          <CardHead
-            title="Attendance trend"
-            sub={trendQ.isLoading
-              ? 'Loading last 8 weeks…'
-              : (attTrend.length
-                ? 'Weekly average · period marks'
-                : 'No period marks in the last 8 weeks')}
-            icon="trend"
-            action={<Btn size="sm" variant="ghost" icon="check" onClick={() => app.go('school.attendance')}>Open attendance</Btn>}
-          />
-          <div style={{ marginTop: 12 }}>
-            {trendQ.isLoading ? (
-              <Empty icon="trend" title="Loading trend…" body="Fetching weekly period attendance." />
-            ) : attTrend.length === 0 ? (
-              <Empty icon="trend" title="No attendance trend yet" body="Weekly % appears after period marks are saved." />
-            ) : attTrend.length === 1 ? (
-              <div className="t-md">
-                {attTrend[0].label}: <strong>{attTrend[0].value}%</strong>
-                <div className="t-xs muted3" style={{ marginTop: 6 }}>Need at least two marked weeks for a chart.</div>
-              </div>
-            ) : (
+      <div className="sd-more">
+        <section className="sd-card">
+          <div className="sd-att-head">
+            <span className="sd-att-ic"><Icon name="trend" size={16} /></span>
+            <div>
+              <div className="sd-att-title">Attendance trend</div>
+              <div className="sd-att-sub">{trendQ.isLoading ? 'Loading…' : attTrend.length ? 'Weekly average · period marks' : '0 present · 0%'}</div>
+            </div>
+            <button type="button" className="sd-att-link" onClick={() => app.go('school.attendance')}>View details →</button>
+          </div>
+          {attTrend.length >= 2 ? (
+            <div style={{ marginTop: 8 }}>
               <LineChart
-                series={[{ data: attTrend.map((p) => p.value), color: 'var(--brand-600)', label: 'Attendance %' }]}
+                series={[{ data: attTrend.map((p) => p.value), color: '#818cf8', label: 'Attendance %' }]}
                 labels={attTrend.map((p) => p.label)} yMax={100} yFmt={(v) => `${Math.round(v)}%`}
               />
-            )}
+            </div>
+          ) : (
+            <div className="sd-att-body">
+              <Ring rate={attTrend[0]?.value ?? 0} />
+              <ul className="sd-att-legend">
+                <li><i style={{ background: PIE_COLOR.present }} />This week<b>{attTrend[0] ? `${attTrend[0].value}%` : '0%'}</b></li>
+                <li><i style={{ background: '#94a3b8' }} />Weeks marked<b>{fmtNum(attTrend.length)}</b></li>
+              </ul>
+            </div>
+          )}
+        </section>
+        <section className="sd-card">
+          <div className="sd-att-head">
+            <span className="sd-att-ic"><Icon name="rupee" size={16} /></span>
+            <div>
+              <div className="sd-att-title">Fee collection</div>
+              <div className="sd-att-sub">{feeLoading ? 'Loading…' : `${fmtMoney(collectedTerm, cur)} collected · ${collectedPct}%`}</div>
+            </div>
+            <button type="button" className="sd-att-link" onClick={() => app.go('school.fees')}>View details →</button>
           </div>
-        </Card>
+          <div className="sd-att-body">
+            <Ring rate={feeLoading ? 0 : collectedPct} />
+            <ul className="sd-att-legend wide">
+              <li><i style={{ background: PIE_COLOR.present }} />Collected<b>{feeLoading ? '—' : fmtMoney(collectedTerm, cur)}</b></li>
+              <li><i style={{ background: '#94a3b8' }} />Outstanding<b>{feeLoading ? '—' : fmtMoney(outstanding, cur)}</b></li>
+              <li><i style={{ background: PIE_COLOR.late }} />Due<b>{feeLoading ? '—' : fmtNum(defaulters)}</b></li>
+              <li><i style={{ background: '#818cf8' }} />Today<b>{feeLoading ? '—' : fmtMoney(feesToday, cur)}</b></li>
+            </ul>
+          </div>
+        </section>
+      </div>
 
-        <Card>
-          <CardHead
-            title="Fee collection"
-            sub={feeLoading ? 'Loading…' : `Term billed ${fmtMoney(billedTerm, cur)}`}
-            icon="rupee" iconBg="var(--success-bg)" iconColor="var(--success)"
-            action={<Btn size="sm" variant="ghost" icon="rupee" onClick={() => app.go('school.fees')}>Open fees</Btn>}
-          />
-          <div className="row ai-center jc-between gap16 wrap" style={{ marginTop: 12 }}>
+      <div className="sd-more-3">
+        <section className="sd-card">
+          <div className="sd-att-head">
+            <span className="sd-att-ic"><Icon name="layers" size={16} /></span>
+            <div>
+              <div className="sd-att-title">Enrolment by stage</div>
+              <div className="sd-att-sub">{countsLoading ? 'Loading…' : `${fmtNum(liveStudents)} students`}</div>
+            </div>
+          </div>
+          <div className="sd-att-body">
+            <Donut
+              segments={stageSlices.filter((st) => st.value > 0)}
+              size={128} thickness={12}
+              center={<div style={{ textAlign: 'center' }}><div style={{ fontSize: 22, fontWeight: 800, lineHeight: 1 }}>{countsLoading ? '—' : fmtNum(liveStudents)}</div><div className="t-xs muted3">students</div></div>}
+            />
+            <ul className="sd-att-legend">
+              {(stageSlices.filter((st) => st.value > 0).length ? stageSlices.filter((st) => st.value > 0) : [{ label: 'Primary', value: 0, color: '#94a3b8' }]).map((st) => (
+                <li key={st.label}><i style={{ background: st.color }} />{st.label}<b>{countsLoading ? '—' : fmtNum(st.value)}</b></li>
+              ))}
+            </ul>
+          </div>
+        </section>
+        <section className="sd-card">
+          <div className="sd-att-head">
+            <span className="sd-att-ic"><Icon name="users" size={16} /></span>
+            <div>
+              <div className="sd-att-title">Gender ratio</div>
+              <div className="sd-att-sub">{countsLoading ? 'Loading…' : `${fmtNum(gender.boys)} boys · ${fmtNum(gender.girls)} girls`}</div>
+            </div>
+          </div>
+          <div className="sd-att-body">
             <Donut
               segments={[
-                { value: Math.max(collectedPct, 0), color: 'var(--success)', label: 'Collected' },
-                { value: Math.max(100 - collectedPct, 0), color: 'var(--surface-3)', label: 'Pending' },
-              ]}
-              size={148} thickness={18}
-              center={
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 26, fontWeight: 800, fontFamily: 'var(--font-display)', lineHeight: 1 }}>
-                    {feeLoading ? '—' : `${collectedPct}%`}
-                  </div>
-                  <div className="t-xs muted3" style={{ marginTop: 2 }}>collected</div>
-                </div>
-              }
+                { value: gender.boys, color: PIE_COLOR.boys, label: 'Boys' },
+                { value: gender.girls, color: PIE_COLOR.girls, label: 'Girls' },
+                ...(gender.unspecified ? [{ value: gender.unspecified, color: '#94a3b8', label: 'Unspecified' }] : []),
+              ].filter((part) => part.value > 0)}
+              size={128} thickness={12}
+              center={<div style={{ textAlign: 'center' }}><div style={{ fontSize: 22, fontWeight: 800, lineHeight: 1 }}>{countsLoading ? '—' : `${gender.boys}:${gender.girls}`}</div><div className="t-xs muted3">boys : girls</div></div>}
             />
-            <div className="col gap12" style={{ flex: 1, minWidth: 160 }}>
-              <Legend items={[
-                { color: 'var(--success)', label: `Collected — ${feeLoading ? '—' : fmtMoney(collectedTerm, cur)}` },
-                { color: 'var(--surface-3)', label: `Outstanding — ${feeLoading ? '—' : fmtMoney(outstanding, cur)}` },
-              ]} />
-              <div className="t-sm muted">
-                {feeLoading
-                  ? 'Loading fee summary…'
-                  : `${fmtNum(defaulters)} due / partial · today ${fmtMoney(feesToday, cur)}`}
-              </div>
-              {latestPayment && (
-                <div className="t-xs muted3">
-                  Latest · {fmtMoney(latestPayment.amount, cur)} · {latestPayment.studentName} ({latestPayment.cls})
-                </div>
-              )}
+            <ul className="sd-att-legend">
+              <li><i style={{ background: PIE_COLOR.boys }} />Boys<b>{countsLoading ? '—' : fmtNum(gender.boys)}</b></li>
+              <li><i style={{ background: PIE_COLOR.girls }} />Girls<b>{countsLoading ? '—' : fmtNum(gender.girls)}</b></li>
+              {gender.unspecified ? <li><i style={{ background: '#94a3b8' }} />Unspecified<b>{fmtNum(gender.unspecified)}</b></li> : null}
+            </ul>
+          </div>
+        </section>
+        <section className="sd-card">
+          <div className="sd-att-head">
+            <span className="sd-att-ic"><Icon name="cap" size={16} /></span>
+            <div>
+              <div className="sd-att-title">Result distribution</div>
+              <div className="sd-att-sub">{examBandsQ.data?.examName || '0 marked · 0%'}</div>
             </div>
           </div>
-          {feeByClass.length > 0 && (
-            <div style={{ marginTop: 16 }}>
-              <div className="t-xs muted3" style={{ marginBottom: 8 }}>Outstanding by class</div>
-              <Bars
-                data={feeByClass.slice(0, 8).map((c) => ({
-                  value: c.value,
-                  label: c.label,
-                  color: c.value > 0 ? 'var(--warning)' : 'var(--success)',
-                }))}
-                h={120}
-                valueFmt={(v) => fmtMoney(v, cur)}
+          {examBands.length === 0 ? (
+            <div className="sd-att-body">
+              <Ring rate={0} />
+              <ul className="sd-att-legend">
+                <li><i style={{ background: PIE_COLOR.present }} />Marked<b>0</b></li>
+                <li><i style={{ background: '#94a3b8' }} />Bands<b>0</b></li>
+              </ul>
+            </div>
+          ) : (
+            <div className="sd-att-body">
+              <Donut
+                segments={examBands.map((b) => ({ value: b.value, color: b.color, label: b.label }))}
+                size={128} thickness={12}
+                center={<div style={{ textAlign: 'center' }}><div style={{ fontSize: 22, fontWeight: 800, lineHeight: 1 }}>{fmtNum(examBands.reduce((n, b) => n + b.value, 0))}</div><div className="t-xs muted3">marked</div></div>}
               />
+              <ul className="sd-att-legend">
+                {examBands.map((b) => <li key={b.label}><i style={{ background: b.color }} />{b.label}<b>{fmtNum(b.value)}</b></li>)}
+              </ul>
             </div>
           )}
-        </Card>
+        </section>
       </div>
 
-      {/* ---- Composition: stages · gender · results ---- */}
-      <div className="sm-grid-3">
-        <Card>
-          <CardHead title="Enrolment by stage" icon="layers" iconBg="var(--info-bg)" iconColor="var(--info)" />
-          {countsLoading ? (
-            <Empty icon="layers" title="Loading enrolment…" body="Counting students by grade." />
-          ) : liveStudents === 0 || stageSlices.every((st) => st.value === 0) ? (
-            <Empty icon="layers" title="No enrolment yet" body="Stage split appears after students are on the roster." />
-          ) : (
-            <>
-              <div className="row ai-center jc-center" style={{ margin: '8px 0 14px' }}>
-                <Donut
-                  segments={stageSlices.filter((st) => st.value > 0)}
-                  size={138} thickness={16}
-                  center={<div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 20, fontWeight: 800, fontFamily: 'var(--font-display)', lineHeight: 1 }}>{fmtNum(liveStudents)}</div>
-                    <div className="t-xs muted3">students</div>
-                  </div>}
-                />
-              </div>
-              <Legend items={stageSlices.filter((st) => st.value > 0).map((st) => ({
-                color: st.color,
-                label: `${st.label} — ${fmtNum(st.value)}`,
-              }))} />
-            </>
-          )}
-        </Card>
-
-        <Card>
-          <CardHead title="Gender ratio" icon="users" iconBg="var(--platinum-bg)" iconColor="var(--platinum)" />
-          {countsLoading ? (
-            <Empty icon="users" title="Loading gender…" body="Counting recorded student gender." />
-          ) : liveStudents === 0 ? (
-            <Empty icon="users" title="No students yet" body="Gender ratio uses each student’s recorded gender." />
-          ) : (
-            <>
-              <div className="row ai-center jc-center" style={{ margin: '8px 0 14px' }}>
-                <Donut
-                  segments={[
-                    ...(gender.boys ? [{ value: gender.boys, color: '#0ea5e9', label: 'Boys' }] : []),
-                    ...(gender.girls ? [{ value: gender.girls, color: '#ec4899', label: 'Girls' }] : []),
-                    ...(gender.unspecified ? [{ value: gender.unspecified, color: '#94a3b8', label: 'Unspecified' }] : []),
-                  ]}
-                  size={138} thickness={16}
-                  center={<div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 20, fontWeight: 800, fontFamily: 'var(--font-display)', lineHeight: 1 }}>
-                      {gender.boys}:{gender.girls}
-                    </div>
-                    <div className="t-xs muted3">boys : girls</div>
-                  </div>}
-                />
-              </div>
-              <Legend items={[
-                { color: '#0ea5e9', label: `Boys — ${fmtNum(gender.boys)}` },
-                { color: '#ec4899', label: `Girls — ${fmtNum(gender.girls)}` },
-                ...(gender.unspecified ? [{ color: '#94a3b8', label: `Unspecified — ${fmtNum(gender.unspecified)}` }] : []),
-              ]} />
-            </>
-          )}
-        </Card>
-
-        <Card>
-          <CardHead
-            title="Result distribution"
-            sub={examBandsQ.data?.examName ? examBandsQ.data.examName : 'Latest exam · saved grades'}
-            icon="cap" iconBg="var(--gold-bg)" iconColor="var(--gold)"
-          />
-          <div style={{ marginTop: 12 }}>
-            {examBandsQ.isLoading ? (
-              <Empty icon="cap" title="Loading results…" body="Reading saved exam grades." />
-            ) : examBands.length === 0 ? (
-              <Empty icon="cap" title="No exam grades yet" body="Grade bands appear after marks are saved on an exam paper." />
-            ) : (
-              <>
-                <Bars
-                  data={examBands.map((b) => ({ value: b.value, label: b.label, color: b.color }))}
-                  h={150} valueFmt={(v) => `${v}`}
-                />
-                <div className="t-xs muted3" style={{ marginTop: 8 }}>
-                  Students per band · {fmtNum(examBands.reduce((n, b) => n + b.value, 0))} marked papers
-                </div>
-              </>
-            )}
+      <div className="sd-more">
+        <section className="sd-card">
+          <div className="sd-att-head">
+            <span className="sd-att-ic"><Icon name="zap" size={16} /></span>
+            <div>
+              <div className="sd-att-title">Live activity</div>
+              <div className="sd-att-sub">{activity.length ? `${fmtNum(activity.length)} updates` : '0 updates'}</div>
+            </div>
           </div>
-        </Card>
-      </div>
-
-      {/* ---- Live activity + announcements ---- */}
-      <div className="sm-grid-2">
-        <Card>
-          <CardHead
-            title="Live activity"
-            sub="Fees · attendance · staff"
-            icon="zap" iconBg="var(--warning-bg)" iconColor="var(--warning)"
-            action={<Badge tone="success" dot>Live</Badge>}
-          />
-          <div className="col gap12" style={{ marginTop: 12 }}>
-            {activity.length === 0 ? (
-              <Empty icon="zap" title="No live activity yet" body="Fee payments and attendance will show here." />
-            ) : activity.map((a, i) => (
-              <div key={i} className="row ai-center gap12">
-                <span className="sm-dot-live" />
-                <div className="t-md" style={{ flex: 1 }}>{a.text}</div>
-                <div className="t-xs muted3" style={{ whiteSpace: 'nowrap' }}>{a.time}</div>
-              </div>
+          <ul className="sd-att-legend wide" style={{ marginTop: 12 }}>
+            {(activity.length ? activity : [{ time: '', text: 'Fee payments and attendance show here' }]).map((a, i) => (
+              <li key={i}>
+                <i style={{ background: ['#22C55E', '#3B82F6', '#7C3AED', '#F59E0B'][i % 4] }} />
+                <span>{a.text}</span>
+              </li>
             ))}
+          </ul>
+        </section>
+        <section className="sd-card">
+          <div className="sd-att-head">
+            <span className="sd-att-ic"><Icon name="bell" size={16} /></span>
+            <div>
+              <div className="sd-att-title">Announcements</div>
+              <div className="sd-att-sub">{liveAnnouncements.length ? `${fmtNum(liveAnnouncements.length)} notices` : '0 notices'}</div>
+            </div>
+            <button type="button" className="sd-att-link" onClick={() => app.go('school.comm')}>View details →</button>
           </div>
-        </Card>
-
-        <Card>
-          <CardHead
-            title="Announcements"
-            sub="School-wide notices"
-            icon="bell" iconBg="var(--danger-bg)" iconColor="var(--danger)"
-            action={<Btn size="sm" variant="ghost" onClick={() => app.go('school.comm')}>View all</Btn>}
-          />
-          <div className="col gap12" style={{ marginTop: 12 }}>
-            {announcementsQ.isLoading ? (
-              <div className="t-sm muted">Loading announcements…</div>
-            ) : liveAnnouncements.length === 0 ? (
-              <Empty icon="bell" title="No announcements" body="Published notices will appear here." />
-            ) : liveAnnouncements.map((a, i) => (
-              <div key={i} className="row ai-center gap12">
-                <Badge tone={a.tone}>{a.tag}</Badge>
-                <div className="t-md" style={{ flex: 1 }}>{a.title}</div>
-                <div className="t-xs muted3" style={{ whiteSpace: 'nowrap' }}>{a.when}</div>
-              </div>
-            ))}
-          </div>
-        </Card>
+          <ul className="sd-att-legend wide" style={{ marginTop: 12 }}>
+            {announcementsQ.isLoading ? <li><i style={{ background: '#94a3b8' }} />Loading<b>—</b></li>
+              : liveAnnouncements.length === 0 ? <li><i style={{ background: '#94a3b8' }} />Notices<b>0</b></li>
+              : liveAnnouncements.map((a, i) => (
+                <li key={i}><i style={{ background: ['#3B82F6', '#22C55E', '#7C3AED', '#F59E0B'][i % 4] }} />{a.title}<b>{a.when || a.tag}</b></li>
+              ))}
+          </ul>
+        </section>
       </div>
     </div>
   )
 }
 
-/* Present / absent / not-marked pie. Teachers and staff use unmarked as away. */
 function AttendanceDonut({
-  title, present, absent = 0, late = 0, leave = 0, unmarked, awayLabel = 'Not marked', showAway = true, showMarks = false, boys, girls, loading, onClick,
+  title, icon, present, absent = 0, late = 0, leave = 0, unmarked, boys, girls, loading, onClick,
 }: {
   title: string
+  icon: string
   present: number
   absent?: number
   late?: number
   leave?: number
   unmarked: number
-  awayLabel?: string
-  showAway?: boolean
-  showMarks?: boolean
   boys?: number
   girls?: number
   loading?: boolean
@@ -1019,91 +968,92 @@ function AttendanceDonut({
 }) {
   const total = present + absent + late + leave + unmarked
   const rate = total ? Math.round((present / total) * 100) : 0
-  const segments = [
-    ...(present ? [{ value: present, color: 'var(--success)', label: 'Present' }] : []),
-    ...(absent ? [{ value: absent, color: 'var(--danger)', label: 'Absent' }] : []),
-    ...(late ? [{ value: late, color: '#D97706', label: 'Late' }] : []),
-    ...(leave ? [{ value: leave, color: PIE_COLOR.leave, label: 'Leave' }] : []),
-    ...(showAway && unmarked ? [{ value: unmarked, color: 'var(--surface-3)', label: awayLabel }] : []),
+  const rows = [
+    { color: PIE_COLOR.present, label: 'Present', value: present },
+    { color: PIE_COLOR.absent, label: 'Absent', value: absent },
+    { color: PIE_COLOR.late, label: 'Late', value: late },
+    { color: PIE_COLOR.leave, label: 'Leave', value: leave },
+    ...(boys != null ? [{ color: PIE_COLOR.boys, label: 'Boys', value: boys }] : []),
+    ...(girls != null ? [{ color: PIE_COLOR.girls, label: 'Girls', value: girls }] : []),
   ]
-  const legend = showMarks
-    ? [
-        { color: 'var(--success)', label: `Present — ${fmtNum(present)}` },
-        { color: 'var(--danger)', label: `Absent — ${fmtNum(absent)}` },
-        { color: '#D97706', label: `Late — ${fmtNum(late)}` },
-        { color: PIE_COLOR.leave, label: `Leave — ${fmtNum(leave)}` },
-        ...(boys != null ? [{ color: PIE_COLOR.boys, label: `Boys — ${fmtNum(boys)}` }] : []),
-        ...(girls != null ? [{ color: PIE_COLOR.girls, label: `Girls — ${fmtNum(girls)}` }] : []),
-      ]
-    : [
-        { color: 'var(--success)', label: `Present — ${fmtNum(present)}` },
-        ...(late ? [{ color: '#D97706', label: `Late — ${fmtNum(late)}` }] : []),
-        ...(absent ? [{ color: 'var(--danger)', label: `Absent — ${fmtNum(absent)}` }] : []),
-        ...(showAway && unmarked ? [{ color: 'var(--surface-3)', label: `${awayLabel} — ${fmtNum(unmarked)}` }] : []),
-      ]
   return (
-    <Card hover onClick={onClick}>
-      <CardHead title={title} sub={loading ? 'Loading…' : `${fmtNum(present)} present · ${rate}%`} icon="users" />
-      {loading ? (
-        <Empty icon="users" title="Loading attendance…" body="Counting who is present today." />
-      ) : total === 0 ? (
-        <Empty icon="users" title="No one on the roster" body="Present and absent appear after people are added." />
-      ) : (
-        <>
-          <div className="row ai-center jc-center" style={{ margin: '8px 0 14px' }}>
-            {segments.length > 0 ? (
-              <Donut
-                segments={segments}
-                size={138} thickness={16}
-                center={<div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 20, fontWeight: 800, fontFamily: 'var(--font-display)', lineHeight: 1 }}>{fmtNum(present)}</div>
-                  <div className="t-xs muted3">present</div>
-                </div>}
-              />
-            ) : (
-              <div style={{ textAlign: 'center', padding: '28px 0' }}>
-                <div style={{ fontSize: 20, fontWeight: 800, fontFamily: 'var(--font-display)', lineHeight: 1 }}>{fmtNum(present)}</div>
-                <div className="t-xs muted3">present</div>
-              </div>
-            )}
-          </div>
-          <Legend items={legend} />
-        </>
-      )}
-    </Card>
+    <button type="button" className="sd-att" onClick={onClick}>
+      <div className="sd-att-head">
+        <span className="sd-att-ic"><Icon name={icon} size={16} /></span>
+        <div>
+          <div className="sd-att-title">{title}</div>
+          <div className="sd-att-sub">{loading ? 'Loading…' : `${fmtNum(present)} present · ${rate}%`}</div>
+        </div>
+        <span className="sd-att-link">View details →</span>
+      </div>
+      <div className="sd-att-body">
+        <Ring rate={loading ? 0 : rate} />
+        <ul className="sd-att-legend">
+          {rows.map((row) => (
+            <li key={row.label}><i style={{ background: row.color }} />{row.label}<b>{loading ? '—' : fmtNum(row.value)}</b></li>
+          ))}
+        </ul>
+      </div>
+    </button>
   )
 }
 
-/* ---------- People-at-a-glance card ---------- */
-function PeopleCard({ icon, tone, label, count, sub, rate, present, total, foot, loading, onClick }: {
-  icon: string; tone: string; label: string; count: number; sub: string
-  rate: number; present: number; total: number; foot?: string; loading?: boolean; onClick: () => void
-}) {
+function Ring({ rate }: { rate: number }) {
+  const r = 46
+  const c = 2 * Math.PI * r
+  const dash = (Math.max(0, Math.min(100, rate)) / 100) * c
   return (
-    <Card hover onClick={onClick} className="sm-kpi sm-people-card" style={{ '--kpi-accent': tone } as CSSProperties}>
-      <div className="row ai-center jc-between">
-        <div className="row ai-center gap12">
-          <span className="sm-kpi-ic" style={{ marginBottom: 0 }}>
-            <Icon name={icon} size={18} />
-          </span>
-          <div>
-            <div className="sm-kpi-label">{label}</div>
-            <div className="sm-kpi-val" style={{ fontSize: 22, marginTop: 2 }}>{fmtNum(count)}</div>
-          </div>
-        </div>
-        <Icon name="chevRight" size={18} className="sm-people-chev" />
-      </div>
-      <div className="t-sm sm-people-sub" style={{ marginTop: 10 }}>{sub}</div>
-      <div className="row ai-center gap8 wrap" style={{ marginTop: 10 }}>
-        <div className="sm-meter sm-people-meter" style={{ flex: '1 1 80px', width: 'auto', minWidth: 64 }}>
-          <span style={{ width: `${loading ? 0 : rate}%` }} />
-        </div>
-        <span className="t-xs sm-kpi-foot" style={{ marginTop: 0 }}>
-          {loading ? 'Loading…' : (foot ?? `${fmtNum(present)} of ${fmtNum(total)} present`)}
-        </span>
-      </div>
-    </Card>
+    <svg width="128" height="128" viewBox="0 0 128 128" aria-hidden>
+      <circle cx="64" cy="64" r={r} fill="none" stroke="#e7eef8" strokeWidth="12" />
+      {dash > 0 ? (
+        <circle cx="64" cy="64" r={r} fill="none" stroke="#818cf8" strokeWidth="12" strokeLinecap="round"
+          strokeDasharray={`${dash} ${c - dash}`} transform="rotate(-90 64 64)" />
+      ) : null}
+      <text x="64" y="70" textAnchor="middle" fontSize="26" fontWeight="800" fill="#0f172a">{rate}%</text>
+    </svg>
   )
+}
+
+function PeopleCard({ tone, label, count, sub, present, ok, loading, onClick, art }: {
+  tone: 'violet' | 'green' | 'blue' | 'peach'
+  label: string
+  count: number | string
+  sub: string
+  present?: number
+  ok?: string
+  loading?: boolean
+  onClick: () => void
+  art: ReactNode
+}) {
+  const figure = typeof count === 'number' ? fmtNum(count) : count
+  const line = ok ?? `✓ ${fmtNum(present ?? 0)} present`
+  return (
+    <button type="button" className={`sd-person ${tone}`} onClick={onClick}>
+      <div className="sd-person-main">
+        <div className="sd-person-label">{label}</div>
+        <div className="sd-person-val">{loading ? '—' : figure}</div>
+        <div className="sd-person-sub">{sub}</div>
+        <div className="sd-person-ok">{loading ? 'Loading…' : line}</div>
+        <span className="sd-person-link">View all →</span>
+      </div>
+      {art}
+    </button>
+  )
+}
+
+function SchoolArt({ school }: { school: { name: string; imageUrl?: string | null; logoUrl?: string | null } }) {
+  const src = school.imageUrl?.trim() || school.logoUrl?.trim()
+  if (src) return <img className="sd-art sd-art-school sd-art-photo" src={src} alt={school.name} />
+  return <img className="sd-art sd-art-school" src={dashSchool} alt="" />
+}
+function ArtStudents() {
+  return <img className="sd-art sd-art-people" src={dashStudents} alt="" />
+}
+function ArtTeacher() {
+  return <img className="sd-art sd-art-people" src={dashTeachers} alt="" />
+}
+function ArtStaff() {
+  return <img className="sd-art sd-art-people" src={dashStaff} alt="" />
 }
 
 /* ============================================================

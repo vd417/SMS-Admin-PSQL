@@ -36,6 +36,7 @@ export const ROLE_META: Record<Role, RoleMeta> = {
   vice_principal: { label: 'Vice-Principal', short: 'VP', desc: 'Academic lead (maps to Principal on invite)' },
   teacher: { label: 'Teacher', short: 'TE', desc: 'Teacher — marks, attendance & homework for own classes' },
   staff: { label: 'Staff', short: 'ST', desc: 'Non-teaching staff — office, transport, library, etc.' },
+  receptionist: { label: 'Receptionist', short: 'RC', desc: 'Front office — admissions, gate, appointments, and published admission fees' },
 }
 export const PERMS: Record<string, Record<GateRole, Cap[]>> = {
   setup: { admin: ['E'], principal: ['V', 'E'], vice_principal: ['V'], teacher: [], staff: [] },

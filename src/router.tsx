@@ -61,7 +61,16 @@ const VIEWS: Record<string, ViewMeta> = {
   // Administration (Phase 5)
   'school.reports': { title: 'Reports', phase: 5 },
   'school.identity': { title: 'Identity & Access', phase: 5 },
+  'school.audit': { title: 'Audit log', phase: 5 },
   'school.settings': { title: 'Settings', phase: 5 },
+  'school.frontdesk': { title: 'Front desk', phase: 5 },
+  'school.front.admissions': { title: 'Admissions & Enquiries', phase: 5 },
+  'school.front.directory': { title: 'Student & Parent Directory', phase: 5 },
+  'school.front.gate': { title: 'Gate', phase: 5 },
+  'school.front.appointments': { title: 'Appointments & Meetings', phase: 5 },
+  'school.front.messages': { title: 'Messages', phase: 5 },
+  'school.front.tasks': { title: 'My Tasks', phase: 5 },
+  'school.front.profile': { title: 'Profile', phase: 5 },
 }
 
 export function Router() {
@@ -75,8 +84,12 @@ export function Router() {
   }
 
   // Identity & access is Admin-only (owner inherits admin powers via gateRole)
-  if (app.view === 'school.identity' && gateRole(app.role) !== 'admin') {
-    return <RestrictedScreen title="Identity & Access" note="Identity & access is limited to the School Admin and the Owner workspace." />
+  if (app.role === 'receptionist' && !app.view.startsWith('school.front')) {
+    return <RestrictedScreen title="Front office" note="The receptionist desk is admissions, the directory, the gate, appointments, messages, and tasks." />
+  }
+
+  if ((app.view === 'school.identity' || app.view === 'school.audit') && gateRole(app.role) !== 'admin') {
+    return <RestrictedScreen title="Identity & Access" note="Identity & access and the audit log are limited to the school owner and admin." />
   }
 
   const Screen = screenRegistry[app.view]

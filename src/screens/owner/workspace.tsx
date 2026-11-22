@@ -1165,15 +1165,29 @@ const AUDIT_ACTION_LABEL: Record<string, string> = {
   'user.permissions_changed': 'Changed permissions',
   'role_template.updated': 'Updated role template',
 }
+const AUDIT_ACTION_OPTIONS = [
+  { value: '', label: 'All actions' },
+  { value: 'user.role_changed', label: 'Changed role' },
+  { value: 'user.permissions_changed', label: 'Changed permissions' },
+  { value: 'role_template.updated', label: 'Updated role template' },
+]
 
 function AuditTab({ schoolId, schools, onPickSchool }: { schoolId: string; schools: School[]; onPickSchool: (id: string) => void }) {
+  const [action, setAction] = useState('')
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
   const [q, setQ] = useState('')
   const [cursor, setCursor] = useState<string | undefined>(undefined)
   const [rows, setRows] = useState<AuditEntry[]>([])
-  const action = q.trim() || undefined
-  const auditQ = useAuditLog({ action, cursor })
+  const auditQ = useAuditLog({
+    action: action || undefined,
+    from: from || undefined,
+    to: to ? `${to}T23:59:59` : undefined,
+    q: q.trim() || undefined,
+    cursor,
+  })
 
-  useEffect(() => { setCursor(undefined); setRows([]) }, [action, schoolId])
+  useEffect(() => { setCursor(undefined); setRows([]) }, [action, from, to, q, schoolId])
   useEffect(() => {
     if (!schoolId || schoolId === ALL_SCHOOLS_ID || !auditQ.data) return
     setRows((prev) => (cursor ? [...prev, ...auditQ.data.data] : auditQ.data.data))
@@ -1185,9 +1199,15 @@ function AuditTab({ schoolId, schools, onPickSchool }: { schoolId: string; schoo
 
   return (
     <Card pad={false}>
+      <div className="t-xs muted" style={{ padding: '12px 16px 0' }}>
+        This school only. Other schools stay hidden.
+      </div>
       <div className="row ai-center gap12 wrap" style={{ padding: 16, borderBottom: '1px solid var(--border)' }}>
-        <Search value={q} onChange={setQ} placeholder="Filter by action, e.g. user.role_changed…" style={{ flex: 1, minWidth: 220 }} />
-        <Badge tone="neutral" icon="clock">Recent activity</Badge>
+        <Select aria-label="Action" options={AUDIT_ACTION_OPTIONS} value={action} onChange={(e) => setAction(e.target.value)} style={{ minWidth: 180 }} />
+        <Input aria-label="From" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+        <Input aria-label="To" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+        <Search value={q} onChange={setQ} placeholder="Search person, action, or target" style={{ flex: 1, minWidth: 220 }} />
+        <Badge tone="neutral" icon="clock">This school</Badge>
       </div>
       {auditQ.isLoading && rows.length === 0 ? (
         <div style={{ padding: 24 }}><Spinner /></div>

@@ -21,6 +21,29 @@ export interface CreateNotificationInput {
   tone?: string
 }
 
+export interface AppointmentNoticeResult {
+  notified: number
+  parentNotified: boolean
+  teacherNotified: boolean
+}
+
+/** Desk appointment: principal app, the teacher when one is chosen, the parent login, and school CRM users. */
+export async function notifyAppointment(input: {
+  parentName: string
+  parentPhone?: string
+  with: string
+  teacherUserId?: string
+  teacherName?: string
+  when: string
+  reason?: string
+}): Promise<AppointmentNoticeResult> {
+  const wire = await request<Record<string, unknown>>('/front-office/appointments/notify', {
+    method: 'POST',
+    body: camelToSnake(input),
+  })
+  return snakeToCamel<AppointmentNoticeResult>(wire)
+}
+
 /** Drops a bell-icon notification for every staff member in the tenant (no userId = broadcast). */
 export async function createNotification(input: CreateNotificationInput): Promise<AppNotification> {
   const wire = await request<unknown>('/notifications', {

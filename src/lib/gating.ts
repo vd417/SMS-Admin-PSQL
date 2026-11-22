@@ -18,12 +18,15 @@ export function requiredTier(feature: string): Tier {
 
 /** Normalize owner → admin for matrix lookups (owner inherits admin's row). */
 export function gateRole(role: Role): GateRole {
-  return role === 'owner' ? 'admin' : role
+  if (role === 'owner') return 'admin'
+  if (role === 'receptionist') return 'staff'
+  return role
 }
 
 const ALL_CAPS: Cap[] = ['V', 'E', 'A']
 
 export function can(role: Role, module: string, cap: Cap): boolean {
+  if (role === 'receptionist') return false
   // Founding owner has full access (admin + principal powers) — mirrors the backend,
   // where school.owner satisfies both the SchoolAdmin and Principal policies.
   if (role === 'owner') return true
@@ -33,6 +36,7 @@ export function can(role: Role, module: string, cap: Cap): boolean {
 }
 
 export function caps(role: Role, module: string): Cap[] {
+  if (role === 'receptionist') return []
   if (role === 'owner') return [...ALL_CAPS]
   return (PERMS[module] || {})[gateRole(role)] || []
 }

@@ -11,7 +11,7 @@ import { useApp, useToast } from '@/lib/hooks'
 import { can, tierIncludes } from '@/lib/gating'
 import {
   PageHead, Card, CardHead, Btn, Badge, Avatar, Search, Select, Segmented, Input,
-  Icon, Empty, DataTable, Kpi, LineChart, type Column, type BadgeTone,
+  Icon, Empty, DataTable, LineChart, type Column, type BadgeTone,
 } from '@/components/ui'
 import { RestrictedScreen } from '@/components/shell/gates'
 import { useStudents } from '@/api/hooks/useStudents'
@@ -20,6 +20,13 @@ import { useStaff } from '@/api/hooks/useStaff'
 import { useStaffCheckIns } from '@/api/hooks/usePrincipalAttendance'
 import { usePeriodAttendanceRangeSummary, useDashboardAttendanceTrend } from '@/api/hooks/usePeriodAttendanceAdvanced'
 import { fmtNum } from '@/lib/format'
+import { DashFold, DashStat } from './dashFold'
+import dashAttHead from '@/assets/dash-att-head.jpg'
+import dashAttOverall from '@/assets/dash-att-overall.jpg'
+import dashAttPresent from '@/assets/dash-att-present.jpg'
+import dashAttAbsent from '@/assets/dash-att-absent.jpg'
+import dashAttLate from '@/assets/dash-att-late.jpg'
+
 import { resolvePeoplePhoto } from '@/api/peopleExtras'
 import {
   explicitPeopleStatus,
@@ -640,32 +647,16 @@ function AttendanceScreen() {
 
       {allPeople && (
         <>
-          <div className="sm-kpi-grid" style={{ marginBottom: 16 }}>
-            <Kpi
-              icon="check" iconBg="color-mix(in srgb, #22C55E 12%, white)" iconColor="#22C55E"
-              label="Overall attendance"
-              value={countsLoading || studentPct == null ? '—' : `${studentPct}%`}
-              foot="Today · students"
-            />
-            <Kpi
-              icon="users" iconBg="color-mix(in srgb, #4F46E5 12%, white)" iconColor="#4F46E5"
-              label="Present"
-              value={countsLoading || !studentCounts ? '—' : fmtNum(studentCounts.presentStudents)}
-              foot="Today · students"
-            />
-            <Kpi
-              icon="close" iconBg="color-mix(in srgb, #DC2626 12%, white)" iconColor="#DC2626"
-              label="Absent"
-              value={countsLoading || !studentCounts ? '—' : fmtNum(studentCounts.absentStudents)}
-              foot="Today · students"
-            />
-            <Kpi
-              icon="clock" iconBg="color-mix(in srgb, #D97706 12%, white)" iconColor="#D97706"
-              label="Late"
-              value={countsLoading || !studentCounts ? '—' : fmtNum(studentCounts.lateStudents)}
-              foot="Today · students"
-            />
-          </div>
+          <DashFold title="Today's attendance" sub="Students marked today" art={<img className="sd-fold-art" src={dashAttHead} alt="" />}>
+            <DashStat tone="green" label="Overall attendance" art={<img className="sd-art sd-art-people" src={dashAttOverall} alt="" />}
+              value={countsLoading || studentPct == null ? '—' : `${studentPct}%`} sub="Share of students marked" />
+            <DashStat tone="violet" label="Present" art={<img className="sd-art sd-art-people" src={dashAttPresent} alt="" />}
+              value={countsLoading || !studentCounts ? '—' : fmtNum(studentCounts.presentStudents)} sub="In school" />
+            <DashStat tone="peach" label="Absent" art={<img className="sd-art sd-art-people" src={dashAttAbsent} alt="" />}
+              value={countsLoading || !studentCounts ? '—' : fmtNum(studentCounts.absentStudents)} sub="Not in school" />
+            <DashStat tone="blue" label="Late" art={<img className="sd-art sd-art-people" src={dashAttLate} alt="" />}
+              value={countsLoading || !studentCounts ? '—' : fmtNum(studentCounts.lateStudents)} sub="Arrived after the bell" />
+          </DashFold>
 
           <Card style={{ marginBottom: 16 }}>
             <CardHead title="Attendance trend" sub={

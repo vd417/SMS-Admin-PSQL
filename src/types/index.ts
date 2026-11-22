@@ -4,10 +4,11 @@
    ============================================================ */
 
 export type Tier = 'silver' | 'gold' | 'platinum'
-export type Role = 'owner' | 'admin' | 'principal' | 'vice_principal' | 'teacher' | 'staff'
-/* Roles that appear in the permission matrix (everything except the owner alias).
+export type Role = 'owner' | 'admin' | 'principal' | 'vice_principal' | 'teacher' | 'staff' | 'receptionist'
+/* Roles that appear in the permission matrix (everything except the owner alias and the
+   front-office receptionist, who has a fixed menu rather than the matrix).
    `owner` is intentionally excluded — it inherits the admin row via gating normalization. */
-export type GateRole = Exclude<Role, 'owner'>
+export type GateRole = Exclude<Role, 'owner' | 'receptionist'>
 export type Cap = 'V' | 'E' | 'A'
 export type ConsoleKind = 'owner' | 'school'
 

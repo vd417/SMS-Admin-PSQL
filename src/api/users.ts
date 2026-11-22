@@ -3,14 +3,14 @@ import { ApiError } from './ApiError'
 import type { Cap, Role, UserOverrides } from '@/types'
 
 /** CRM login invite roles only — Teacher/Staff use the onboard form (People), not Send invite. */
-export const CRM_INVITE_ROLES: Role[] = ['admin', 'principal', 'vice_principal']
+export const CRM_INVITE_ROLES: Role[] = ['admin', 'principal', 'vice_principal', 'receptionist']
 
 /** Roles an actor may assign via Send invite (CRM access). */
 export function assignableSchoolRoles(actorRole: Role | string | undefined): Role[] {
   const r = (actorRole ?? '').toLowerCase().replace(/^school\./, '')
   if (r === 'owner') return [...CRM_INVITE_ROLES, 'owner']
   if (r === 'admin') return [...CRM_INVITE_ROLES]
-  if (r === 'principal') return ['vice_principal']
+  if (r === 'principal') return ['vice_principal', 'receptionist']
   return []
 }
 
@@ -31,6 +31,8 @@ export function toApiRole(role: string): string {
     teacher: 'school.teacher',
     'school.teacher': 'school.teacher',
     staff: 'staff',
+    receptionist: 'school.receptionist',
+    'school.receptionist': 'school.receptionist',
     parent: 'student.parent',
     'student.parent': 'student.parent',
   }
@@ -44,6 +46,7 @@ export function fromApiRole(role: string): Role {
   if (r === 'principal') return 'principal'
   if (r === 'teacher') return 'teacher'
   if (r === 'staff') return 'staff'
+  if (r === 'receptionist') return 'receptionist'
   return 'teacher'
 }
 
@@ -55,6 +58,7 @@ export function leadershipRoleLabel(role: ReturnType<typeof fromApiRole>): strin
   if (role === 'owner') return 'Owner'
   if (role === 'admin') return 'Admin'
   if (role === 'principal') return 'Principal'
+  if (role === 'receptionist') return 'Receptionist'
   return 'Admin'
 }
 

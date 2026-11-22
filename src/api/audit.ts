@@ -28,6 +28,7 @@ export interface AuditParams {
   actorId?: string
   from?: string
   to?: string
+  q?: string
   cursor?: string
 }
 
@@ -38,6 +39,7 @@ export async function listAuditLog(params: AuditParams = {}): Promise<{ data: Au
       actor_id: params.actorId,
       from: params.from,
       to: params.to,
+      q: params.q,
       cursor: params.cursor,
     },
   })

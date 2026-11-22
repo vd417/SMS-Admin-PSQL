@@ -23,9 +23,11 @@ import { billingScreens } from './owner/billing'
 import { revenueScreens } from './owner/revenue'
 import { workspaceScreens } from './owner/workspace'
 import { adminScreens } from './school/admin'
+import { frontOfficeScreens } from './school/frontOffice'
 
 export const screenRegistry: Record<string, ComponentType> = {
   ...adminScreens,
+  ...frontOfficeScreens,
   ...dashboardScreens,
   ...sisScreens,
   ...studentAddScreens,

@@ -231,11 +231,11 @@ describe('AuditTab (Audit log tab)', () => {
   it('re-queries with the typed text as the action filter', async () => {
     listAuditLogMock.mockResolvedValue({ data: [], nextCursor: null })
     const container = await openAuditTab()
-    await waitFor(() => expect(listAuditLogMock).toHaveBeenCalledWith({ action: undefined, cursor: undefined }))
+    await waitFor(() => expect(listAuditLogMock).toHaveBeenCalledWith(expect.objectContaining({ action: undefined, q: undefined, cursor: undefined })))
 
-    const search = within(container).getByPlaceholderText(/Filter by action/i)
-    fireEvent.change(search, { target: { value: 'user.role_changed' } })
+    const search = within(container).getByPlaceholderText(/Search person, action, or target/i)
+    fireEvent.change(search, { target: { value: 'Ravi' } })
 
-    await waitFor(() => expect(listAuditLogMock).toHaveBeenCalledWith({ action: 'user.role_changed', cursor: undefined }))
+    await waitFor(() => expect(listAuditLogMock).toHaveBeenCalledWith(expect.objectContaining({ q: 'Ravi', cursor: undefined })))
   })
 })

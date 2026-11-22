@@ -261,15 +261,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // Never trust a persisted owner-console view/consoleKind for a non-owner role —
     // sessionStorage can go stale (or be tampered with) independently of the freshly
     // fetched role, and that's the one thing gating the Owner Console.
+    const frontView = role === 'receptionist'
+      && saved?.view?.startsWith('school.front') ? saved.view : 'school.frontdesk'
     if (saved?.view && (ownerConsole || !saved.view.startsWith('owner.'))) {
       setConsoleKind(ownerConsole ? (saved.consoleKind ?? 'owner') : 'school')
       setOwnerViewing(ownerConsole && !!saved.ownerViewingSchool)
-      setView(saved.view)
+      setView(role === 'receptionist' ? frontView : saved.view)
       if (saved.schoolId) setSchoolId(saved.schoolId)
     } else {
       setConsoleKind(ownerConsole ? 'owner' : 'school')
       setOwnerViewing(false)
-      setView(ownerConsole ? 'owner.dashboard' : 'school.dashboard')
+      setView(ownerConsole ? 'owner.dashboard' : role === 'receptionist' ? 'school.frontdesk' : 'school.dashboard')
     }
     tokenStore.setEmail(email)
   }
@@ -279,14 +281,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const ROLE_MAP: Record<string, Role> = {
     'school.owner': 'owner', 'school.admin': 'admin',
     'school.principal': 'principal', 'school.teacher': 'teacher',
-    staff: 'staff',
+    staff: 'staff', 'school.receptionist': 'receptionist', receptionist: 'receptionist',
     owner: 'owner', admin: 'admin', principal: 'principal',
     vice_principal: 'vice_principal', teacher: 'teacher',
   }
 
   /* When an account holds several roles (e.g. an Owner who is also admin), resolve to the
      highest-privilege one — Owner must win over admin so the founder lands on Owner Console. */
-  const ROLE_PRIORITY: Role[] = ['owner', 'admin', 'principal', 'vice_principal', 'teacher', 'staff']
+  const ROLE_PRIORITY: Role[] = ['owner', 'admin', 'principal', 'vice_principal', 'teacher', 'staff', 'receptionist']
 
   const finishLogin = async (email: string, opts?: { restoreUi?: boolean }) => {
     const profile = await fetchMe()

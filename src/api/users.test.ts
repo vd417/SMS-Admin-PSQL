@@ -20,9 +20,9 @@ describe('toApiRole', () => {
 describe('assignableSchoolRoles', () => {
   it('Send invite is CRM-only: Admin / Principal / Vice-Principal (not teacher/staff)', async () => {
     const { assignableSchoolRoles } = await import('./users')
-    expect(assignableSchoolRoles('owner')).toEqual(['admin', 'principal', 'vice_principal', 'owner'])
-    expect(assignableSchoolRoles('admin')).toEqual(['admin', 'principal', 'vice_principal'])
-    expect(assignableSchoolRoles('principal')).toEqual(['vice_principal'])
+    expect(assignableSchoolRoles('owner')).toEqual(['admin', 'principal', 'vice_principal', 'receptionist', 'owner'])
+    expect(assignableSchoolRoles('admin')).toEqual(['admin', 'principal', 'vice_principal', 'receptionist'])
+    expect(assignableSchoolRoles('principal')).toEqual(['vice_principal', 'receptionist'])
   })
 })
 

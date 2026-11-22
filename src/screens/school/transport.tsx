@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
 import { useApp, useToast } from '@/lib/hooks'
 import { can, tierIncludes } from '@/lib/gating'
 import {
-  PageHead, Card, CardHead, Kpi, Btn, Badge, Field, Input, Modal, Empty, IconBtn, Icon, Select,
+  PageHead, Card, CardHead, Btn, Badge, Field, Input, Modal, Empty, IconBtn, Icon, Select,
 } from '@/components/ui'
 import { TierGate } from '@/components/shell/gates'
 import {
@@ -24,6 +24,12 @@ import { RouteBuilderMap } from '@/components/maps/RouteBuilderMap'
 import { staffCategoryLabel } from '@/lib/staffCategory'
 import { routeMetrics } from '@/lib/routeMetrics'
 import { TransportStudentsScreen } from './transportStudents'
+import { DashFold, DashStat } from './dashFold'
+import dashTransport from '@/assets/dash-transport.jpg'
+import dashVehicle from '@/assets/dash-vehicle.jpg'
+import dashRoute from '@/assets/dash-route.jpg'
+import dashStudents from '@/assets/dash-students.jpg'
+import dashGps from '@/assets/dash-gps.jpg'
 
 const OPEN_ROUTE_KEY = 'sm.transport.openRouteId'
 const OPEN_BUS_KEY = 'sm.transport.openBusId'
@@ -77,12 +83,16 @@ function TransportDashboardBody() {
           </div>
         } />
       <div className="col gap16">
-        <div className="sm-kpi-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
-          <Kpi icon="bus" label="Vehicles" value={kpiVal(summary.isLoading, summary.isError, summary.data?.vehicles, (n) => String(n))} />
-          <Kpi icon="pin" iconBg="var(--info-bg)" iconColor="var(--info)" label="Routes" value={kpiVal(summary.isLoading, summary.isError, summary.data?.routes, (n) => String(n))} />
-          <Kpi icon="users" iconBg="var(--success-bg)" iconColor="var(--success)" label="Students" value={kpiVal(summary.isLoading, summary.isError, summary.data?.students, (n) => String(n))} />
-          <Kpi icon="zap" iconBg="var(--warning-bg)" iconColor="var(--warning)" label="Active now" value={String(active)} />
-        </div>
+        <DashFold title="Transport" sub="Routes, buses, live GPS and student assignments" art={<img className="sd-fold-art" src={dashTransport} alt="" />}>
+          <DashStat tone="blue" label="Vehicles" art={<img className="sd-art sd-art-people" src={dashVehicle} alt="" />}
+            value={kpiVal(summary.isLoading, summary.isError, summary.data?.vehicles, (n) => String(n))} sub="On the fleet" />
+          <DashStat tone="violet" label="Routes" art={<img className="sd-art sd-art-people" src={dashRoute} alt="" />}
+            value={kpiVal(summary.isLoading, summary.isError, summary.data?.routes, (n) => String(n))} sub="On the board" />
+          <DashStat tone="green" label="Students" art={<img className="sd-art sd-art-people" src={dashStudents} alt="" />}
+            value={kpiVal(summary.isLoading, summary.isError, summary.data?.students, (n) => String(n))} sub="Assigned to a bus" />
+          <DashStat tone="peach" label="Active now" art={<img className="sd-art sd-art-people" src={dashGps} alt="" />}
+            value={fleetQ.isLoading ? '…' : String(active)} sub="Buses moving" />
+        </DashFold>
 
         <div className="sm-grid-2 gap16">
           <Card pad={false}>

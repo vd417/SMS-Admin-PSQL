@@ -3,7 +3,7 @@
    ============================================================ */
 import { useApp } from '@/lib/hooks'
 import catreLogo from '@/assets/catre-logo.jpeg'
-import { Icon, Btn, Tip, TierPill } from '@/components/ui'
+import { Icon, Btn, Tip, TierPill, Avatar } from '@/components/ui'
 import { SchoolMark } from '@/components/SchoolMark'
 import { tierIncludes, gateRole, requiredTier } from '@/lib/gating'
 import { useApprovals } from '@/api/hooks/useApprovals'
@@ -26,6 +26,18 @@ const OWNER_NAV: NavGroup[] = [
   { label: 'Workspace', items: [
     { label: 'Users & Roles', view: 'owner.users', icon: 'users' },
     { label: 'Owner Settings', view: 'owner.settings', icon: 'settings' },
+  ] },
+]
+
+const RECEPTION_NAV: NavGroup[] = [
+  { items: [
+    { label: 'Dashboard', view: 'school.frontdesk', icon: 'grid' },
+    { label: 'Admissions & Enquiries', view: 'school.front.admissions', icon: 'inbox' },
+    { label: 'Student & Parent Directory', view: 'school.front.directory', icon: 'users' },
+    { label: 'Gate', view: 'school.front.gate', icon: 'checkCircle' },
+    { label: 'Appointments & Meetings', view: 'school.front.appointments', icon: 'calendar' },
+    { label: 'Messages', view: 'school.front.messages', icon: 'message' },
+    { label: 'My Tasks', view: 'school.front.tasks', icon: 'check' },
   ] },
 ]
 
@@ -59,6 +71,7 @@ function schoolNav(role: Role, approvalCount: number): NavGroup[] {
     { label: 'Administration', items: [
       { label: 'Reports', view: 'school.reports', icon: 'trend' },
       { label: 'Identity & Access', view: 'school.identity', icon: 'key', adminOnly: true },
+      { label: 'Audit Log', view: 'school.audit', icon: 'clock', adminOnly: true },
       { label: 'Settings', view: 'school.settings', icon: 'settings' },
     ].filter((i) => !i.adminOnly || gateRole(role) === 'admin') },
   ]
@@ -69,13 +82,17 @@ export function Sidebar() {
   const isOwner = app.consoleKind === 'owner'
   const { data: approvalsData } = useApprovals({ status: 'pending', enabled: !isOwner })
   const approvalCount = isOwner ? 0 : approvalsForRole(approvalsData ?? [], app.role).length
-  const groups = isOwner ? OWNER_NAV : schoolNav(app.role, approvalCount)
+  const isReception = app.role === 'receptionist'
+  const groups = isOwner ? OWNER_NAV : isReception ? RECEPTION_NAV : schoolNav(app.role, approvalCount)
 
   return (
     <aside className="sm-sidebar">
       <div className="sm-sidebar-head">
         <img className="sm-sidebar-logo" src={catreLogo} alt="SchoolMate by Catre Technologies" />
-        <div className="sm-sidebar-brand">SchoolMate<small>{isOwner ? 'Owner console' : 'School console'}</small></div>
+        <div className="sm-sidebar-brand">
+          {isReception ? app.school.name : 'SchoolMate'}
+          <small>{isOwner ? 'Owner console' : isReception ? 'Front office' : 'School console'}</small>
+        </div>
       </div>
 
       {!isOwner && (
@@ -110,7 +127,19 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {!isOwner && app.plan !== 'platinum' && (
+      {isReception && (
+        <div className="sm-sidebar-foot">
+          <div className="fo-welcome">
+            <Avatar name={app.user?.name || 'Receptionist'} size={36} />
+            <div>
+              <div className="t">Welcome</div>
+              <div className="n">{app.user?.name || 'Receptionist'}</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!isOwner && !isReception && app.plan !== 'platinum' && (
         <div className="sm-sidebar-foot">
           <div className="sm-upsell">
             <div className="t">Unlock more</div>

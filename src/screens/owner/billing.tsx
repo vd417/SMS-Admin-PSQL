@@ -6,7 +6,7 @@
 import { useMemo, useState, type ComponentType, type ReactNode } from 'react'
 import { useApp } from '@/lib/hooks'
 import {
-  PageHead, Tabs, Card, CardHead, Kpi, Badge, TierPill, Segmented, Btn, Icon, Modal,
+  PageHead, Tabs, Card, CardHead, Badge, TierPill, Segmented, Btn, Icon, Modal,
   HBars, Legend, Donut, DataTable, Empty, Spinner,
   type Column, type BadgeTone,
 } from '@/components/ui'
@@ -27,6 +27,14 @@ import { UpgradePlanModal } from '@/screens/owner/UpgradePlanModal'
 import { IncreaseSeatsModal } from '@/screens/owner/IncreaseSeatsModal'
 import type { PlanUpgradeRequest, UpgradeStatus } from '@/api/upgradeRequests'
 import { SchoolMark } from '@/components/SchoolMark'
+import { DashFold, DashStat } from '@/screens/school/dashFold'
+import dashReports from '@/assets/dash-reports.jpg'
+import dashSchool from '@/assets/dash-school.jpg'
+import dashHostel from '@/assets/dash-hostel.jpg'
+import dashFeeTerm from '@/assets/dash-fee-term.jpg'
+import dashBilling from '@/assets/dash-billing.jpg'
+import dashFees from '@/assets/dash-fees.jpg'
+import dashFeeDue from '@/assets/dash-fee-due.jpg'
 
 /* compact ₹ for charts/KPIs */
 function compactMoney(n: number): string {
@@ -163,29 +171,16 @@ function OwnerReports() {
         )}
       </Card>
 
-      <div className="sm-kpi-grid" style={{ marginBottom: 16 }}>
-        <Kpi
-          icon="trend" iconBg="var(--brand-50)" iconColor="var(--brand-600)"
-          label={meta.sum ? `Total ${meta.short}` : `Average ${meta.short}`}
-          value={meta.fmt(summary.agg)} foot={`Across ${summary.count} schools`}
-        />
-        <Kpi
-          icon="sparkle" iconBg="var(--success-bg)" iconColor="var(--success)"
-          label="Top school"
-          value={summary.top ? meta.fmt(summary.top.value) : '—'}
-          foot={summary.top?.school.name ?? '—'}
-        />
-        <Kpi
-          icon="alert" iconBg="var(--warning-bg)" iconColor="var(--warning)"
-          label="Lowest"
-          value={summary.low ? meta.fmt(summary.low.value) : '—'}
-          foot={summary.low?.school.name ?? '—'}
-        />
-        <Kpi
-          icon="building" iconBg="var(--info-bg)" iconColor="var(--info)"
-          label="Schools compared" value={fmtNum(summary.count)} foot="From your portfolio"
-        />
-      </div>
+      <DashFold title="Cross-School Reports" sub={meta.label} art={<img className="sd-fold-art" src={dashReports} alt="" />}>
+        <DashStat tone="violet" label={meta.sum ? `Total ${meta.short}` : `Average ${meta.short}`} art={<img className="sd-art sd-art-people" src={dashFeeTerm} alt="" />}
+          value={meta.fmt(summary.agg)} sub={`Across ${summary.count} schools`} />
+        <DashStat tone="green" label="Top school" art={<img className="sd-art sd-art-people" src={dashSchool} alt="" />}
+          value={summary.top ? meta.fmt(summary.top.value) : '—'} sub={summary.top?.school.name ?? '—'} />
+        <DashStat tone="peach" label="Lowest" art={<img className="sd-art sd-art-people" src={dashHostel} alt="" />}
+          value={summary.low ? meta.fmt(summary.low.value) : '—'} sub={summary.low?.school.name ?? '—'} />
+        <DashStat tone="blue" label="Schools compared" art={<img className="sd-art sd-art-people" src={dashReports} alt="" />}
+          value={fmtNum(summary.count)} sub="From your portfolio" />
+      </DashFold>
 
       <Card>
         <CardHead
@@ -797,12 +792,16 @@ function OwnerBilling() {
         sub={`${schools.length} ${schools.length === 1 ? 'school' : 'schools'} · live portfolio data`}
       />
 
-      <div className="sm-kpi-grid" style={{ marginBottom: 16 }}>
-        <Kpi icon="rupee" iconBg="var(--brand-50)" iconColor="var(--brand-600)" label="Monthly Bill" value={fmtMoney(kpis.mrr)} foot="MRR — what schools pay for SchoolMate" />
-        <Kpi icon="trend" iconBg="var(--success-bg)" iconColor="var(--success)" label="Yearly Bill" value={fmtMoney(kpis.arr)} foot="ARR — yearly run-rate (MRR × 12)" />
-        <Kpi icon="building" iconBg="var(--info-bg)" iconColor="var(--info)" label="Paying / Billed" value={fmtNum(kpis.paying)} foot={`of ${schools.length} schools`} />
-        <Kpi icon="alert" iconBg="var(--danger-bg)" iconColor="var(--danger)" label="Overdue Amount" value={fmtMoney(kpis.overdue)} foot="Past-due accounts" />
-      </div>
+      <DashFold title="Subscriptions & Billing" sub="What schools pay for SchoolMate" art={<img className="sd-fold-art" src={dashBilling} alt="" />}>
+        <DashStat tone="violet" label="Monthly Bill" art={<img className="sd-art sd-art-people" src={dashFees} alt="" />}
+          value={fmtMoney(kpis.mrr)} sub="MRR — what schools pay for SchoolMate" />
+        <DashStat tone="green" label="Yearly Bill" art={<img className="sd-art sd-art-people" src={dashFeeTerm} alt="" />}
+          value={fmtMoney(kpis.arr)} sub="ARR — yearly run-rate (MRR × 12)" />
+        <DashStat tone="blue" label="Paying / Billed" art={<img className="sd-art sd-art-people" src={dashSchool} alt="" />}
+          value={fmtNum(kpis.paying)} sub={`of ${schools.length} schools`} />
+        <DashStat tone="peach" label="Overdue Amount" art={<img className="sd-art sd-art-people" src={dashFeeDue} alt="" />}
+          value={fmtMoney(kpis.overdue)} sub="Past-due accounts" />
+      </DashFold>
 
       <Tabs
         value={tab} onChange={setTab}

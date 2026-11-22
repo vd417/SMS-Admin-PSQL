@@ -5,7 +5,7 @@
 import { useMemo, useState, useEffect, type ComponentType } from 'react'
 import { useApp, useToast } from '@/lib/hooks'
 import {
-  PageHead, Card, CardHead, Kpi, Btn, IconBtn, Badge, TierPill, Search, Select, Segmented,
+  PageHead, Card, CardHead, Btn, IconBtn, Badge, TierPill, Search, Select, Segmented,
   Field, Input, FileUpload, Modal, Icon, Empty, Donut, HBars, Legend, DataTable, Spinner,
   Popover, MenuItem, MenuSep,
   type Column, type BadgeTone,
@@ -38,6 +38,11 @@ import { updateSchoolProfile } from '@/api/schoolProfile'
 import { validateGeofenceInput, RADIUS_PRESETS } from '@/lib/geofence'
 import { capturePreciseGps, gpsFailureMessage } from '@/lib/deviceGps'
 import { useQueryClient } from '@tanstack/react-query'
+import { academicYearStart } from '@/api/studentAttendance'
+import dashSchool from '@/assets/dash-school.jpg'
+import dashStudents from '@/assets/dash-students.jpg'
+import dashStaff from '@/assets/dash-staff.jpg'
+import '../school/dashboardBoard.css'
 
 const FEE_COLORS = ['#4f46e5', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#14b8a6']
 
@@ -147,41 +152,110 @@ function OwnerDashboard() {
     return <Empty icon="alert" title="Could not load portfolio" body="Check your connection and try again." />
   }
 
+  const campus = schools.find((s) => s.id === app.school.id && (s.imageUrl?.trim() || s.logoUrl?.trim()))
+    ?? schools.find((s) => s.imageUrl?.trim() || s.logoUrl?.trim())
+  const campusSrc = campus?.imageUrl?.trim() || campus?.logoUrl?.trim() || ''
+  const greetName = (app.user?.name || '').trim().split(/\s+/)[0] || 'there'
+  const yearStart = academicYearStart()
+  const yearLabel = `${yearStart} – ${String(yearStart + 1).slice(-2)}`
+  const dateLabel = new Date().toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+
   return (
     <div className="col gap20">
-      <PageHead
-        title="Portfolio Overview"
-        sub={app.isPlatform ? 'All schools on the platform' : 'School fee revenue across your schools'}
-        actions={
-          <div className="row gap8">
-            <Btn icon="rupee" onClick={() => app.go('owner.revenue')}>Fee Collection</Btn>
-            <Btn icon="building" onClick={() => app.go('owner.schools')}>All schools</Btn>
-            <Btn variant="primary" icon="plus" onClick={() => app.go('owner.create')}>Add school branch</Btn>
+      <section className="sd-welcome">
+        <img className={campusSrc ? 'sd-art sd-art-school sd-art-photo' : 'sd-art sd-art-school'} src={campusSrc || dashSchool} alt={campus?.name || ''} />
+        <div className="sd-welcome-copy" style={{ flex: 1 }}>
+          <h1>Welcome back, {greetName}!</h1>
+          <p><span>Portfolio Overview</span> · {app.isPlatform ? 'all schools on the platform' : 'fee revenue across your schools'}</p>
+        </div>
+        <div className="sd-date">
+          <span className="ic"><Icon name="calendar" size={18} /></span>
+          <div>
+            <b>{dateLabel}</b>
+            <span>Academic year {yearLabel}</span>
           </div>
-        }
-      />
+        </div>
+      </section>
+      <div className="row gap8 wrap">
+        <Btn icon="rupee" onClick={() => app.go('owner.revenue')}>Fee Collection</Btn>
+        <Btn icon="building" onClick={() => app.go('owner.schools')}>All schools</Btn>
+        <Btn variant="primary" icon="plus" onClick={() => app.go('owner.create')}>Add school branch</Btn>
+      </div>
 
-      <div className="sm-kpi-grid">
-        <Kpi
-          icon="building" iconBg="var(--brand-50)" iconColor="var(--brand-600)"
-          label="Total Schools" value={fmtNum(schools.length)}
-          foot={`${planCounts.platinum} Platinum · ${planCounts.gold} Gold · ${planCounts.silver} Silver`}
-        />
-        <Kpi
-          icon="cap" iconBg="var(--info-bg)" iconColor="var(--info)"
-          label="Total Students" value={fmtNum(totals.students)}
-          foot={`${fmtNum(totals.staff)} staff across portfolio`}
-        />
-        <Kpi
-          icon="rupee" iconBg="var(--success-bg)" iconColor="var(--success)"
-          label="School Fee Revenue" value={feeQ.isLoading ? '…' : fmtMoney(feeCollected)}
-          foot={feeQ.isError ? 'Could not load fees' : `${fmtNum(schoolsWithCash)} schools with cash this period`}
-        />
-        <Kpi
-          icon="alert" iconBg="var(--warning-bg)" iconColor="var(--warning)"
-          label="Fees Outstanding" value={feeQ.isLoading ? '…' : fmtMoney(feeOutstanding)}
-          foot={feeQ.isError ? '—' : `${feeRate}% collection rate`}
-        />
+      <div className="sd-kpis">
+        <button type="button" className="sd-kpi blue" onClick={() => app.go('owner.schools')}>
+          <div className="sd-kpi-top">
+            <span className="sd-kpi-ic"><Icon name="building" size={16} /></span>
+            <span className="sd-kpi-label">Total schools</span>
+            <Icon name="chevRight" size={16} className="sd-kpi-go" />
+          </div>
+          <div className="sd-kpi-val">{fmtNum(schools.length)}</div>
+          <div className="sd-kpi-delta up">{planCounts.platinum} platinum · {planCounts.gold} gold · {planCounts.silver} silver</div>
+        </button>
+        <button type="button" className="sd-kpi green" onClick={() => app.go('owner.schools')}>
+          <div className="sd-kpi-top">
+            <span className="sd-kpi-ic"><Icon name="users" size={16} /></span>
+            <span className="sd-kpi-label">Total students</span>
+            <Icon name="chevRight" size={16} className="sd-kpi-go" />
+          </div>
+          <div className="sd-kpi-val">{fmtNum(totals.students)}</div>
+          <div className="sd-kpi-delta up">{fmtNum(totals.staff)} staff across the portfolio</div>
+        </button>
+        <button type="button" className="sd-kpi violet" onClick={() => app.go('owner.revenue')}>
+          <div className="sd-kpi-top">
+            <span className="sd-kpi-ic"><Icon name="rupee" size={16} /></span>
+            <span className="sd-kpi-label">Fees collected</span>
+            <Icon name="chevRight" size={16} className="sd-kpi-go" />
+          </div>
+          <div className="sd-kpi-val">{feeQ.isLoading ? '—' : fmtMoney(feeCollected)}</div>
+          <div className={feeRate > 0 ? 'sd-kpi-delta up' : 'sd-kpi-delta down'}>
+            {feeQ.isError ? 'Could not load fees' : `${feeRate}% collected`}
+          </div>
+        </button>
+        <button type="button" className="sd-kpi peach" onClick={() => app.go('owner.revenue')}>
+          <div className="sd-kpi-top">
+            <span className="sd-kpi-ic"><Icon name="wallet" size={16} /></span>
+            <span className="sd-kpi-label">Outstanding dues</span>
+            <Icon name="chevRight" size={16} className="sd-kpi-go" />
+          </div>
+          <div className="sd-kpi-val">{feeQ.isLoading ? '—' : fmtMoney(feeOutstanding)}</div>
+          <div className={feeOutstanding > 0 ? 'sd-kpi-delta down' : 'sd-kpi-delta up'}>
+            {feeQ.isError ? '—' : `${fmtNum(schoolsWithCash)} schools with cash`}
+          </div>
+        </button>
+      </div>
+
+      <div className="sd-people">
+        <button type="button" className="sd-person violet" onClick={() => app.go('owner.schools')}>
+          <div className="sd-person-main">
+            <div className="sd-person-label">Schools</div>
+            <div className="sd-person-val">{fmtNum(schools.length)}</div>
+            <div className="sd-person-sub">{planCounts.platinum + planCounts.gold + planCounts.silver} on a plan</div>
+            <div className="sd-person-ok">✓ {fmtNum(schools.filter((s) => s.status === 'active').length)} active</div>
+            <span className="sd-person-link">View all →</span>
+          </div>
+          <img className="sd-art sd-art-people" src={dashSchool} alt="" />
+        </button>
+        <button type="button" className="sd-person green" onClick={() => app.go('owner.schools')}>
+          <div className="sd-person-main">
+            <div className="sd-person-label">Students</div>
+            <div className="sd-person-val">{fmtNum(totals.students)}</div>
+            <div className="sd-person-sub">Enrolled across your schools</div>
+            <div className="sd-person-ok">✓ {fmtNum(schools.length)} schools</div>
+            <span className="sd-person-link">View all →</span>
+          </div>
+          <img className="sd-art sd-art-people" src={dashStudents} alt="" />
+        </button>
+        <button type="button" className="sd-person blue" onClick={() => app.go('owner.schools')}>
+          <div className="sd-person-main">
+            <div className="sd-person-label">Staff</div>
+            <div className="sd-person-val">{fmtNum(totals.staff)}</div>
+            <div className="sd-person-sub">Teachers and support staff</div>
+            <div className="sd-person-ok">✓ Across the portfolio</div>
+            <span className="sd-person-link">View all →</span>
+          </div>
+          <img className="sd-art sd-art-people" src={dashStaff} alt="" />
+        </button>
       </div>
 
       <div className="sm-grid-2">
