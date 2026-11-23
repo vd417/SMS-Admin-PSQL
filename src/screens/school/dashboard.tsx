@@ -1003,7 +1003,7 @@ function Ring({ rate }: { rate: number }) {
   const c = 2 * Math.PI * r
   const dash = (Math.max(0, Math.min(100, rate)) / 100) * c
   return (
-    <svg width="128" height="128" viewBox="0 0 128 128" aria-hidden>
+    <svg className="sd-ring" width="128" height="128" viewBox="0 0 128 128" aria-hidden>
       <circle cx="64" cy="64" r={r} fill="none" stroke="#e7eef8" strokeWidth="12" />
       {dash > 0 ? (
         <circle cx="64" cy="64" r={r} fill="none" stroke="#818cf8" strokeWidth="12" strokeLinecap="round"

@@ -18,7 +18,7 @@ export function Spark({ data, w = 120, h = 34, color = 'var(--brand-600)', fill 
   const area = line + ` L${w} ${h} L0 ${h} Z`
   const id = useId().replace(/:/g, '')
   return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: 'block', overflow: 'visible' }}>
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: 'block', maxWidth: '100%', height: 'auto' }}>
       <defs><linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stopColor={color} stopOpacity=".22" /><stop offset="1" stopColor={color} stopOpacity="0" />
       </linearGradient></defs>
@@ -37,8 +37,8 @@ export function Donut({ segments, size = 120, thickness = 16, gap = 2, center }:
   const r = (size - thickness) / 2, c = 2 * Math.PI * r
   let off = 0
   return (
-    <div style={{ position: 'relative', width: size, height: size }}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform: 'rotate(-90deg)' }}>
+    <div style={{ position: 'relative', width: size, maxWidth: '100%', aspectRatio: '1', flex: '0 1 auto' }}>
+      <svg width="100%" height="100%" viewBox={`0 0 ${size} ${size}`} style={{ display: 'block', transform: 'rotate(-90deg)' }}>
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--surface-3)" strokeWidth={thickness} />
         {segments.map((s, i) => {
           const len = (s.value / total) * c

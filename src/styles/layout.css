@@ -3,15 +3,29 @@
    ============================================================ */
 
 /* ---------- App shell ---------- */
-.sm-app { display: grid; grid-template-columns: var(--sidebar-w) 1fr; min-height: 100vh; background: var(--bg); }
-.sm-main { display: flex; flex-direction: column; min-width: 0; }
-.sm-content { flex: 1; padding: var(--content-pad); overflow-x: hidden; }
-.sm-content-narrow { max-width: none; margin: 0; width: 100%; }
+/* minmax(0, 1fr): the content track stays inside the window. A fixed 1fr track
+   grows with wide cards and the right edge gets clipped (overflow hidden). */
+.sm-app {
+  display: grid;
+  grid-template-columns: minmax(0, var(--sidebar-w)) minmax(0, 1fr);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--bg);
+}
+.sm-main { display: flex; flex-direction: column; min-width: 0; max-width: 100%; }
+.sm-content {
+  flex: 1; padding: var(--content-pad); overflow-x: clip; min-width: 0; max-width: 100%;
+  container-type: inline-size; container-name: shell;
+}
+.sm-content-narrow { max-width: none; margin: 0; width: 100%; min-width: 0; }
 
 .sm-boot { display:flex; align-items:center; justify-content:center; height:100vh; font-family:var(--font-display); font-weight:700; color:var(--brand-600); }
 
 /* ---------- Sidebar ---------- */
-.sm-sidebar { background: var(--bg-elev); border-right: 1px solid var(--border); display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+.sm-sidebar { background: var(--bg-elev); border-right: 1px solid var(--border); display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; height: 100dvh; width: 100%; max-width: var(--sidebar-w); min-width: 0; overflow-x: hidden; overflow-y: auto; }
 html[dir=rtl] .sm-sidebar { border-right: none; border-left: 1px solid var(--border); }
 .sm-sidebar-head { display: flex; align-items: center; gap: 10px; padding: 16px 18px; border-bottom: 1px solid var(--border); }
 .sm-sidebar-logo { width: 46px; height: 46px; border-radius: 11px; background: #fff; object-fit: cover; object-position: center top; display: block; flex: 0 0 auto; }
@@ -50,8 +64,8 @@ html[dir=rtl] .sm-sidebar { border-right: none; border-left: 1px solid rgba(255,
 .sm-sidebar .sm-school-switch .muted3 { color: #94a3b8; }
 
 /* ---------- Topbar ---------- */
-.sm-topbar { display: flex; align-items: center; gap: 12px; padding: 11px var(--content-pad); border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--bg-elev) 88%, transparent); backdrop-filter: blur(8px); position: sticky; top: 0; z-index: 30; }
-.sm-topbar .sm-search { flex: 1; max-width: 440px; }
+.sm-topbar { display: flex; align-items: center; gap: 12px; padding: 11px var(--content-pad); border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--bg-elev) 88%, transparent); backdrop-filter: blur(8px); position: sticky; top: 0; z-index: 30; min-width: 0; max-width: 100%; }
+.sm-topbar .sm-search { flex: 1; max-width: 440px; min-width: 0; }
 .sm-topbar-spacer { flex: 1; }
 .sm-school-switch { display: flex; align-items: center; gap: 9px; padding: 5px 10px; border: 1px solid var(--border-2); border-radius: var(--r-sm); background: var(--surface); cursor: pointer; }
 .sm-school-switch:hover { background: var(--surface-3); }
@@ -69,8 +83,8 @@ html[dir=rtl] .sm-sidebar { border-right: none; border-left: 1px solid rgba(255,
 
 /* ---------- KPI / dashboard grids ---------- */
 .sm-kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 16px; }
-.sm-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.sm-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.sm-grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 16px; }
+.sm-grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 16px; }
 /* School dashboard: columns follow viewport width (wide = 5 KPIs, tablet = 2–3, phone = 1). */
 .sm-dash { min-width: 0; width: 100%; }
 .sm-dash .sm-kpi-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); }
@@ -80,7 +94,7 @@ html[dir=rtl] .sm-sidebar { border-right: none; border-left: 1px solid rgba(255,
 .sm-dash .sm-kpi { min-width: 0; }
 .sm-dash-head { min-width: 0; }
 .sm-dash-head .sm-school-photo { flex: 0 0 auto; max-width: 100%; }
-.sm-bento { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; }
+.sm-bento { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; }
 .sm-kpi {
   --kpi-c: var(--kpi-accent, var(--brand-500));
   --kpi-deep: color-mix(in srgb, var(--kpi-c) 70%, #000);
@@ -268,7 +282,7 @@ html[dir=rtl] .sm-ai-panel { right: auto; left: 80px; }
 @media (max-width: 1100px) { .sm-bento { grid-template-columns: 1fr; } .sm-grid-3 { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 960px) {
   .sm-app { grid-template-columns: 1fr; }
-  .sm-sidebar { position: fixed; left: 0; top: 0; width: 280px; z-index: 40; transform: translateX(-100%); transition: transform .2s ease; }
+  .sm-sidebar { position: fixed; left: 0; top: 0; width: min(280px, 88vw); max-width: none; z-index: 40; transform: translateX(-100%); transition: transform .2s ease; }
   html[dir=rtl] .sm-sidebar { left: auto; right: 0; transform: translateX(100%); }
   .sm-app.nav-open .sm-sidebar { transform: translateX(0); }
   .only-mobile { display: block; }
@@ -289,6 +303,16 @@ html[dir=rtl] .sm-ai-panel { right: auto; left: 80px; }
   /* Keep the school switcher tappable (logo + chevron) but drop its name label
      so the control cluster fits without pushing the row wider than the screen. */
   .sm-topbar .sm-school-switch > .fw6 { display: none; }
+}
+
+/* Wall displays (about 100") have a very wide content column. Type and
+   gutters step up only past laptop widths so a normal laptop stays as it is. */
+@media (min-width: 2200px) {
+  .sm-content { padding: 32px 40px 56px; }
+  .sm-pagehead-title { font-size: 40px; }
+}
+@container shell (min-width: 2000px) {
+  .sm-pagehead-title { font-size: 40px; }
 }
 
 /* Tighten page gutters on phones so content uses the available width. */
